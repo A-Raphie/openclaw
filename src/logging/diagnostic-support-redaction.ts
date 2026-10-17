@@ -154,7 +154,31 @@ function isWindowsAbsolutePath(value: string): boolean {
   return /^(?:[A-Za-z]:[\\/]|\\\\)/u.test(value);
 }
 
+// Support sanitizers call this per string; the table depends only on these path inputs.
+let cachedPathRedactionPrefixes:
+  | { inputs: readonly (string | undefined)[]; prefixes: PathRedactionPrefix[] }
+  | undefined;
+
 function pathRedactionPrefixes(options: SupportRedactionContext): PathRedactionPrefix[] {
+  const cwd = process.cwd();
+  let cached = cachedPathRedactionPrefixes;
+  if (
+    !cached ||
+    cached.inputs[0] !== options.stateDir ||
+    cached.inputs[1] !== options.env.HOME ||
+    cached.inputs[2] !== options.env.USERPROFILE ||
+    cached.inputs[3] !== cwd
+  ) {
+    cached = {
+      inputs: [options.stateDir, options.env.HOME, options.env.USERPROFILE, cwd],
+      prefixes: buildPathRedactionPrefixes(options),
+    };
+    cachedPathRedactionPrefixes = cached;
+  }
+  return cached.prefixes;
+}
+
+function buildPathRedactionPrefixes(options: SupportRedactionContext): PathRedactionPrefix[] {
   const prefixes = new Map<string, PathRedactionPrefix>();
   for (const [value, label] of [
     [options.stateDir, "$OPENCLAW_STATE_DIR"],
