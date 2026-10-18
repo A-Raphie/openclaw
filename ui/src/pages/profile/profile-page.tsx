@@ -8,6 +8,7 @@ import type {
 import {
   GATEWAY_OWNER_PROFILE_ID,
   GIT_COAUTHOR_PREFERENCE_KEY,
+  PR_ATTRIBUTION_PREFERENCE_KEY,
   isGitCoauthorCreditEnabled,
 } from "../../../../packages/gateway-protocol/src/index.ts";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
@@ -55,13 +56,14 @@ const PROFILE_DOCS_URL = "https://docs.openclaw.ai/concepts/user-model";
 type IdentityChange =
   | { kind: "display-name" }
   | { kind: "avatar"; file: File }
-  | { kind: "git-coauthor"; enabled: boolean };
+  | { kind: "git-coauthor" | "pr-attribution"; enabled: boolean };
 
 class ProfileState {
   selfUser: AuthenticatedUser | null = null;
   ownProfile: UserProfile | null = null;
   displayName = "";
   gitCoauthorEnabled = true;
+  prAttributionEnabled = false;
   identityLoading = false;
   identityBusy: IdentityChange["kind"] | null = null;
   identityError: string | null = null;
@@ -137,6 +139,7 @@ class ProfileState {
       this.ownProfile = null;
       this.displayName = "";
       this.gitCoauthorEnabled = true;
+      this.prAttributionEnabled = false;
     }
     this.publish();
     if (!identityReady || !snapshot.client) {
@@ -176,23 +179,28 @@ class ProfileState {
       }
       this.displayName = hasUnsavedDisplayName ? displayNameDraft : (profile.displayName ?? "");
       this.gitCoauthorEnabled = true;
+      this.prAttributionEnabled = false;
       this.publish();
-      // Consent belongs to the person, not to a display-primary GitHub account.
-      if (profile.id !== GATEWAY_OWNER_PROFILE_ID) {
-        const { loadUserPreferences } = await import("../../app/user-prefs-request.ts");
-        if (requestId !== this.identityRequestId) {
-          return;
-        }
-        const preferences = await loadUserPreferences(client, profile.id, {
-          keys: [GIT_COAUTHOR_PREFERENCE_KEY],
-        });
-        if (requestId !== this.identityRequestId) {
-          return;
-        }
-        this.gitCoauthorEnabled =
-          preferences.status === "ok" &&
-          isGitCoauthorCreditEnabled(preferences.entries[GIT_COAUTHOR_PREFERENCE_KEY]);
+      // PR branding needs a durable profile, not a personal GitHub identity.
+      const { loadUserPreferences } = await import("../../app/user-prefs-request.ts");
+      if (requestId !== this.identityRequestId) {
+        return;
       }
+      const preferences = await loadUserPreferences(client, profile.id, {
+        keys:
+          profile.id === GATEWAY_OWNER_PROFILE_ID
+            ? [PR_ATTRIBUTION_PREFERENCE_KEY]
+            : [GIT_COAUTHOR_PREFERENCE_KEY, PR_ATTRIBUTION_PREFERENCE_KEY],
+      });
+      if (requestId !== this.identityRequestId) {
+        return;
+      }
+      this.gitCoauthorEnabled =
+        profile.id !== GATEWAY_OWNER_PROFILE_ID &&
+        preferences.status === "ok" &&
+        isGitCoauthorCreditEnabled(preferences.entries[GIT_COAUTHOR_PREFERENCE_KEY]);
+      this.prAttributionEnabled =
+        preferences.status === "ok" && preferences.entries[PR_ATTRIBUTION_PREFERENCE_KEY] === true;
     } catch (error) {
       if (requestId === this.identityRequestId) {
         this.identityError = formatUiError(error, t("profilePage.identity.profileUnavailable"));
@@ -275,9 +283,14 @@ class ProfileState {
           }
           break;
         }
-        case "git-coauthor": {
+        case "git-coauthor":
+        case "pr-attribution": {
+          const key =
+            change.kind === "git-coauthor"
+              ? GIT_COAUTHOR_PREFERENCE_KEY
+              : PR_ATTRIBUTION_PREFERENCE_KEY;
           const result = await saveUserPreferences(client, {
-            entries: { [GIT_COAUTHOR_PREFERENCE_KEY]: change.enabled },
+            entries: { [key]: change.enabled },
           });
           if (!isCurrent()) {
             return;
@@ -285,7 +298,11 @@ class ProfileState {
           if (result.status !== "ok") {
             throw new Error(t("profilePage.identity.profileUnavailable"));
           }
-          this.gitCoauthorEnabled = change.enabled;
+          if (change.kind === "git-coauthor") {
+            this.gitCoauthorEnabled = change.enabled;
+          } else {
+            this.prAttributionEnabled = change.enabled;
+          }
           return;
         }
       }
@@ -516,6 +533,7 @@ export function ProfilePage() {
                 avatarUrl={avatarUrl()}
                 displayName={view().displayName}
                 gitCoauthorEnabled={view().gitCoauthorEnabled}
+                prAttributionEnabled={view().prAttributionEnabled}
                 busy={view().identityLoading ? "loading" : view().identityBusy}
                 error={view().identityError}
                 onDisplayNameInput={(value) => {
@@ -526,6 +544,9 @@ export function ProfilePage() {
                 onAvatarSelect={(file) => void state.saveIdentity({ kind: "avatar", file })}
                 onGitCoauthorChange={(enabled) =>
                   void state.saveIdentity({ kind: "git-coauthor", enabled })
+                }
+                onPrAttributionChange={(enabled) =>
+                  void state.saveIdentity({ kind: "pr-attribution", enabled })
                 }
               />
             </Show>

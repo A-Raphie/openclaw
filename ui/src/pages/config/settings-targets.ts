@@ -231,6 +231,8 @@ export const SETTINGS_SEARCH_TARGETS = {
       "profilePage.identity.chooseAvatar",
       "profilePage.identity.displayName",
       "profilePage.identity.linkedEmails",
+      "profilePage.identity.prAttribution",
+      "profilePage.identity.prAttributionDescription",
     ],
     aliases: "profile avatar image email",
     requiresIdentity: true,

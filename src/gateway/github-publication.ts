@@ -315,6 +315,10 @@ export function createGitHubPublicationCoordinator(params: {
             assertOwned();
             return await executeGitHubPublication({
               initial: claimed,
+              requesterProfileId: () => {
+                const actor = getRequester().snapshot.actor;
+                return actor.kind === "operator" ? actor.profileId : undefined;
+              },
               validateCustody,
               assertWorkflowChangesAllowed: () =>
                 assertGitHubPublicationWorkflowChangesAllowed(getRequester()),

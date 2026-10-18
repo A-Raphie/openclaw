@@ -69,6 +69,16 @@ it("loads Settings English only when cold search opens, before the config page",
     const find = (query: string) => coldSearch({ query, schema: null, value: null, uiHints: {} });
 
     expectBlocks(find("check for updates"), { routeId: "updates", label: "Updates" });
+    expectBlocks(
+      coldSearch({
+        query: "attribution",
+        schema: null,
+        value: null,
+        uiHints: {},
+        identityAvailable: true,
+      }),
+      { routeId: "profile", hash: "#settings-profile-identity" },
+    );
     expectBlocks(find("collapse task progress"), { routeId: "appearance", label: "Chat" });
     expect(en.configView).toBe(configView);
     expect(en.updates).toBe(updates);

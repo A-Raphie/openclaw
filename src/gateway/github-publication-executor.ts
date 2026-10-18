@@ -161,6 +161,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
   ) => void | Promise<void>;
   validateAuthority: () => boolean;
   prepareAuthority?: () => Promise<void>;
+  requesterProfileId?: () => string | undefined;
   validateCustody: () => boolean;
   assertWorkflowChangesAllowed: () => void;
   bindWorkspaceSnapshot: (input: {
@@ -460,6 +461,7 @@ export async function executeGitHubPublication<Row extends PublicationRow>(param
 
     const content = await prepareGitHubPublicationContent({
       row,
+      requesterProfileId: params.requesterProfileId?.(),
       storePath: loaded.storePath,
       accountId: identity.account.accountId,
       host: githubHost,
