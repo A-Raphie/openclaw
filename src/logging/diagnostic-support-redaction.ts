@@ -154,28 +154,24 @@ function isWindowsAbsolutePath(value: string): boolean {
   return /^(?:[A-Za-z]:[\\/]|\\\\)/u.test(value);
 }
 
-// Support sanitizers call this per string; the table depends only on these path inputs.
+// Support sanitizers call this per string; absolute inputs fully determine the table.
 let cachedPathRedactionPrefixes:
   | { inputs: readonly (string | undefined)[]; prefixes: PathRedactionPrefix[] }
   | undefined;
 
 function pathRedactionPrefixes(options: SupportRedactionContext): PathRedactionPrefix[] {
-  const cwd = process.cwd();
-  let cached = cachedPathRedactionPrefixes;
-  if (
-    !cached ||
-    cached.inputs[0] !== options.stateDir ||
-    cached.inputs[1] !== options.env.HOME ||
-    cached.inputs[2] !== options.env.USERPROFILE ||
-    cached.inputs[3] !== cwd
-  ) {
-    cached = {
-      inputs: [options.stateDir, options.env.HOME, options.env.USERPROFILE, cwd],
-      prefixes: buildPathRedactionPrefixes(options),
-    };
-    cachedPathRedactionPrefixes = cached;
+  const inputs = [options.stateDir, options.env.HOME, options.env.USERPROFILE];
+  // Relative inputs resolve against cwd, which can vanish mid-update; never read it here.
+  if (inputs.some((value) => value && !path.isAbsolute(value) && !isWindowsAbsolutePath(value))) {
+    return buildPathRedactionPrefixes(options);
   }
-  return cached.prefixes;
+  const cached = cachedPathRedactionPrefixes;
+  if (cached && inputs.every((value, index) => value === cached.inputs[index])) {
+    return cached.prefixes;
+  }
+  const prefixes = buildPathRedactionPrefixes(options);
+  cachedPathRedactionPrefixes = { inputs, prefixes };
+  return prefixes;
 }
 
 function buildPathRedactionPrefixes(options: SupportRedactionContext): PathRedactionPrefix[] {
