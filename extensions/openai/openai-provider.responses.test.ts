@@ -234,13 +234,14 @@ describe("configured speed defaults", () => {
 });
 
 it.each([
-  ["priority", "daybreak_blue", true],
-  ["ultrafast", "daybreak_blue", "ultrafast"],
-  ["priority", "daybreak_red", undefined],
-  ["default", "standard", undefined],
+  ["priority", { cyber: "daybreak_blue" }, true],
+  ["ultrafast", { cyber: "daybreak_blue" }, "ultrafast"],
+  ["priority", { cyber: "daybreak_red" }, undefined],
+  ["default", { cyber: "standard" }, undefined],
+  ["priority", {}, true],
 ] as const)(
-  "combines %s with %s without substituting the model",
-  async (serviceTier, cyber, fastMode) => {
+  "combines %s with %j without substituting the model",
+  async (serviceTier, accessPrograms, fastMode) => {
     const row = manifest.modelCatalog.providers.openai.models[0];
     if (!row) {
       throw new Error("Missing synthetic model template");
@@ -269,7 +270,7 @@ it.each([
       model,
       streamFn: streamSimple,
       nativeWebSearchAllowedByToolPolicy: false,
-      extraParams: { serviceTier, fastMode, accessPrograms: { cyber } },
+      extraParams: { serviceTier, fastMode, accessPrograms },
     });
     const output = await stream(
       model,
@@ -281,8 +282,8 @@ it.each([
       model: "gpt-daybreak-fixture-2026-10-01",
       reasoning: { effort: "max" },
       service_tier: serviceTier,
-      access_programs: { cyber },
     });
+    expect(params.at(-1)).toHaveProperty("access_programs", accessPrograms);
   },
 );
 

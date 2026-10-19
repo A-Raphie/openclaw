@@ -103,8 +103,11 @@ and [Codex runtime behavior](/plugins/codex-harness/runtime-behavior#automatic-d
 
 For the OpenClaw runtime on the OpenAI Platform Responses API, set the selected
 model's `params.accessPrograms.cyber` to `standard`, `daybreak_blue`, or
-`daybreak_red`. Omit it to retain OpenAI's account/project defaults. This setting
-does not grant access and does not apply to native Codex.
+`daybreak_red`. Omit it or use `accessPrograms: {}` to retain OpenAI's
+model/account/project defaults. Neither `accessPrograms` nor `cyber` accepts
+`null`. This setting does not grant access and does not apply to native Codex.
+An explicit incompatible program or missing entitlement returns the provider
+error; OpenClaw does not silently switch to standard safeguards.
 
 Daybreak and speed are separate request settings. For example, an approved
 account using the publicly documented GPT-6.1 Sol route can request:

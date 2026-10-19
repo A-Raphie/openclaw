@@ -46,10 +46,11 @@ export function wrapOpenAIResponsesStream(ctx: ProviderWrapStreamFnContext) {
     if (
       !accessPrograms ||
       Object.keys(accessPrograms).some((key) => key !== "cyber") ||
-      !["standard", "daybreak_blue", "daybreak_red"].some((value) => value === cyber)
+      (cyber !== undefined &&
+        !["standard", "daybreak_blue", "daybreak_red"].some((value) => value === cyber))
     ) {
       throw new Error(
-        'OpenAI params.accessPrograms must be { cyber: "standard" | "daybreak_blue" | "daybreak_red" }.',
+        'OpenAI params.accessPrograms must be {} or { cyber: "standard" | "daybreak_blue" | "daybreak_red" }.',
       );
     }
     const underlying = streamContext.streamFn ?? streamSimple;
@@ -73,7 +74,7 @@ export function wrapOpenAIResponsesStream(ctx: ProviderWrapStreamFnContext) {
               throw new Error("OpenAI access programs require a Responses request object.");
             }
             // Program selection and speed are independent; neither grants account access.
-            return { ...request, access_programs: { cyber } };
+            return { ...request, access_programs: cyber === undefined ? {} : { cyber } };
           },
         });
       },
