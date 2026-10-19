@@ -12,6 +12,8 @@ import {
   onDiagnosticEvent,
   setDiagnosticsEnabledForProcess,
 } from "../infra/diagnostic-events.js";
+import { createReplyOperation } from "../sessions/session-controller.operation.js";
+import { testing } from "../sessions/session-controller.test-support.js";
 import { resolveIncognitoOpenClawAgentSqlitePath } from "../state/openclaw-agent-db.paths.js";
 import {
   createGatewaySchedulerClock,
@@ -77,6 +79,7 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  testing.resetSessionControllerForTest();
   resetDiagnosticStateForTest();
   await scheduler.stop();
   vi.useRealTimers();
@@ -96,6 +99,18 @@ async function tick() {
   await clock.advanceBy(30_000);
 }
 
+function beginRecoverySession(label: string) {
+  const now = Date.now();
+  // Existing six-minute eligibility leaves two normal heartbeat windows for this I/O test.
+  vi.setSystemTime(now - 300_000);
+  const ref = session(label);
+  const operation = createReplyOperation({ ...ref, resetTriggered: false });
+  operation.setPhase("running");
+  logSessionStateChange({ ...ref, state: "processing" });
+  vi.setSystemTime(now);
+  return operation;
+}
+
 it("checks memory pressure every tick without recording idle samples", async () => {
   const emitMemorySample = vi.fn<EmitDiagnosticMemorySample>();
   const options = { ...heartbeatOptions, recoverStuckSession: () => undefined, emitMemorySample };
@@ -113,6 +128,7 @@ it("checks memory pressure every tick without recording idle samples", async () 
 
 it("keeps recovery and pressure checks running while a Linux footprint read is pending", async () => {
   vi.stubGlobal("process", Object.create(process, { platform: { value: "linux" } }));
+  const operation = beginRecoverySession("pending-footprint");
   const footprint = createDeferred<string>();
   const sampled = createDeferred();
   const readFile = vi.spyOn(fs, "readFile").mockReturnValue(footprint.promise);
@@ -132,11 +148,13 @@ it("keeps recovery and pressure checks running while a Linux footprint read is p
     {},
     { ...heartbeatOptions, recoverStuckSession: recover },
   );
-  logSessionStateChange({ ...session("pending-footprint"), state: "processing" });
   const first = tick();
   const second = tick();
   try {
-    expect(recover).toHaveBeenCalled();
+    expect(recover).toHaveBeenCalledOnce();
+    expect(recover).toHaveBeenCalledWith(
+      expect.objectContaining({ operation, allowActiveAbort: true }),
+    );
     expect(critical).toHaveBeenCalledTimes(2);
     expect(readFile).toHaveBeenCalledTimes(1);
   } finally {
@@ -159,10 +177,10 @@ it.each(["enabled", "disabled", "incognito"])(
         logged.resolve();
       }
     });
+    const operation = beginRecoverySession(label);
     const recover = vi.fn();
     const options = { ...heartbeatOptions, recoverStuckSession: recover };
     startGatewayDiagnosticHeartbeat(scheduler, {}, options);
-    logSessionStateChange({ sessionId, sessionKey, state: "processing" });
     const queries = [
       ...(["prepare", "exec"] as const).map((method) => vi.spyOn(DatabaseSync.prototype, method)),
       ...(["get", "all", "iterate", "run"] as const).map((method) =>
@@ -171,7 +189,10 @@ it.each(["enabled", "disabled", "incognito"])(
     ];
     await tick();
     await tick();
-    expect(recover).toHaveBeenCalled();
+    expect(recover).toHaveBeenCalledOnce();
+    expect(recover).toHaveBeenCalledWith(
+      expect.objectContaining({ operation, allowActiveAbort: true }),
+    );
     if (enabled && label !== "incognito") {
       await logged.promise;
       for (const identity of [`sessionId=${sessionId}`, `sessionKey=${sessionKey}`]) {

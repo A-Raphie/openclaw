@@ -6,6 +6,12 @@ import {
   waitForDiagnosticEventsDrained,
   type DiagnosticEventPayload,
 } from "../infra/diagnostic-events.js";
+import { createReplyOperation } from "../sessions/session-controller.operation.js";
+import { testing } from "../sessions/session-controller.test-support.js";
+import {
+  createGatewaySchedulerClock,
+  createTestGatewayScheduler,
+} from "../test-utils/gateway-scheduler-clock.js";
 import {
   getDiagnosticSessionState,
   resetDiagnosticSessionStateForTest,
@@ -16,13 +22,12 @@ import {
   logMessageDispatchCompleted,
   logMessageProcessed,
   logSessionStateChange,
+  startGatewayDiagnosticHeartbeat,
 } from "./diagnostic.js";
-import {
-  resetDiagnosticStateForTest,
-  startEnabledDiagnosticHeartbeatForTest,
-} from "./diagnostic.test-support.js";
+import { resetDiagnosticStateForTest } from "./diagnostic.test-support.js";
 
 afterEach(() => {
+  testing.resetSessionControllerForTest();
   resetDiagnosticStateForTest();
   resetDiagnosticEventsForTest();
   setDiagnosticsEnabledForProcess(false);
@@ -111,7 +116,7 @@ it.each(["key", "session-id"] as const)(
 it.each([true, false])(
   "preserves heartbeat recovery and events with Incognito=%s",
   async (incognito) => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(0);
     resetDiagnosticStateForTest();
     resetDiagnosticEventsForTest();
@@ -125,13 +130,28 @@ it.each([true, false])(
       sessionId: incognito ? "private-stuck-id" : "ordinary-stuck-id",
       sessionKey: `agent:main:dashboard:${incognito ? "incognito-" : ""}stuck`,
     };
-    startEnabledDiagnosticHeartbeatForTest({ recoverStuckSession });
+    const operation = createReplyOperation({ ...ref, resetTriggered: false });
+    operation.setPhase("running");
     logSessionStateChange({ ...ref, state: "processing" });
-
-    await vi.advanceTimersByTimeAsync(61_000);
+    vi.setSystemTime(300_000);
+    const clock = createGatewaySchedulerClock(300_000);
+    startGatewayDiagnosticHeartbeat(
+      createTestGatewayScheduler(clock.clock),
+      { diagnostics: { enabled: true } },
+      { recoverStuckSession, sampleLiveness: () => null },
+    );
+    vi.setSystemTime(330_000);
+    await clock.advanceTo(330_000);
+    expect(recoverStuckSession).not.toHaveBeenCalled();
+    vi.setSystemTime(360_000);
+    expect(operation.watchdog.decide().action).toBe("stop");
+    await clock.advanceTo(360_000);
     await waitForDiagnosticEventsDrained();
 
-    expect(recoverStuckSession).toHaveBeenCalledWith(expect.objectContaining(ref));
+    expect(recoverStuckSession).toHaveBeenCalledOnce();
+    expect(recoverStuckSession).toHaveBeenCalledWith(
+      expect.objectContaining({ ...ref, operation, allowActiveAbort: true }),
+    );
     expect(events).toContainEqual(
       expect.objectContaining({ type: "session.stuck", ...ref, state: "processing" }),
     );
