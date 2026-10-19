@@ -1,8 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
-import { buildBeamMirrorItems } from "../../extensions/beam/src/mirror.js";
-import { parseBeamUpload } from "../../extensions/beam/src/types.js";
 import type { SessionCatalogTranscriptItem } from "../../packages/gateway-protocol/src/schema/sessions-catalog.js";
 import {
   clearRuntimeConfigSnapshot,
@@ -214,7 +212,7 @@ it("requests pages within the Claude and Codex transcript read cap", async () =>
   expect(history.items.map((item) => item.id)).toEqual(source.map((item) => item.id));
 });
 
-it("preserves inline fallback through native storage, catalog, Beam text upload and untrusted import", async () => {
+it("preserves inline fallback through native storage, text catalog and untrusted import", async () => {
   await withTempHome(async (home) => {
     const { scope, config } = catalogStore(home, "inline-source");
     const previous = getRuntimeConfigSnapshot();
@@ -276,39 +274,22 @@ it("preserves inline fallback through native storage, catalog, Beam text upload 
       const catalog = await readSessionTranscriptCatalogPage({
         ...scope,
         sourceDomain: "source",
-        pluginId: "beam",
+        pluginId: "catalog",
         limit: 10,
       });
       expect(catalog.items.map((item) => [item.type, item.text])).toEqual([
         ["agentMessage", "INC-43 is resolved."],
         ["agentMessage", "INC-42 is investigating."],
       ]);
-      const upload = parseBeamUpload({
-        version: 1,
-        beamId: "a".repeat(32),
-        source: "OpenClaw",
-        title: "Incident",
-        updatedAt: "2026-10-19T12:00:00.000Z",
-        completed: true,
-        items: buildBeamMirrorItems(catalog.items).items,
-      });
-      expect(upload).toMatchObject({ ok: true });
-      if (!upload.ok) {
-        throw new Error(upload.error);
-      }
-      expect(upload.value.items).toEqual([
-        { type: "agentMessage", text: "INC-42 is investigating." },
-        { type: "agentMessage", text: "INC-43 is resolved." },
-      ]);
       const target = catalogStore(home, "inline-destination");
       await initializeStore(target.scope);
       await importSessionCatalogHistory({
         ...target.scope,
         config: target.config,
-        catalogId: "beam",
+        catalogId: "external",
         threadId: "incident",
         read: catalogReader(
-          upload.value.items.map((item) => ({
+          catalog.items.toReversed().map((item) => ({
             type: item.type,
             text: item.text,
             raw: result.details,

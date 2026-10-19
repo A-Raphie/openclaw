@@ -4,7 +4,6 @@ import type {
   ControlUiAccessory,
   ControlUiDisposer,
   ControlUiHost,
-  ControlUiInlineView,
   ControlUiNavigationItem,
   ControlUiPage,
   ControlUiPanel,
@@ -28,7 +27,7 @@ export type ControlUiContributions = {
   actions: ControlUiAction;
   accessories: ControlUiAccessory;
   widgets: ControlUiWidget;
-  inlineViews: ControlUiInlineView;
+  inlineViews: Parameters<ControlUiHost["ui"]["registerInlineView"]>[0];
   replacements: ControlUiReplacement;
 };
 

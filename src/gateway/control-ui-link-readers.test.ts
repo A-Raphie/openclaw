@@ -128,16 +128,17 @@ describe("plugin link-reader discovery", () => {
       pathPattern: "^/items/[0-9]+$",
       detailMethod: "forge.read",
     };
-    const invalid: Array<Partial<PluginControlUiDescriptor>> = [
-      { linkReader: { ...metadata, hosts: ["*.example"] } },
-      { linkReader: { ...metadata, hosts: ["https://forge.example"] } },
-      { linkReader: { ...metadata, pathPattern: "/items/" } },
-      { linkReader: { ...metadata, pathPattern: "^[$" } },
-      { surface: "tab", linkReader: metadata },
-      { linkReader: { ...metadata, detailMethod: "" } },
-      { linkReader: { ...metadata, imageMethod: "" } },
-      { linkReader: { ...metadata, imageMethod: "notes image" } },
-    ];
+    const invalid: Array<Partial<PluginControlUiDescriptor & { surface: "link-reader" | "tab" }>> =
+      [
+        { linkReader: { ...metadata, hosts: ["*.example"] } },
+        { linkReader: { ...metadata, hosts: ["https://forge.example"] } },
+        { linkReader: { ...metadata, pathPattern: "/items/" } },
+        { linkReader: { ...metadata, pathPattern: "^[$" } },
+        { surface: "tab", linkReader: metadata },
+        { linkReader: { ...metadata, detailMethod: "" } },
+        { linkReader: { ...metadata, imageMethod: "" } },
+        { linkReader: { ...metadata, imageMethod: "notes image" } },
+      ];
     registerVirtualTestPlugin({
       registry,
       config,

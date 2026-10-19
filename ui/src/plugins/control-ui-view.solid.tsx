@@ -407,7 +407,8 @@ export function PluginSurface<S extends ControlUiSurface>(props: {
     return <span style={{ display: "contents" }}>{props.renderDefault()}</span>;
   }
   const mountDefault = (target: HTMLElement) => mount(target, DefaultView);
-  const mountCompanion = (target: HTMLElement) => mount(target, () => props.renderCompanion?.());
+  const mountCompanion = (target: HTMLElement) =>
+    mount(target, () => <>{props.renderCompanion?.()}</>);
   function ReplacementView() {
     let host!: HTMLElement;
     onSettled(() => props.replacementRef?.(host));

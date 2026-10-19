@@ -163,7 +163,7 @@ export type ControlUiNavigationItem = {
 };
 
 /** A predefined installed renderer. Payload is data, never a generated template. */
-export type ControlUiInlineView = {
+type ControlUiInlineView = {
   id: string;
   /** Exact component/payload interface version (1–65535), not the package version. */
   version: number;

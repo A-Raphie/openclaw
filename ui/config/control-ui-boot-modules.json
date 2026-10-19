@@ -1661,6 +1661,7 @@
   "ui/src/pages/chat/chat-submit-guard.ts",
   "ui/src/pages/chat/chat-system-event-grouping.ts",
   "ui/src/pages/chat/chat-thread-build.ts",
+  "ui/src/pages/chat/chat-thread-canvas.ts",
   "ui/src/pages/chat/chat-thread-duplicates.ts",
   "ui/src/pages/chat/chat-thread-grouping-cache.ts",
   "ui/src/pages/chat/chat-thread-grouping.ts",
