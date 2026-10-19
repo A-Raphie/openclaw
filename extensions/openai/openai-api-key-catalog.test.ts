@@ -52,7 +52,7 @@ describe("OpenAI API-key catalog", () => {
   });
 
   it("shows every listed chat model that runs on Responses with conservative metadata", async () => {
-    const admittedIds = ["gpt-5.3-codex", "gpt-5.5-2026-04-23", "gpt-6.2"];
+    const admittedIds = ["gpt-5.3-codex", "gpt-5.5-2026-04-23", "gpt-5.6-cyber", "gpt-6.2"];
     const unadmittedIds = [
       // Pre-GPT-5 families fail on the default runtime.
       "gpt-4-0613",
@@ -60,7 +60,7 @@ describe("OpenAI API-key catalog", () => {
       "o3",
       "ft:gpt-4.1-mini:acme::abc123",
       "gpt-5.3-codex-spark",
-      "gpt-5.6-cyber",
+      "gpt-unknown-cyber-fixture",
       "gpt-7-alpha",
       "kepler-alpha",
       "gpt-5.5-codex-1p-exp-p-0618-b2fcc1-ev3-text-1-treatment",

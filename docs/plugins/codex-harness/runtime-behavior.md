@@ -243,12 +243,13 @@ can use it.
 OpenAI declines some defensive-cyber work on its general models and directs
 approved workspaces to a Daybreak model instead. When a turn ends in a
 cyber-policy refusal, OpenClaw retries it once on the configured Daybreak model
-so the refused work reaches the tier allowed to answer it. This is on by
-default and is configured under
+so the refused work reaches the tier allowed to answer it. This requires an
+explicit specific model available under approved Daybreak access; there is no
+default target because the Blue/Red aliases retire on October 28, 2026. Without
+a target, the original refusal remains terminal. Configure the target under
 `plugins.entries.codex.config.appServer.cyberFailover`.
 
-Daybreak trails the general models in capability, so escalation stays scoped to
-work that was actually refused:
+Escalation stays scoped to work that was actually refused:
 
 - At most one escalated attempt per turn. A second refusal under Daybreak keeps
   the block and stops.

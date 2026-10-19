@@ -75,7 +75,7 @@ export const AGENT_FIELD_HELP: Record<string, string> = {
   "agents.defaults.embeddedAgent.cyberFailover.mode":
     'Enable automatic escalation ("auto", default) or keep provider refusals terminal ("off").',
   "agents.defaults.embeddedAgent.cyberFailover.model":
-    "Provider/model target used for automatic cyber-policy escalation.",
+    "Explicit provider/model target available under approved Daybreak access. No default target is selected.",
   "agents.defaults.embeddedAgent.cyberFailover.cooloffMs":
     "How long an unavailable escalation target is skipped for the current session.",
   "agents.defaults.utilityModel":

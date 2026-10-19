@@ -68,7 +68,13 @@ type RunCandidate = Parameters<
 >[0]["runCandidate"];
 
 function runEntry(runId: string, runCandidate: RunCandidate, hasCommittedSideEffect = () => false) {
-  const config = {};
+  const config = {
+    agents: {
+      defaults: {
+        embeddedAgent: { cyberFailover: { model: "openai/gpt-daybreak-fixture-2026-10-01" } },
+      },
+    },
+  };
   setRuntimeConfigSnapshot(config);
   return runEmbeddedAgentEntry({
     selection: { cfg: config, provider: "openai", model: "gpt-5.6" },
@@ -142,7 +148,7 @@ describe("runEmbeddedAgentEntry cyber failover against the real fallback runner"
 
   it("retains completed policy-retry usage when restoring the original refusal", async () => {
     const { result } = await runEntry("run-cyber-restored-accounting", async (provider, model) => {
-      const retry = model === "gpt-daybreak-blue-latest";
+      const retry = model === "gpt-daybreak-fixture-2026-10-01";
       const candidate = makeResult(provider, model, true);
       candidate.meta.agentMeta!.usage = {
         input: retry ? 200 : 100,
@@ -161,7 +167,7 @@ describe("runEmbeddedAgentEntry cyber failover against the real fallback runner"
   it("propagates a recognized provider error thrown after the Daybreak retry delivered", async () => {
     const failure = new FailoverError("daybreak overloaded after delivering", {
       provider: "openai",
-      model: "gpt-daybreak-blue-latest",
+      model: "gpt-daybreak-fixture-2026-10-01",
       reason: "overloaded",
     });
     let delivered = false;
@@ -169,7 +175,7 @@ describe("runEmbeddedAgentEntry cyber failover against the real fallback runner"
       runEntry(
         "run-cyber-real-runner",
         async (provider, model) => {
-          if (model === "gpt-daybreak-blue-latest") {
+          if (model === "gpt-daybreak-fixture-2026-10-01") {
             delivered = true;
             throw failure;
           }
@@ -193,7 +199,7 @@ describe("runEmbeddedAgentEntry cyber failover against the real fallback runner"
     const profileId = "openai:default";
     const failure = new FailoverError("daybreak entitlement denied", {
       provider: "openai",
-      model: "gpt-daybreak-blue-latest",
+      model: "gpt-daybreak-fixture-2026-10-01",
       reason: "auth",
     });
     let primaryAttempts = 0;
@@ -203,7 +209,7 @@ describe("runEmbeddedAgentEntry cyber failover against the real fallback runner"
       options: { authProfileFailurePolicy?: AuthProfileFailurePolicy },
     ) => {
       authFailurePolicies.push(options.authProfileFailurePolicy);
-      if (model === "gpt-daybreak-blue-latest") {
+      if (model === "gpt-daybreak-fixture-2026-10-01") {
         const authFailureReason = resolveAuthProfileFailureReason({
           failoverReason: "auth",
           providerStarted: true,

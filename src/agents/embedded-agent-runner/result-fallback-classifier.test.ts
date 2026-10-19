@@ -74,10 +74,10 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
     },
   );
 
-  it("defaults embedded cyber failover to Daybreak Blue", () => {
+  it("leaves embedded cyber failover without an implicit target", () => {
     expect(resolveEmbeddedCyberFailoverConfig(undefined)).toEqual({
       mode: "auto",
-      model: "openai/gpt-daybreak-blue-latest",
+      model: "",
       cooloffMs: 600_000,
     });
   });
@@ -90,7 +90,7 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
             embeddedAgent: {
               cyberFailover: {
                 mode: "off",
-                model: "openai/gpt-daybreak-red-latest",
+                model: "openai/gpt-daybreak-fixture-2026-10-01",
                 cooloffMs: 30_000,
               },
             },
@@ -99,7 +99,7 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
       }),
     ).toEqual({
       mode: "off",
-      model: "openai/gpt-daybreak-red-latest",
+      model: "openai/gpt-daybreak-fixture-2026-10-01",
       cooloffMs: 30_000,
     });
   });

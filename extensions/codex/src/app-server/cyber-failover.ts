@@ -23,10 +23,10 @@ export type CodexCyberFailoverConfig = {
   cooloffMs: number;
 };
 
-// Codex catalog id for Daybreak Blue, verified against a live `model/list`.
+// A Daybreak target is account-specific; never guess a successor to a retired alias.
 const DEFAULT_CYBER_FAILOVER: CodexCyberFailoverConfig = {
   mode: "auto",
-  model: "gpt-daybreak-blue-latest",
+  model: "",
   cooloffMs: 600_000,
 };
 

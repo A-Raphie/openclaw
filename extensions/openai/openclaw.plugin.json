@@ -1,5 +1,6 @@
 {
   "id": "openai",
+  "doctorHealthChecks": true,
   "categories": ["models"],
   "capabilityCatalogEntry": "./capability-catalog.ts",
   "sessionRouteStateOwners": [
@@ -56,6 +57,7 @@
           {
             "id": "gpt-daybreak-blue-latest",
             "name": "Daybreak Blue",
+            "status": "deprecated",
             "reasoning": true,
             "input": ["text", "image"],
             "contextWindow": 1050000,
@@ -72,6 +74,7 @@
           {
             "id": "gpt-daybreak-red-latest",
             "name": "Daybreak Red",
+            "status": "deprecated",
             "reasoning": true,
             "input": ["text", "image"],
             "contextWindow": 400000,

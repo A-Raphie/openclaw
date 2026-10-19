@@ -432,7 +432,7 @@
               "model": {
                 "type": "string",
                 "minLength": 1,
-                "default": "gpt-daybreak-blue-latest"
+                "description": "Explicit Daybreak model available to the approved account. No default target is selected."
               },
               "cooloffMs": { "type": "number", "minimum": 1, "default": 600000 }
             }

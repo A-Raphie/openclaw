@@ -10,7 +10,7 @@ import {
   type CodexCyberAttemptOutcome,
 } from "./cyber-failover.js";
 
-const DAYBREAK = "gpt-daybreak-blue-latest";
+const DAYBREAK = "gpt-daybreak-fixture-2026-10-01";
 const PRIMARY = "gpt-6-astra";
 
 // The unavailable-target record is process-global and keyed by workspace, so
@@ -59,11 +59,17 @@ function refusal(category: string, provider = "openai") {
   });
 }
 
-it.each([undefined, { mode: "off", model: "gpt-daybreak-red-latest" }] as const)(
-  "resolves operator config %j",
+it("does not guess a replacement when no Daybreak target is configured", () => {
+  const resolved = resolveCodexCyberFailoverConfig(undefined);
+  expect(planEscalation({ config: resolved })).toEqual({ kind: "skip", reason: "no_target" });
+});
+
+it.each([{ model: DAYBREAK }, { mode: "off", model: DAYBREAK }] as const)(
+  "preserves the operator-specific target %j",
   (overrides) => {
-    const input = overrides && { appServer: { cyberFailover: overrides } };
-    expect(resolveCodexCyberFailoverConfig(input)).toEqual(config(overrides));
+    expect(resolveCodexCyberFailoverConfig({ appServer: { cyberFailover: overrides } })).toEqual(
+      config(overrides),
+    );
   },
 );
 

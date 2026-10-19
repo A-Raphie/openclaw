@@ -70,6 +70,7 @@ describe("Daybreak Responses requests", () => {
         );
         await output.result();
         expect(params.at(-1)).toMatchObject({ model: id });
+        expect(params.at(-1)).not.toHaveProperty("access_programs");
         const requested = typeof fastMode === "function" ? fastMode() : fastMode;
         if (id === "gpt-daybreak-blue-latest" && requested !== false) {
           expect(params.at(-1)).toHaveProperty("service_tier", "priority");
@@ -231,3 +232,73 @@ describe("configured speed defaults", () => {
     },
   );
 });
+
+it.each([
+  ["priority", "daybreak_blue", true],
+  ["ultrafast", "daybreak_blue", "ultrafast"],
+  ["priority", "daybreak_red", undefined],
+  ["default", "standard", undefined],
+] as const)(
+  "combines %s with %s without substituting the model",
+  async (serviceTier, cyber, fastMode) => {
+    const row = manifest.modelCatalog.providers.openai.models[0];
+    if (!row) {
+      throw new Error("Missing synthetic model template");
+    }
+    const model: Model<"openai-responses"> = {
+      name: row.name,
+      reasoning: row.reasoning,
+      contextWindow: row.contextWindow,
+      maxTokens: row.maxTokens,
+      compat: row.compat,
+      cost: {
+        input: row.cost.input,
+        output: row.cost.output,
+        cacheRead: row.cost.cacheRead,
+        cacheWrite: row.cost.cacheWrite,
+      },
+      id: "gpt-daybreak-fixture-2026-10-01",
+      api: "openai-responses",
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      input: ["text"],
+    };
+    const stream = wrapOpenAIResponsesStream({
+      provider: "openai",
+      modelId: model.id,
+      model,
+      streamFn: streamSimple,
+      nativeWebSearchAllowedByToolPolicy: false,
+      extraParams: { serviceTier, fastMode, accessPrograms: { cyber } },
+    });
+    const output = await stream(
+      model,
+      { messages: [{ role: "user", content: "hello", timestamp: 0 }] },
+      { apiKey: "synthetic-test-key", reasoning: "max" },
+    );
+    expect((await output.result()).errorMessage).toBe("captured before sending");
+    expect(params.at(-1)).toMatchObject({
+      model: "gpt-daybreak-fixture-2026-10-01",
+      reasoning: { effort: "max" },
+      service_tier: serviceTier,
+      access_programs: { cyber },
+    });
+  },
+);
+
+it.each([null, { cyber: null }, { cyber: "unknown" }, { cyber: "daybreak_blue", extra: true }])(
+  "rejects invalid access-program settings before making a request: %j",
+  (accessPrograms) => {
+    const before = params.length;
+    expect(() =>
+      wrapOpenAIResponsesStream({
+        provider: "openai",
+        modelId: "synthetic-model",
+        streamFn: streamSimple,
+        nativeWebSearchAllowedByToolPolicy: false,
+        extraParams: { accessPrograms },
+      }),
+    ).toThrow("params.accessPrograms");
+    expect(params).toHaveLength(before);
+  },
+);

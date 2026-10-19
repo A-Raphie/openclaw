@@ -17,7 +17,8 @@ export type EmbeddedCyberFailoverConfig = {
 
 const DEFAULT_EMBEDDED_CYBER_FAILOVER: EmbeddedCyberFailoverConfig = {
   mode: "auto",
-  model: "openai/gpt-daybreak-blue-latest",
+  // Specific Daybreak models depend on approved account access.
+  model: "",
   cooloffMs: 600_000,
 };
 

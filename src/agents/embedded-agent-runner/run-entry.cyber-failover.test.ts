@@ -102,6 +102,14 @@ describe("runEmbeddedAgentEntry cyber failover", () => {
   });
   afterEach(clearRuntimeConfigSnapshot);
 
+  it("keeps a refusal terminal when no specific Daybreak target is configured", async () => {
+    const result = await runEntry("run-no-daybreak-target", undefined, {
+      selection: { cfg: {}, provider: "openai", model: "gpt-5.6" },
+    });
+    expect(searchedModels()).toEqual(["gpt-5.6"]);
+    expect(result.result.payloads).toEqual([{ text: "policy refusal", isError: true }]);
+  });
+
   it("retries a replay-safe OpenAI cyber refusal once on the configured target without changing selection", async () => {
     const reconcile = vi.fn(async () => {});
     const runCandidate = vi.fn<EntryParams["runCandidate"]>(async (provider, model) =>

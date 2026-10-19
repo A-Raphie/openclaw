@@ -146,7 +146,9 @@ This policy route is turn-local: it does not change the selected session model a
 ordinary provider failures to Daybreak. Codex-backed sessions keep their separate plugin-owned
 policy described in [Codex harness runtime behavior](/plugins/codex-harness/runtime-behavior#automatic-daybreak-escalation).
 
-The default target is `openai/gpt-daybreak-blue-latest`. The retry runs only when all of these are
+There is no default target. Configure a specific model available under your approved
+Daybreak access; the Blue/Red aliases retire on October 28, 2026. Without an explicit
+target, the original refusal remains terminal. The retry runs only when all of these are
 true:
 
 - the selected embedded attempt reports `provider_refusal` with provider `openai` and category
@@ -176,7 +178,7 @@ current session before another cyber refusal checks it again.
       embeddedAgent: {
         cyberFailover: {
           mode: "auto", // or "off"
-          model: "openai/gpt-daybreak-blue-latest",
+          model: "openai/YOUR_APPROVED_MODEL_ID",
           cooloffMs: 600000,
         },
       },

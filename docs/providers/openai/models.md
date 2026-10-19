@@ -44,7 +44,9 @@ conservative defaults: text input, a 128k context window, and unknown cost.
 Embedding, image, video, audio, realtime, speech, transcription, moderation, and
 legacy completions models stay hidden, as do models past their OpenAI shutdown
 date. Search models stay hidden because they run only on Chat Completions; live,
-cyber, experiment, and alpha IDs stay hidden because Responses rejects them.
+unrecognized cyber, experiment, and alpha IDs stay hidden because they can fail
+on Responses. The documented `gpt-5.6-cyber` Daybreak model is included when the
+account lists it; approved Daybreak Red access is still required.
 GPT-3.5, GPT-4 (including GPT-4o and GPT-4.1), o1, o3, and o4 models stay hidden
 from the list because their tool capabilities differ from the modern models.
 You can still select one by its reference, for example as
@@ -57,34 +59,90 @@ set `tools.web.search.provider` to a managed provider such as `brave`, or
 `tools.web.search.enabled: false`, before using them (see
 [Native OpenAI web search](/tools/web#native-openai-web-search)).
 
-## Daybreak Blue and Red
+<a id="daybreak-blue-and-red" />
 
-Accounts provisioned for Daybreak can select `openai/gpt-daybreak-blue-latest` or
-`openai/gpt-daybreak-red-latest` with an OpenAI API-key profile. Both aliases use
-the Responses API and expose `low`, `medium`, `high`, `xhigh`, and `max` on the
-OpenClaw runtime. `/think ultra` remains a separate orchestration mode; it uses
-the highest supported native effort rather than sending `ultra` to the API.
+## Daybreak alias retirement
 
-On the OpenClaw runtime, Daybreak Blue supports Standard and Fast processing;
-Daybreak Red uses Standard. Neither alias supports Ultrafast. The Control UI
-disables unavailable speed choices, and requests apply the same limits: saved
-Ultrafast preferences use Fast on Blue and Standard on Red. Explicit low-level
-`serviceTier` / `service_tier` overrides remain operator-controlled and may be
-rejected by the API.
+OpenAI retires `openai/gpt-daybreak-blue-latest` and
+`openai/gpt-daybreak-red-latest` on **October 28, 2026**. Only the aliases
+retire; the underlying models remain available to approved accounts. OpenClaw
+marks the aliases deprecated and stops choosing Blue as an implicit cyber
+failover target. Explicit alias references remain unchanged; this is not an
+automatic switch to a different model.
 
-Daybreak aliases can resolve to different snapshots as access programs evolve.
-OpenClaw preserves the requested alias instead of replacing it with a snapshot.
-Blue keeps reasoning enabled; Red also supports `/think off`. Explicit configured
-effort capabilities remain authoritative, including narrower or empty lists.
-Alias cost estimates are unknown, not a claim that Daybreak requests are free;
-check the resolved model and current OpenAI pricing. Successful account discovery
-remains authoritative and this support does not grant Daybreak access. Native
-Codex continues to use its account catalog and native effort controls.
+Before the deadline:
 
-See the [Daybreak guide](https://developers.openai.com/api/docs/guides/daybreak)
-and the [Blue](https://developers.openai.com/api/docs/models/gpt-daybreak-blue-latest)
-and [Red](https://developers.openai.com/api/docs/models/gpt-daybreak-red-latest)
-model references.
+1. Check your Daybreak settings and the specific model IDs available under your
+   approved access. Do not infer a replacement from Blue/Red or another account's
+   catalog. Listing a model is not proof of Daybreak entitlement.
+2. Run `openclaw doctor --lint --only openai/daybreak-alias-retirement` to locate
+   configured alias references. Replace them with your supported specific model
+   ID, preserving the intended auth profile and runtime. This advisory check has
+   no automatic repair: it does not block updates, guess a replacement, or clear
+   your selection. Review primary/fallback models, model-map keys, per-agent and
+   tool selections, saved session overrides, and scheduled jobs as applicable.
+   Use `/model` to change an existing conversation's model.
+3. For Responses API use, follow the
+   [Daybreak guide](https://developers.openai.com/api/docs/guides/daybreak),
+   including its account settings and request requirements. Preserve explicitly
+   configured reasoning capabilities and service tiers for the specific model;
+   the old aliases' capabilities are not a contract for every underlying model.
+4. For native Codex, use Codex's Daybreak toggle with an approved specific model.
+   A model selection or OpenClaw's cyber failover setting does not enable that
+   native toggle or grant access.
+
+Automatic cyber failover now requires an explicit `model` under
+`agents.defaults.embeddedAgent.cyberFailover` (OpenClaw runtime) or
+`plugins.entries.codex.config.appServer.cyberFailover` (native Codex).
+Without a target, the original provider refusal remains terminal. Existing
+explicit targets and `mode: "off"` settings are preserved. See
+[model failover](/concepts/model-failover#automatic-cyber-policy-escalation)
+and [Codex runtime behavior](/plugins/codex-harness/runtime-behavior#automatic-daybreak-escalation).
+
+### Responses access program and speed
+
+For the OpenClaw runtime on the OpenAI Platform Responses API, set the selected
+model's `params.accessPrograms.cyber` to `standard`, `daybreak_blue`, or
+`daybreak_red`. Omit it to retain OpenAI's account/project defaults. This setting
+does not grant access and does not apply to native Codex.
+
+Daybreak and speed are separate request settings. For example, an approved
+account using the publicly documented GPT-6.1 Sol route can request:
+
+```json5
+{
+  agents: {
+    defaults: {
+      models: {
+        "openai/gpt-6.1-sol": {
+          agentRuntime: { id: "openclaw" },
+          params: {
+            accessPrograms: { cyber: "daybreak_blue" },
+            serviceTier: "ultrafast", // "priority" for Fast
+          },
+        },
+      },
+    },
+  },
+}
+```
+
+GPT-6.1 Sol and GPT-6 Astra require **Daybreak Red approval** and project
+access even though their request value is `daybreak_blue`; `daybreak_red` is not
+the correct value for those models. Match the program to the selected model in
+the [Daybreak guide](https://developers.openai.com/api/docs/guides/daybreak).
+The model and account must independently support the requested
+[Fast](https://developers.openai.com/api/docs/guides/fast-mode) or
+[Ultrafast](https://developers.openai.com/api/docs/guides/ultrafast-mode) tier.
+OpenClaw sends both settings without applying the retiring aliases' speed limits
+to specific model IDs. Provider authorization and fulfillment remain server-owned.
+
+Until retirement, explicitly selected aliases retain their existing Responses
+metadata: Blue keeps reasoning enabled and supports Standard/Fast; Red also
+supports reasoning off and uses Standard. Neither supports Ultrafast. Their
+unknown cost estimates do not mean requests are free. These legacy rows stay
+only to keep existing selections interpretable during migration, not to name a
+replacement or grant access.
 
 ## GPT-6 Astra
 

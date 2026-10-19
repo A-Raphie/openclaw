@@ -2,6 +2,7 @@ import { streamSimple, type SimpleStreamOptions } from "openclaw/plugin-sdk/llm"
 import type { ProviderWrapStreamFnContext } from "openclaw/plugin-sdk/plugin-entry";
 import { buildProviderStreamFamilyHooks } from "openclaw/plugin-sdk/provider-stream-family";
 import { asOptionalRecord, normalizeFastMode } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { classifyOpenAIBaseUrl } from "./base-url.js";
 import { createOpenAINativeWebSearchWrapper } from "./native-web-search.js";
 import { resolveOpenAIModelServiceTiers } from "./service-tier-policy.js";
 import { TOKEN_SHARING_AUTH_FLOW } from "./token-sharing.js";
@@ -35,6 +36,46 @@ export function wrapOpenAIResponsesStream(ctx: ProviderWrapStreamFnContext) {
           }
           return requested === "ultrafast" ? true : requested;
         },
+      },
+    };
+  }
+  const configuredAccessPrograms = ctx.extraParams?.accessPrograms;
+  if (configuredAccessPrograms !== undefined) {
+    const accessPrograms = asOptionalRecord(configuredAccessPrograms);
+    const cyber = accessPrograms?.cyber;
+    if (
+      !accessPrograms ||
+      Object.keys(accessPrograms).some((key) => key !== "cyber") ||
+      !["standard", "daybreak_blue", "daybreak_red"].some((value) => value === cyber)
+    ) {
+      throw new Error(
+        'OpenAI params.accessPrograms must be { cyber: "standard" | "daybreak_blue" | "daybreak_red" }.',
+      );
+    }
+    const underlying = streamContext.streamFn ?? streamSimple;
+    streamContext = {
+      ...streamContext,
+      streamFn: (model, context, options) => {
+        if (
+          model.api !== "openai-responses" ||
+          classifyOpenAIBaseUrl(model.baseUrl) !== "platform"
+        ) {
+          throw new Error(
+            "OpenAI params.accessPrograms requires the OpenAI Platform Responses API. Use the native Daybreak toggle for Codex.",
+          );
+        }
+        return underlying(model, context, {
+          ...options,
+          onPayload: async (payload, payloadModel) => {
+            const transformed = await options?.onPayload?.(payload, payloadModel);
+            const request = asOptionalRecord(transformed ?? payload);
+            if (!request) {
+              throw new Error("OpenAI access programs require a Responses request object.");
+            }
+            // Program selection and speed are independent; neither grants account access.
+            return { ...request, access_programs: { cyber } };
+          },
+        });
       },
     };
   }
