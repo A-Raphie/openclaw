@@ -41,7 +41,6 @@ type InstalledAgent = {
 
 const INSTALLATION_STATUS = {
   installed: { kind: "muted", labelKey: "modelProviders.installedAgents.status.installed" },
-  missing: { kind: "muted", labelKey: "modelProviders.installedAgents.status.missing" },
   unverified: { kind: "warn", labelKey: "modelProviders.installedAgents.status.unverified" },
 } as const;
 
@@ -346,12 +345,11 @@ export function createInstalledAgents(options: InstalledAgentsOptions) {
       const enabled =
         requested ?? (typeof configuredEnabled === "boolean" ? configuredEnabled : agent.enabled);
       const card = getCards().find((entry) => entry.id === agent.runtimeId);
+      // Rows render only for detected apps; missing ones share one line below the list.
       let status: { kind: "ok" | "muted" | "warn" | "danger"; labelKey: string } =
-        INSTALLATION_STATUS[agent.installation];
+        INSTALLATION_STATUS[agent.installation === "unverified" ? "unverified" : "installed"];
       let hint = "";
-      if (agent.installation === "missing") {
-        hint = t("modelProviders.installedAgents.installHint", { name: agent.name });
-      } else if (agent.installation === "unverified") {
+      if (agent.installation === "unverified") {
         hint = t("modelProviders.installedAgents.unverifiedHint");
       } else if (!enabled) {
         hint = t("modelProviders.installedAgents.disabledHint");
@@ -434,6 +432,12 @@ export function createInstalledAgents(options: InstalledAgentsOptions) {
         available: available(),
         blockedReason: blockedReason(),
       }));
+      const detected = createMemo(() =>
+        (view().agents ?? []).filter((agent) => agent.installation !== "missing"),
+      );
+      const missing = createMemo(() =>
+        (view().agents ?? []).filter((agent) => agent.installation === "missing"),
+      );
       const checkLabel = () =>
         t(
           view().loading
@@ -474,7 +478,7 @@ export function createInstalledAgents(options: InstalledAgentsOptions) {
               <Show when={view().error}>
                 <div class="settings-row">
                   <div class="settings-row__text">
-                    <span class="settings-row__desc provider-usage-error" role="alert">
+                    <span class="settings-row__desc provider-usage__error" role="alert">
                       {view().error}
                     </span>
                   </div>
@@ -491,12 +495,25 @@ export function createInstalledAgents(options: InstalledAgentsOptions) {
               </Show>
               <Show when={view().agents !== null}>
                 <For
-                  each={view().agents ?? []}
+                  each={detected()}
                   keyed={(agent) => agent.id}
-                  fallback={<SettingsEmpty message={t("modelProviders.installedAgents.empty")} />}
+                  fallback={
+                    <Show when={missing().length === 0}>
+                      <SettingsEmpty message={t("modelProviders.installedAgents.empty")} />
+                    </Show>
+                  }
                 >
                   {(agent) => <AgentRow agent={agent()} />}
                 </For>
+                <Show when={missing().length > 0}>
+                  <p class="model-providers__agents-missing" data-installed-agents-missing>
+                    {t("modelProviders.installedAgents.notDetected", {
+                      names: missing()
+                        .map((agent) => agent.name)
+                        .join(", "),
+                    })}
+                  </p>
+                </Show>
               </Show>
             </SettingsSection>
           </div>

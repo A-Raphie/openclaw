@@ -41,11 +41,11 @@ it("shows lower-bound totals after interruption while keeping completed session 
   expect(
     [...container.querySelectorAll(".usage-metric-badge strong")].map((node) => node.textContent),
   ).toEqual(["≥ 2.6K", "≥ $0.00", "2"]);
-  // Analytics stay visible; a note explains the lower bound instead of hiding them.
+  // Analytics stay visible; the note explains the lower bound instead of hiding them.
   expect(container.querySelector(".usage-trend-section")).not.toBeNull();
-  expect(container.querySelector('.usage-callout[role="note"]')?.textContent).toContain(
-    "lower bound",
-  );
+  expect(
+    container.querySelector(".usage-lower-bound:not(.usage-lower-bound--off)")?.textContent,
+  ).toContain("lower bound");
   expect(container.querySelector('[title="interrupted"] .session-bar-value')?.textContent).toBe(
     "≥ 0",
   );
@@ -62,8 +62,9 @@ it("shows lower-bound totals after interruption while keeping completed session 
       ?.closest(".usage-summary-card")
       ?.querySelector(".usage-summary-value")
       ?.textContent?.trim();
-  expect(summaryValue("cache-hit-rate")).toBe("—");
-  expect(summaryValue("average-tokens")).toBe("—");
+  // Partial tokens over exact message counts are lower bounds; partial-over-partial is approximate.
+  expect(summaryValue("cache-hit-rate")).toMatch(/^≈ /);
+  expect(summaryValue("average-tokens")).toMatch(/^≥ /);
   expect(container.textContent).not.toContain("of cost");
 
   setSelection(["completed"]);
@@ -72,10 +73,14 @@ it("shows lower-bound totals after interruption while keeping completed session 
     [...container.querySelectorAll(".usage-metric-badge strong")].map((node) => node.textContent),
   ).toEqual(["2.6K", "$0.00", "1"]);
   expect(container.querySelector(".usage-trend-section")).not.toBeNull();
-  expect(container.querySelector('.usage-callout[role="note"]')).toBeNull();
+  expect(container.querySelector(".usage-callout")).toBeNull();
+  // Exact totals keep the chip's slot but hide it, so the header never reflows.
+  expect(container.querySelector(".usage-lower-bound")?.classList).toContain(
+    "usage-lower-bound--off",
+  );
   // An exact selection shows exact sums and ratios again.
   expect(container.querySelector(".cost-breakdown-total")?.textContent).not.toContain("≥");
-  expect(summaryValue("average-tokens")).not.toBe("—");
+  expect(summaryValue("average-tokens")).not.toMatch(/^[≥≈]/);
 });
 
 it("keeps the lower-bound note for full-session charts when only the selected day is complete", () => {
@@ -108,7 +113,7 @@ it("keeps the lower-bound note for full-session charts when only the selected da
   expect(container.querySelector(".usage-trend-section")).not.toBeNull();
   expect(container.querySelector(".usage-mosaic")).not.toBeNull();
   // Full-session rollups still include the interrupted day.
-  expect(container.querySelector('.usage-callout[role="note"]')?.textContent).toContain(
-    "lower bound",
-  );
+  expect(
+    container.querySelector(".usage-lower-bound:not(.usage-lower-bound--off)")?.textContent,
+  ).toContain("lower bound");
 });

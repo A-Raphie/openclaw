@@ -9,6 +9,7 @@ import {
   createPage,
   focusDocument,
   preloadUsage,
+  showRecentSessions,
 } from "./usage-page.test-support.ts";
 
 afterEach(cleanupUsagePageTest);
@@ -19,8 +20,16 @@ it.each([
     filtered: false,
     selectedLabels: ["May 1", "May 2", "May 3", "May 4"],
   },
-  { cache: "partial" as const, filtered: false, selectedLabels: ["May 2", "May 4"] },
-  { cache: "partial" as const, filtered: true, selectedLabels: ["May 2", "May 4"] },
+  {
+    cache: "partial" as const,
+    filtered: false,
+    selectedLabels: ["May 1", "May 2", "May 3", "May 4"],
+  },
+  {
+    cache: "partial" as const,
+    filtered: true,
+    selectedLabels: ["May 1", "May 2", "May 3", "May 4"],
+  },
 ])(
   "selects the displayed calendar range with Shift-click for a $cache report (filtered: $filtered)",
   async ({ cache, filtered, selectedLabels }) => {
@@ -56,6 +65,7 @@ it.each([
     );
     const page = await createPage({ request } as unknown as GatewayBrowserClient, true);
     await preloadUsage(page);
+    await showRecentSessions(page);
     const startDate = page.querySelector<HTMLInputElement>('input[aria-label="Start date"]')!;
     startDate.value = "2026-05-01";
     startDate.dispatchEvent(new Event("change", { bubbles: true }));
@@ -83,9 +93,18 @@ it.each([
             "May 3, 2026: 0 tokens, $0.00",
             "May 4, 2026: 900 tokens, $0.00",
           ]
-        : ["May 2, 2026: 100 tokens, $0.00", "May 4, 2026: 900 tokens, $0.00"],
+        : // A partial report draws the whole calendar; days it has not reached are pending, not zero.
+          [
+            "May 1, 2026: not loaded yet",
+            "May 2, 2026: 100 tokens, $0.00",
+            "May 3, 2026: not loaded yet",
+            "May 4, 2026: 900 tokens, $0.00",
+          ],
     );
-    expect(page.querySelectorAll(".daily-bar--empty")).toHaveLength(cache === "fresh" ? 2 : 0);
+    expect(page.querySelectorAll(".daily-bar--empty")).toHaveLength(2);
+    expect(page.querySelectorAll(".daily-bar-wrapper--pending")).toHaveLength(
+      cache === "fresh" ? 0 : 2,
+    );
     expect(page.querySelector(".daily-chart-range")?.textContent).toContain("May 1, 2026");
     bars()[0]!.click();
     await vi.advanceTimersByTimeAsync(0);

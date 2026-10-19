@@ -72,7 +72,6 @@ suite.define(() => {
                 ],
               },
               "usage.status": { updatedAt: Date.now(), providers: [] },
-              "sessions.usage": { aggregates: { byProvider: [] } },
             },
           });
           await page.goto(`${suite.server.baseUrl}settings/model-providers`);
@@ -185,6 +184,8 @@ suite.define(() => {
             .waitFor({ state: "visible" });
           expect(await primary.getAttribute("aria-expanded")).toBe("true");
           expect(await primary.textContent()).toContain("GPT-5.5");
+          // Close the open list first; it can drop down over the Decision row.
+          await page.keyboard.press("Escape");
           await openPicker(decision);
           expect(
             await decision.locator('[role="option"][data-value="openai/account-new"]').count(),

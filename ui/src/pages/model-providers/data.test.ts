@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { expect, it } from "vitest";
-import { createEmptyCostUsageTotals } from "../../../../src/infra/session-cost-usage-totals.js";
 import type {
   ModelAuthStatusProvider,
   ModelAuthStatusResult,
@@ -55,7 +54,6 @@ function input(
     authStatus: { ts: 1, providers, providerCapabilities },
     models: null,
     providerUsage: null,
-    costByProvider: null,
     ...extra,
   };
 }
@@ -274,19 +272,6 @@ it("prefers usage.status snapshots over the auth-status embed", () => {
   ]);
 });
 
-it("attaches local spend through aliases and includes cost-only providers", () => {
-  const totals = { ...createEmptyCostUsageTotals(), totalTokens: 150, totalCost: 0.42 };
-  const cards = build([provider("claude-cli")], {
-    costByProvider: [
-      { provider: "anthropic", count: 3, totals },
-      { provider: "openrouter", count: 1, totals },
-    ],
-  });
-  expect(cards).toMatchObject([
-    { id: "anthropic", localCost: { totalCost: 0.42, totalTokens: 150, messageCount: 3 } },
-    { id: "openrouter" },
-  ]);
-});
 it("keeps a fresh restricted catalog authoritative over a draft", () => {
   const configured = defaults(modelSelection("openai/configured-model"));
   const presentation = resolveDefaultModelPresentation(

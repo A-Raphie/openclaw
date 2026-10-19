@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { i18n } from "../../i18n/index.ts";
+import { i18n, t } from "../../i18n/index.ts";
 import { captureI18nStateForTesting } from "../../i18n/lib/translate.test-support.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
@@ -65,7 +65,6 @@ describe("UsageInsights", () => {
             errorRate: 0,
           },
           showCostHint: false,
-          showCostShares: true,
           errorHours: [],
           sessionCount: 1,
           totalSessions: 1,
@@ -148,7 +147,6 @@ describe("UsageInsights", () => {
           },
           stats: { durationCount: 0, avgDurationMs: 0, errorRate: 0 },
           showCostHint: false,
-          showCostShares: true,
           errorHours: [],
           sessionCount: 1,
           totalSessions: 1,
@@ -157,7 +155,7 @@ describe("UsageInsights", () => {
     );
     flush();
     // A complete provider's share of an incomplete total is unknown, not 100%.
-    expect(container.textContent).toContain("openai");
+    expect(container.textContent).toContain("OpenAI");
     expect(container.textContent).not.toContain("of cost");
   });
 
@@ -174,7 +172,6 @@ describe("UsageInsights", () => {
           },
           stats: { durationCount: 0, avgDurationMs: 0, errorRate: 0 },
           showCostHint: false,
-          showCostShares: true,
           errorHours: [],
           sessionCount: 1,
           totalSessions: 1,
@@ -183,10 +180,41 @@ describe("UsageInsights", () => {
     );
     flush();
     const provider = [...container.querySelectorAll(".usage-list-item")].find((item) =>
-      item.textContent?.includes("ollama"),
+      item.textContent?.toLowerCase().includes("ollama"),
     );
     expect(provider?.querySelector(".usage-list-value")?.textContent).toContain("Unpriced");
     expect(provider?.textContent).not.toContain("$0.00");
+  });
+
+  it("names the provider of each top model so same-named models stay distinct", () => {
+    const container = document.createElement("div");
+    const used = { ...totals, totalTokens: 100, totalCost: 1 };
+    mountSolid(
+      () =>
+        UsageInsights({
+          totals: used,
+          aggregates: {
+            ...aggregates,
+            byModel: [
+              { provider: "anthropic", model: "claude-opus-5.5", count: 2, totals: used },
+              { provider: "github-copilot", model: "claude-opus-5.5", count: 1, totals: used },
+            ],
+          },
+          stats: { durationCount: 0, avgDurationMs: 0, errorRate: 0 },
+          showCostHint: false,
+          errorHours: [],
+          sessionCount: 1,
+          totalSessions: 1,
+        }),
+      { container },
+    );
+    flush();
+    const subs = [...container.querySelectorAll(".usage-list-item")]
+      .filter((item) => item.querySelector(".usage-list-label")?.textContent === "claude-opus-5.5")
+      .map((item) => item.querySelector(".usage-list-sub")?.textContent ?? "");
+    expect(subs).toHaveLength(2);
+    expect(subs[0]).toMatch(/^Anthropic · /u);
+    expect(subs[1]).not.toMatch(/^Anthropic · /u);
   });
 });
 
@@ -242,9 +270,9 @@ describe("renderCostWindowComparison", () => {
     );
     flush();
 
-    const range = container.querySelector(".cost-window-card--range");
-    expect(range?.querySelector(".cost-window-card__value")?.textContent?.trim()).toBe("$0.0030");
-    expect(range?.querySelector(".cost-window-card__meta")?.textContent).toContain("$0.0001 / day");
+    const range = container.querySelector(".cost-window--range");
+    expect(range?.querySelector(".cost-window__value")?.textContent?.trim()).toBe("$0.0030");
+    expect(range?.querySelector(".cost-window__meta")?.textContent).toContain("$0.0001 / day");
   });
 });
 
@@ -385,7 +413,7 @@ describe("SessionsCard", () => {
     const buttons = [...container.querySelectorAll<HTMLButtonElement>(".session-bar-selection")];
     expect(buttons[1]).toBe(first);
     expect(first.querySelector(".session-bar-title")?.textContent).toBe("Renamed");
-    expect(first.querySelector(".session-bar-meta")?.textContent).toContain("channel:web");
+    expect(first.querySelector(".session-bar-meta")?.textContent).toContain("web");
     expect(
       first.closest(".session-bar-row")?.querySelector(".session-bar-value")?.textContent,
     ).toBe("250");
@@ -427,11 +455,12 @@ describe("SessionsCard", () => {
       const row = container.querySelector(".session-bar-row");
       const value = () => row?.querySelector(".session-bar-value")?.textContent;
       const average = () => container.querySelector(".sessions-card-stats > span")?.textContent;
-      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain("dur:1m");
+      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain("1m");
       // A response that ended before final usage leaves its subtotal as a lower bound.
-      expect(value()).toMatch(/^≥ \d/);
-      expect(average()).toMatch(/^≥ /);
-      const englishValue = value();
+      const atLeast = (amount: string) => t("usage.common.atLeast", { value: amount });
+      expect(value()).toBe(atLeast("100"));
+      expect(value()).toBe("≥ 100");
+      expect(average()).toBe(`${atLeast("100")} ${t("usage.sessions.avg")}`);
       await i18n.setLocale("de");
       flush();
       expect(container.querySelector(".session-bar-row")).toBe(row);
@@ -440,18 +469,18 @@ describe("SessionsCard", () => {
         unit: "minute",
         unitDisplay: "narrow",
       }).format(1);
-      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain(`dur:${germanMinute}`);
-      // The lower bound keeps the same number in every locale.
-      expect(value()).toBe(englishValue);
-      expect(average()).toMatch(/^≥ /);
+      expect(row?.querySelector(".session-bar-meta")?.textContent).toContain(germanMinute);
+      expect(value()).toBe(atLeast("100"));
+      expect(average()).toBe(`${atLeast("100")} ${t("usage.sessions.avg")}`);
+      expect(t("usage.sessions.avg")).not.toBe("avg");
       setDisplay({ ...base.display, chartMode: "cost" });
       flush();
-      expect(value()).toMatch(/^≥ \$/);
+      expect(value()).toBe(atLeast("$0.00"));
       await i18n.setLocale("en");
       flush();
       expect(container.querySelector(".session-bar-row")).toBe(row);
       expect(value()).toBe("≥ $0.00");
-      expect(average()).toMatch(/^≥ \$/);
+      expect(average()).toBe("≥ $0.00 avg");
     } finally {
       await restoreI18n();
     }
@@ -484,5 +513,31 @@ describe("SessionsCard", () => {
       [...container.querySelectorAll(".session-bar-title")].map((entry) => entry.textContent),
     ).toEqual(["B", "A"]);
     expect(container.querySelector(".sessions-card-stats")?.textContent).toContain("500 avg");
+  });
+
+  it("leads with the top ten sessions and expands to the full page on request", () => {
+    const base = createUsageProps();
+    const sessions = Array.from({ length: 12 }, (_, index) => session(`S${index + 1}`));
+    const overview = createUsageOverview({ total: 12, tableSessionCount: 12 });
+    const container = document.createElement("div");
+    mountSolid(
+      () =>
+        SessionsCard({
+          sessions,
+          usage: { ...base, data: { ...base.data, overview } },
+          overview,
+          totalSessions: 12,
+        }),
+      { container },
+    );
+    flush();
+    const rows = () => container.querySelectorAll(".session-bar-row").length;
+    expect(rows()).toBe(10);
+    const toggle = container.querySelector<HTMLButtonElement>(".sessions-show-all")!;
+    expect(toggle.textContent?.trim()).toBe("Show all 12");
+    toggle.click();
+    flush();
+    expect(rows()).toBe(12);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
   });
 });

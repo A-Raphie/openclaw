@@ -32,7 +32,9 @@ export function UsagePageShell(props: {
   );
   return (
     <>
+      {/* Stacked keeps the title beside its subtitle instead of centering it in the toolbar row. */}
       <SettingsPageHeader
+        stacked
         title={header().title}
         subtitle={header().subtitle}
         actions={

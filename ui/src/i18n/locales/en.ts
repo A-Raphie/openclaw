@@ -2596,6 +2596,7 @@ export const en: TranslationMap & {
       emptyValue: "—",
       unknown: "unknown",
       atLeast: "≥ {value}",
+      approx: "≈ {value}",
     },
     loading: {
       title: "Usage Overview",
@@ -2634,6 +2635,9 @@ export const en: TranslationMap & {
       costCategories: "Cost categories",
       remaining: "{percent}% left",
       resets: "Resets {date}",
+      exhausted: "{label} is used up.",
+      checkFailed: "Check failed",
+      exhaustedUntil: "{label} is used up until {date}.",
     },
     presets: {},
     scope: {},

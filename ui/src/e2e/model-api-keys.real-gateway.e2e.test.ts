@@ -10,6 +10,7 @@ import {
 } from "../../../test/helpers/openclaw-test-instance.js";
 import { waitForControlUiGatewayReady } from "../test-helpers/control-ui-e2e-readiness.js";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.js";
+import { expandProvider } from "./model-providers.test-support.ts";
 
 let instance: OpenClawTestInstance;
 const key = "synthetic-shared-model-key";
@@ -85,8 +86,7 @@ suite.define(() => {
         async ({ page }) => {
           await page.goto(url.href);
           await waitForControlUiGatewayReady(page);
-          const card = page.locator('[data-provider-id="fixture"]');
-          await card.waitFor();
+          const card = await expandProvider(page, "fixture");
           await page.screenshot({ path: path.join(suite.artifactDir, "before-edit.png") });
           await card.getByRole("button", { name: "Set API key" }).click();
           await card.getByLabel("API key").fill(key);
@@ -104,8 +104,15 @@ suite.define(() => {
           expect(saved.model).toBe("fixture/current");
           expect(await card.textContent()).not.toContain("could not refresh");
 
-          await card.getByRole("button", { name: "Remove key", exact: true }).click();
-          await expect.poll(() => card.textContent()).toContain("Saved API keys removed.");
+          // Remove provider confirms first, then deletes the saved key.
+          await card.getByRole("button", { name: "Remove provider", exact: true }).click();
+          await page
+            .locator("openclaw-modal-dialog")
+            .getByRole("button", { name: "Remove provider", exact: true })
+            .click();
+          await expect
+            .poll(async () => (await persistedAuth()).profiles["fixture:manual"])
+            .toBeUndefined();
           const removed = await persistedAuth();
           observations.push({ action: "ui-remove", state: removed });
           await page.screenshot({ path: path.join(suite.artifactDir, "removed.png") });
@@ -170,8 +177,13 @@ suite.define(() => {
           await instance.startGateway();
           await page.reload();
           await waitForControlUiGatewayReady(page);
+          // With no saved key left, the row offers nothing to remove.
+          const summary = card.locator("button.provider-row__summary");
+          if ((await summary.count()) > 0) {
+            await expandProvider(page, "fixture");
+          }
           await expect
-            .poll(() => card.getByRole("button", { name: "Remove key", exact: true }).count())
+            .poll(() => card.getByRole("button", { name: "Remove provider", exact: true }).count())
             .toBe(0);
           await page.screenshot({ path: path.join(suite.artifactDir, "after-cli-removal.png") });
         },

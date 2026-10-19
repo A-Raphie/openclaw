@@ -644,8 +644,7 @@ const enSettings = {
     },
     subtitle: "Global model defaults and provider access for your agents.",
     accessTitle: "Provider access",
-    accessDescription:
-      "Manage connections for the selected agent. Global defaults above apply to all agents.",
+    accessDescription: "Connections for {agent}. Defaults above apply to all agents.",
     search: "Search providers…",
     noMatches: "No providers match your search.",
     updated: "Updated {time}",
@@ -669,10 +668,18 @@ const enSettings = {
     models: "{count} models",
     modelOne: "1 model",
     modelsAvailable: "{available} of {count} models available",
-    globalUsage: "Global usage and cost",
     noStats: "No live usage data reported by this provider.",
-    localCost: "Global session spend · {days}d",
-    localCostDetail: "{tokens} tokens · {messages} messages",
+    viewUsage: "View usage",
+    row: {
+      accounts: "Accounts",
+      notConnected: "Not connected",
+      catalogOnly: "{models} in the catalog, no saved credentials",
+      noCredentials: "No saved credentials",
+      managedOutside: "Credentials managed outside OpenClaw",
+    },
+    limits: {
+      title: "Plan limits",
+    },
     saving: "Saving…",
     requestFailed: "Request failed.",
     configUnavailable: "Configuration is unavailable. Refresh and try again.",
@@ -689,8 +696,10 @@ const enSettings = {
     profiles: {
       title: "Provider profiles",
       accountOne: "1 account",
-      account: "Account {number}",
-      details: "Details",
+      kindApiKey: "API key",
+      kindToken: "Access token",
+      kindOauth: "Signed-in account",
+      kindNumbered: "{kind} {number}",
       accounts: "{count} accounts",
       reorderHint: "Drag to set your preferred account order.",
       reorder: "Reorder {account}, position {position}",
@@ -715,9 +724,7 @@ const enSettings = {
       placeholder: "Enter provider API key",
       replacePlaceholder: "Secret saved. Enter a new key to replace it.",
       set: "Set API key",
-      remove: "Remove key",
       saved: "Secret saved.",
-      removed: "Saved API keys removed.",
       authModeBlocked: 'API key changes are unavailable while auth mode is "{mode}".',
     },
     probe: {
@@ -740,8 +747,6 @@ const enSettings = {
     readiness: {
       title: "AI setup",
       heading: "Connect a verified AI model",
-      readyHeading: "AI models available",
-      readyDescription: "Choose a default model below, or connect another provider.",
       signedInNoModels:
         "You're signed in, but this account exposes no usable models. Choose another provider or account to continue.",
       notConfigured: "Choose a provider and verify the model OpenClaw will use.",
@@ -756,6 +761,13 @@ const enSettings = {
         "Remove the saved sign-in for {provider} from OpenClaw? You can add this account again later.",
       loggingOut: "Logging out…",
       done: "Logged out.",
+    },
+    remove: {
+      action: "Remove provider",
+      title: "Remove {provider}",
+      confirm:
+        "Sign out every saved account and delete the saved API key for {provider}? Runs using it stop. You can connect it again later.",
+      kept: "{source} stays; remove it there to disconnect fully.",
     },
     add: {
       title: "Add provider",
@@ -809,7 +821,6 @@ const enSettings = {
         "Coding apps on the Gateway computer. Each app manages its own account and permissions. Enabling an app does not sign you in.",
       status: {
         installed: "Installed",
-        missing: "Not detected",
         unverified: "Not verified",
         signIn: "Sign in required",
         discovering: "Discovering models…",
@@ -817,7 +828,7 @@ const enSettings = {
       },
       unverifiedHint:
         "Check this app's custom launch command on the Gateway computer, then check again.",
-      installHint: "Install and sign in to {name} on the Gateway computer, then check again.",
+      notDetected: "Not detected on the Gateway computer: {names}. Install one, then check again.",
       disabledHint: "Enable this app to include its models in the picker.",
       signInHint: "Open {name} on the Gateway computer and check its sign-in, then check again.",
       discoveryHint:

@@ -51,6 +51,8 @@ type UsageDataState = {
   loading: boolean;
   exporting: boolean;
   error: string | null;
+  /** The gateway answered with part of the range; not an error. */
+  partialNotice?: string | null;
   sessions: UsageSessionEntry[];
   creatorOptions: NonNullable<SessionsUsageResult["creatorOptions"]>;
   overview?: SessionsUsageResult["overview"];
@@ -84,7 +86,7 @@ type UsageFilterState = {
 
 type UsageDisplayState = {
   chartMode: "tokens" | "cost";
-  dailyChartMode: "total" | "by-type";
+  dailyChartMode: "total" | "by-type" | "by-provider";
   sessionSort: "tokens" | "cost" | "recent" | "messages" | "errors";
   sessionSortDir: "asc" | "desc";
   recentSessions: string[];
