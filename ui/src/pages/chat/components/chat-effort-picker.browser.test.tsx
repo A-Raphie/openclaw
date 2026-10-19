@@ -33,11 +33,13 @@ async function fixture(
   inherited = false,
   fastMode?: ChatFastModeSelectState,
   open = true,
+  accessProgram?: Parameters<typeof ChatEffortPicker>[0]["accessProgram"],
 ) {
   host ??= document.body.appendChild(document.createElement("div"));
   const onThinkingSelect = vi.fn(async () => undefined);
   const onFastModeSelect = vi.fn(async () => undefined);
   const next: Parameters<typeof ChatEffortPicker>[0] = {
+    accessProgram,
     disabled: false,
     thinkingDisabled: false,
     sessionKey: "effort-preview",
@@ -351,4 +353,29 @@ describe("effort bar colour and flow", () => {
     expect(onThinkingSelect).toHaveBeenCalledExactlyOnceWith("low", "effort-preview");
     expect(appearance(input)).toEqual(maximumStyle);
   });
+});
+
+it("keeps the requested program distinct from provider confirmation and respects disabled state", async () => {
+  const onSelect = vi.fn();
+  const accessProgram = {
+    sessionKey: "effort-preview",
+    disabled: false,
+    reported: "standard" as const,
+    onSelect,
+  };
+  await fixture(["low", "high"], "low", false, undefined, true, accessProgram);
+  const select = host!.querySelector<HTMLSelectElement>("[data-chat-access-program]")!;
+  expect(select.value).toBe("");
+  await userEvent.selectOptions(select, "daybreak_red");
+  expect(onSelect).toHaveBeenLastCalledWith("daybreak_red", "effort-preview");
+  await fixture(["low", "high"], "low", false, undefined, true, {
+    ...accessProgram,
+    requested: "daybreak_red",
+    disabled: true,
+  });
+  expect(select.value).toBe("daybreak_red");
+  expect(select.disabled).toBe(true);
+  expect(host!.querySelector("[data-chat-access-reported]")!.textContent).toContain(
+    "Last response: Standard",
+  );
 });

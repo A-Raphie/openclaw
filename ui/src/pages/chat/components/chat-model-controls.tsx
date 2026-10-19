@@ -2,11 +2,13 @@ import { createMemo, type Accessor } from "solid-js";
 import type { ChatAccountSelection } from "../../../../../packages/gateway-protocol/src/index.ts";
 import { resolveModelRuntimeRoute } from "../../../../../src/shared/model-runtime-route.js";
 import type {
+  CyberAccessProgram,
   ModelAuthStatusResult,
   ModelCatalogEntry,
   SessionsListResult,
 } from "../../../api/types.ts";
 import { registerModelControlsEnglish } from "../../../i18n/locales/en-model-controls.ts";
+import { readResponseAccessProgram } from "../../../lib/chat/cyber-access-program.ts";
 import {
   normalizeChatModelProviderId,
   resolvePreferredServerChatModelValue,
@@ -72,6 +74,10 @@ export type ChatModelControlsProps = {
   effortMutationDisabledReason?: string;
   contextWindowMutationDisabledReason?: string;
   fastModeTarget?: ChatFastModeTarget;
+  accessProgramMutationDisabledReason?: string;
+  requestedAccessProgram?: CyberAccessProgram;
+  responseMessages?: readonly unknown[];
+  onAccessProgramSelect?: (value: CyberAccessProgram | null, sessionKey: string) => unknown;
   sending: boolean;
   sessionKey: string;
   selectedSession: SessionsListResult["sessions"][number] | undefined;
@@ -540,11 +546,17 @@ function createChatModelControls(props: ChatModelControlsProps): Accessor<{
     const selectedContextWindow =
       contextWindowOwner?.contextWindow ?? contextWindowOwner?.contextWindowDefault ?? "";
     const defaultContextWindow = contextWindowOwner?.contextWindowDefault;
+    const showAccessProgram =
+      Boolean(props.onAccessProgramSelect) &&
+      (catalog.provider(currentOverride || defaultModel) === "openai" ||
+        props.requestedAccessProgram !== undefined);
+    const accessProgramDisabled =
+      commonDisabled || Boolean(props.accessProgramMutationDisabledReason);
     const effortDisabled =
       commonDisabled ||
-      effortMutationDisabled ||
       !hasResolvableModel ||
-      (thinking.options.length === 0 && fastMode.disabled);
+      ((effortMutationDisabled || (thinking.options.length === 0 && fastMode.disabled)) &&
+        (!showAccessProgram || accessProgramDisabled));
     // Keep the effort control mounted but hidden until its catalog resolves.
     const reserveEffortPicker = !hasResolvableModel;
     return {
@@ -597,6 +609,21 @@ function createChatModelControls(props: ChatModelControlsProps): Accessor<{
         onTargetSelect: props.onModelPickerTargetSelect,
       },
       effort: {
+        accessProgram:
+          showAccessProgram && props.onAccessProgramSelect
+            ? {
+                requested: props.requestedAccessProgram,
+                reported: props.modelSwitching
+                  ? undefined
+                  : readResponseAccessProgram(
+                      props.responseMessages ?? [],
+                      currentOverride || defaultModel,
+                    ),
+                disabled: accessProgramDisabled,
+                sessionKey: props.sessionKey,
+                onSelect: props.onAccessProgramSelect,
+              }
+            : undefined,
         disabled: effortDisabled,
         disabledReason: props.effortMutationDisabledReason,
         fastMode: {

@@ -9,11 +9,16 @@ import type {
 import type { ChatThinkingSelectState } from "../../../lib/chat/thinking.ts";
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { liveValue } from "../../../lib/reactive/live-value.ts";
+import {
+  ChatAccessProgramControl,
+  type ChatAccessProgramControlProps,
+} from "./chat-access-program-control.tsx";
 import { createChatPickerOverlay } from "./chat-picker-overlay.ts";
 
 registerEnglishCatalog(registerModelControlsEnglish);
 
 export type ChatEffortPickerParams = {
+  accessProgram?: ChatAccessProgramControlProps;
   disabled: boolean;
   disabledReason?: string;
   fastMode: ChatFastModeSelectState;
@@ -133,7 +138,11 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
       onlyStopSelected: selection.kind === "anchored" && selection.index === 0,
     };
   });
-  const visible = () => props.reserved || view().showReasoning || props.fastMode.supported;
+  const visible = () =>
+    props.reserved ||
+    view().showReasoning ||
+    props.fastMode.supported ||
+    props.accessProgram !== undefined;
   // Catalog and status refreshes must not overwrite an uncommitted native drag.
   const committedSliderValue = createMemo(() => String(view().sliderIndex));
   const sliderFillPercent = (index: number, count: number) =>
@@ -454,6 +463,7 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
                       ) : undefined}
                     </div>
                   )}
+                  {props.accessProgram && <ChatAccessProgramControl {...props.accessProgram} />}
                   {props.fastMode.supported && (
                     <div class="chat-controls__speed-panel">
                       <span class="chat-controls__effort-heading">

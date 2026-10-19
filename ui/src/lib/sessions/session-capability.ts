@@ -359,7 +359,10 @@ export type SessionCapability = {
     key: string,
     agentId?: string,
   ) =>
-    | Pick<GatewaySessionRow, "thinkingLevel" | "fastMode" | "effectiveFastMode" | "contextWindow">
+    | Pick<
+        GatewaySessionRow,
+        "thinkingLevel" | "fastMode" | "effectiveFastMode" | "contextWindow" | "cyberAccessProgram"
+      >
     | undefined;
   /** Local previews update the primary snapshot; explicit targets also update held incarnations. */
   patchRowLocal: (

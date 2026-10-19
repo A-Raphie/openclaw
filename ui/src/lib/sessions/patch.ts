@@ -1,5 +1,5 @@
 import type { SessionsPatchParams } from "../../../../packages/gateway-protocol/src/index.js";
-import type { SessionsPatchResult } from "../../api/types.ts";
+import type { CyberAccessProgram, SessionsPatchResult } from "../../api/types.ts";
 
 export type { SessionToolOverrides } from "../../../../packages/gateway-protocol/src/index.js";
 
@@ -32,7 +32,7 @@ export type SessionPatch = Pick<
   | "sidebarRoot"
   | "snoozedUntil"
   | "unread"
->;
+> & { cyberAccessProgram?: CyberAccessProgram | null };
 
 export type SessionPatchOptions = {
   agentId?: string;

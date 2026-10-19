@@ -19,6 +19,7 @@ import {
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { captureChatConnectionOwner } from "./chat-connection-owner.ts";
 import { projectChatFields } from "./chat-field-projection.ts";
+import { getAcceptedChatHistorySession } from "./chat-history-state.ts";
 import { ChatPaneModelControl } from "./chat-pane-model-control.tsx";
 import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
 import { switchChatModel, switchChatSetting } from "./chat-session.ts";
@@ -231,6 +232,15 @@ export function renderChatPaneComposerControls(params: {
       initialized: state.chatModelCatalogInitialized,
     },
   );
+  const accessProgramAccess = readSessionMethodAccess(
+    { client: state.client, hello: state.hello, phase: state.connected ? "connected" : "offline" },
+    {
+      method: "sessions.patch",
+      params: { key: sessionKey, cyberAccessProgram: null },
+      sessionScope: true,
+      session: selectedSession,
+    },
+  );
   const thinkingLevelOverride = state.sessions.think(sessionKey, agentScope.agentId);
   const settingsPreview = state.sessions.settingsPreview(sessionKey, agentScope.agentId);
   const settingsSession =
@@ -281,6 +291,15 @@ export function renderChatPaneComposerControls(params: {
         modelOverrides: state.sessions.state.modelOverrides,
         thinkingSession: settingsSession,
         fastModeTarget: settingsSession,
+        accessProgramMutationDisabledReason: accessProgramAccess.allowed
+          ? undefined
+          : accessProgramAccess.reason,
+        requestedAccessProgram: settingsSession?.cyberAccessProgram,
+        responseMessages:
+          selectedSession?.sessionId &&
+          getAcceptedChatHistorySession(state)?.sessionId === selectedSession.sessionId
+            ? state.chatMessages
+            : undefined,
         contextWindowTarget: settingsPreview
           ? { ...(selectedSession ?? state.sessionsResult?.defaults), ...settingsPreview }
           : undefined,
@@ -306,6 +325,14 @@ export function renderChatPaneComposerControls(params: {
         stream: state.chatStream,
         onModelSetup,
         onProviderSettings,
+        onAccessProgramSelect: (next, targetSessionKey) =>
+          canPatch({ cyberAccessProgram: next }, targetSessionKey)
+            ? switchChatSetting(
+                state,
+                { kind: "cyberAccessProgram", value: next },
+                targetSessionKey,
+              )
+            : Promise.resolve(false),
         onFastModeSelect: (next, targetSessionKey) =>
           effortAccess.allowed && canPatch({ fastMode: null }, targetSessionKey)
             ? switchChatSetting(state, { kind: "fastMode", value: next }, targetSessionKey)
