@@ -150,6 +150,9 @@ it("preserves prepared URL prefixes and private effective headers, without crede
   expect(new Headers(fetch.mock.calls[0]?.[1]?.headers).get("x-private-route")).toBe("prepared");
 });
 it("uses one native batch for mixed scalar kinds and retains partial failures and metadata", async () => {
+  // Batch conversion is not a latency test. Keep its caller deadline deterministic;
+  // the deadline/abort scenarios below explicitly advance their own clocks.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
   const input: DecisionBatchV2 = {
     state: { type: "json", value: { supplied: true } },
     questions: {
@@ -230,7 +233,7 @@ it("uses one native batch for mixed scalar kinds and retains partial failures an
   vi.stubGlobal("fetch", fetch);
   const { provider, context } = fixture();
   const outcome = await provider.evaluate(input, context);
-  assert(outcome.status === "ok");
+  assert(outcome.status === "ok", JSON.stringify(outcome));
   expect(validateDecisionResultV2(input, outcome.result)).toBe(true);
   expect(outcome.result.answers).toMatchObject({
     c: { choice: "a", probability: 0.7, probabilities: { a: 0.7, b: 0.3 } },
