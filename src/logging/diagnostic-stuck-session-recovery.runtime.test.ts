@@ -4,6 +4,7 @@ import { getSessionControllerOperation } from "../sessions/session-controller.st
 import { captureSessionTarget } from "../sessions/session-controller.target.js";
 import { testing } from "../sessions/session-controller.test-support.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { captureDiagnosticSessionOperation } from "./diagnostic-controller-projection.js";
 import { getDiagnosticSessionActivitySnapshot } from "./diagnostic-run-activity.js";
 import { requestStuckSessionRecovery } from "./diagnostic-session-recovery-coordinator.js";
 import type { StuckSessionRecoveryRequest } from "./diagnostic-session-recovery.js";
@@ -20,7 +21,6 @@ const classification = {
   reason: "active_work_without_progress",
   classification: "stalled_agent_run",
   activeWorkKind: "embedded_run",
-  recoveryEligible: false,
 } as const;
 function begin() {
   const operation = createReplyOperation({ sessionKey, sessionId, resetTriggered: false });
@@ -59,6 +59,7 @@ describe("diagnostic recovery delegates only to a captured controller", () => {
         incarnation: "physical-second",
       }),
     });
+    vi.setSystemTime(6 * 60_000);
     const activityBeforeRecovery = getDiagnosticSessionActivitySnapshot({ sessionKey });
     expect(activityBeforeRecovery.activeWorkKind).toBeUndefined();
     expect(activityBeforeRecovery.hasActiveEmbeddedRun).toBeUndefined();
@@ -71,13 +72,13 @@ describe("diagnostic recovery delegates only to a captured controller", () => {
     ]) {
       requestStuckSessionRecovery({
         classification,
-        request: { ...request, ageMs: 0 },
+        request: { ...request, operation: captureDiagnosticSessionOperation(request), ageMs: 0 },
         recover: (resolved) => {
           captured.push(resolved.operation);
         },
       });
     }
-    expect(captured).toEqual([undefined, first, second, undefined]);
+    expect(captured).toEqual([first, second]);
     expect(getDiagnosticSessionActivitySnapshot({ sessionKey })).toEqual(activityBeforeRecovery);
   });
 
@@ -101,12 +102,21 @@ describe("diagnostic recovery delegates only to a captured controller", () => {
     "captures A before asynchronous runtime loading and never stops replacement B (keyed=%s)",
     async (keyed) => {
       const first = begin();
+      vi.setSystemTime(6 * 60_000);
       const loaded = createDeferredCore();
       const completed = createDeferredCore();
       let captured: StuckSessionRecoveryRequest | undefined;
       requestStuckSessionRecovery({
         classification,
-        request: { ...(keyed ? { sessionKey } : {}), sessionId, ageMs: 1_000_000 },
+        request: {
+          ...(keyed ? { sessionKey } : {}),
+          sessionId,
+          operation: captureDiagnosticSessionOperation({
+            ...(keyed ? { sessionKey } : {}),
+            sessionId,
+          }),
+          ageMs: 1_000_000,
+        },
         recover: async (request) => {
           captured = request;
           await loaded.promise;
@@ -128,6 +138,40 @@ describe("diagnostic recovery delegates only to a captured controller", () => {
       expect(getSessionControllerOperation(sessionKey)).toBe(replacement);
     },
   );
+
+  it("reports accepted model recovery without treating early diagnostics as stop authority", async () => {
+    const operation = begin();
+    const cancel = vi.fn();
+    const recoverStalledModelCall = vi.fn(() => true);
+    operation.attachBackend({ kind: "embedded", cancel, recoverStalledModelCall });
+    const attempt = operation.watchdog.attachAttempt({ assertCurrent() {} });
+    attempt.beginRequest({ deadlineAtMs: 45_000 });
+    const request = { operation, sessionKey, sessionId, ageMs: 75_000, allowActiveAbort: true };
+
+    // The release fixture reports a stall here, but diagnostics cannot shorten
+    // the controller-owned semantic horizon or interrupt the current attempt.
+    vi.setSystemTime(request.ageMs);
+    expect(await recoverStuckDiagnosticSession(request)).toMatchObject({
+      status: "skipped",
+      action: "observe_only",
+      reason: "active_reply_work",
+    });
+    expect(recoverStalledModelCall).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+
+    vi.setSystemTime(6 * 60_000);
+    expect(await recoverStuckDiagnosticSession({ ...request, ageMs: Date.now() })).toMatchObject({
+      status: "skipped",
+      action: "keep_lane",
+      reason: "model_attempt_recovery",
+    });
+    expect(recoverStalledModelCall).toHaveBeenCalledOnce();
+    expect(cancel).not.toHaveBeenCalled();
+    expect(operation.result).toBeNull();
+    expect(getSessionControllerOperation(sessionKey)).toBe(operation);
+    operation.complete();
+    await operation.ownerSettlement;
+  });
 
   it("deduplicates stop on the operation, not a keyed recovery set", async () => {
     const operation = begin();
@@ -151,6 +195,7 @@ describe("diagnostic recovery delegates only to a captured controller", () => {
     state.state = "processing";
     state.queueDepth = 3;
     const done = createDeferredCore();
+    vi.setSystemTime(1_000_000);
     requestStuckSessionRecovery({
       classification,
       request: { operation, sessionKey, sessionId, ageMs: 1_000_000 },

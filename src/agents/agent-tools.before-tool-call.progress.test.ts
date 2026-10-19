@@ -13,10 +13,7 @@ import {
   resetDiagnosticRunActivityForTest,
   startDiagnosticRunActivityTracking,
 } from "../logging/diagnostic-run-activity.js";
-import {
-  classifySessionAttention,
-  isRepeatedModelRequestStalled,
-} from "../logging/diagnostic-session-attention.js";
+import { classifySessionAttention } from "../logging/diagnostic-session-attention.js";
 import { resetDiagnosticSessionStateForTest } from "../logging/diagnostic-session-state.js";
 import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.wrapper.js";
 import { createModelObserver } from "./embedded-agent-runner/run/attempt.model-diagnostic-observation.js";
@@ -98,7 +95,6 @@ it.each(["completed", "error", "blocked", "retired-during-execution", "retired-b
     const abortNow = startedAt + 659_000;
     vi.setSystemTime(abortNow);
     const snapshot = getDiagnosticSessionActivitySnapshot(ref, abortNow);
-    const stalled = isRepeatedModelRequestStalled(snapshot, STUCK_SESSION_ABORT_MS);
     const attention = classifySessionAttention({
       state: "processing",
       queueDepth: 0,
@@ -108,14 +104,15 @@ it.each(["completed", "error", "blocked", "retired-during-execution", "retired-b
     });
     if (outcome === "completed") {
       expect(snapshot.repeatedRequestNoProgressAgeMs).toBeUndefined();
-      expect(stalled).toBe(false);
       expect(attention).not.toMatchObject({
         eventType: "session.stalled",
         reason: "repeated_model_requests_without_progress",
       });
     } else {
       expect(snapshot.repeatedRequestNoProgressAgeMs).toBeDefined();
-      expect(stalled).toBe(true);
+      expect(snapshot.repeatedRequestNoProgressAgeMs).toBeGreaterThanOrEqual(
+        STUCK_SESSION_ABORT_MS,
+      );
       expect(attention).toMatchObject({
         eventType: "session.stalled",
         reason: "repeated_model_requests_without_progress",
