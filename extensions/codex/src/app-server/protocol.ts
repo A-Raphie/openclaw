@@ -135,6 +135,7 @@ type CodexThreadConfigurationParams = JsonObject & {
   approvalPolicy?: CodexApprovalPolicy | null;
   approvalsReviewer?: CodexApprovalsReviewer | null;
   sandbox?: CodexSandboxMode | null;
+  cyberAccessProgram?: "standard" | "daybreakBlue" | "daybreakRed";
   serviceTier?: CodexServiceTier | null;
   developerInstructions?: string;
 };

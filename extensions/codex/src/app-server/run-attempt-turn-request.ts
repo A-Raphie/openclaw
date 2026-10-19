@@ -20,7 +20,7 @@ import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
 import { getCodexInferenceThread } from "./inference-routing.js";
 import { readCodexRuntimeModelId } from "./model-runtime.js";
 import { assertCodexTurnStartResponse } from "./protocol-validators.js";
-import type { CodexTurnStartResponse } from "./protocol.js";
+import type { CodexGetAccountResponse, CodexTurnStartResponse } from "./protocol.js";
 import { prepareCodexProviderReviewContinuation } from "./provider-review-continuation.js";
 import { readCodexRateLimitsRevision } from "./rate-limit-cache.js";
 import {
@@ -187,6 +187,21 @@ export async function prepareCodexAttemptTurnRequest(
         (tool) => tool.name === "session_status",
       ),
     });
+    if (turnStartParams.cyberAccessProgram !== undefined) {
+      // Codex core/cyber_access_program.rs forwards this only for ChatGPT auth.
+      // Reject an ignored selection rather than claiming API-key Daybreak is active.
+      const account = await turnClient.request<CodexGetAccountResponse>(
+        "account/read",
+        { refreshToken: false },
+        { assertCurrent: assertTurnCurrent },
+      );
+      assertTurnCurrent();
+      if (account.account?.type !== "chatgpt") {
+        throw new Error(
+          "Explicit Daybreak access in the Codex runtime requires ChatGPT subscription authentication. Use the OpenClaw runtime for Platform API-key access, or reset Access to the model default.",
+        );
+      }
+    }
     const serviceTier =
       fastMode === "ultrafast" ? selectedThread.preparedServiceTier : turnStartParams.serviceTier;
     assertTurnCurrent();

@@ -41,6 +41,7 @@ export function tryResetGatewaySessionForCreation(
     // Catalog targets need a fresh locked row; resetting main would return before
     // the catalog-owned model/runtime pair is persisted.
     !params.catalogTarget &&
+    params.cyberAccessProgram === undefined &&
     params.cfg.session?.dmScope === "main"
   ) {
     const parentAgentId = normalizeAgentId(

@@ -33,7 +33,12 @@ export function inheritSessionCreateParentFields(params: {
   selectedModel?: string;
   overrides: Pick<
     CreateGatewaySessionParams,
-    "catalogTarget" | "model" | "toolOverrides" | "fastMode" | "communication"
+    | "catalogTarget"
+    | "model"
+    | "toolOverrides"
+    | "fastMode"
+    | "communication"
+    | "cyberAccessProgram"
   >;
 }): Partial<InternalSessionEntry> {
   const { parent, overrides } = params;
@@ -43,6 +48,9 @@ export function inheritSessionCreateParentFields(params: {
       : inheritSessionSelection(parent);
   if (overrides.toolOverrides !== undefined) {
     delete inherited.toolOverrides;
+  }
+  if (overrides.cyberAccessProgram !== undefined) {
+    delete inherited.cyberAccessProgram;
   }
   if (overrides.fastMode !== undefined) {
     // Explicit choices have already been validated by the canonical patch owner.

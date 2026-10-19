@@ -270,3 +270,20 @@ it("adds a permission notice without overwriting native supervised settings", as
     openclaw_permission_change: application(notice),
   });
 });
+
+it.each([
+  [undefined, undefined],
+  ["standard", "standard"],
+  ["daybreak_blue", "daybreakBlue"],
+  ["daybreak_red", "daybreakRed"],
+] as const)(
+  "passes explicit access %s independently of service tier",
+  async (program, expected) => {
+    const turn = await buildTurnStartParams(
+      paramsForTurn(undefined, { cyberAccessProgram: program }),
+      turnOptions({ appServer: { ...createAppServerOptions(), serviceTier: "ultrafast" } }),
+    );
+    expect(turn.cyberAccessProgram).toBe(expected);
+    expect(turn.serviceTier).toBe("ultrafast");
+  },
+);

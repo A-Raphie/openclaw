@@ -86,6 +86,7 @@ describe("resolveDynamicSessionMutationRequiredScope", () => {
           unread: false,
           model: "openai/gpt-5.6-luna",
           thinkingLevel: "high",
+          cyberAccessProgram: "daybreak_blue",
           fastMode: "auto",
         },
       }),
@@ -93,7 +94,7 @@ describe("resolveDynamicSessionMutationRequiredScope", () => {
     expect(
       resolveDynamicSessionMutationRequiredScope("sessions.patchMany", {
         targets: [{ key: "agent:main:thread" }],
-        patch: { model: null, thinkingLevel: null, fastMode: null },
+        patch: { model: null, thinkingLevel: null, cyberAccessProgram: null, fastMode: null },
       }),
     ).toBe("operator.write");
     for (const patch of [

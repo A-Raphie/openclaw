@@ -58,11 +58,15 @@ export function wrapOpenAIResponsesStream(ctx: ProviderWrapStreamFnContext) {
       ...streamContext,
       streamFn: (model, context, options) => {
         if (
-          model.api !== "openai-responses" ||
-          classifyOpenAIBaseUrl(model.baseUrl) !== "platform"
+          !(
+            (model.api === "openai-responses" &&
+              classifyOpenAIBaseUrl(model.baseUrl) === "platform") ||
+            (model.api === "openai-chatgpt-responses" &&
+              classifyOpenAIBaseUrl(model.baseUrl) === "chatgpt")
+          )
         ) {
           throw new Error(
-            "OpenAI params.accessPrograms requires the OpenAI Platform Responses API. Use the native Daybreak toggle for Codex.",
+            "OpenAI params.accessPrograms requires an official OpenAI Platform or ChatGPT Responses endpoint.",
           );
         }
         return underlying(model, context, {

@@ -27,6 +27,7 @@ type ProcessResult = {
   events: ProjectedEvent[];
   content: ProjectedBlock[];
   responseId: string | null;
+  responseAccessProgram?: AssistantMessage["responseAccessProgram"];
   stopReason: string;
   error: string | null;
 };
@@ -146,6 +147,9 @@ export async function runFixture(
     events: captured.map(projectEvent).filter((event) => event !== undefined),
     content: output.content.map(projectBlock),
     responseId: output.responseId ?? null,
+    ...(output.responseAccessProgram !== undefined
+      ? { responseAccessProgram: output.responseAccessProgram }
+      : {}),
     stopReason: output.stopReason,
     error,
   };

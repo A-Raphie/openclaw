@@ -421,9 +421,17 @@ export async function prepareEmbeddedAttemptTransport(input: {
     settingsManager: input.settingsManager,
     sessionTransport: session.agent.transport,
   });
+  if (attempt.cyberAccessProgram !== undefined && attempt.provider !== "openai") {
+    throw new Error(
+      "Explicit access programs are unsupported by this provider. Reset Access to the model default or select an OpenAI model.",
+    );
+  }
   const streamExtraParamsOverride = {
     ...attempt.streamParams,
     fastMode: attempt.fastMode,
+    ...(attempt.cyberAccessProgram !== undefined
+      ? { accessPrograms: { cyber: attempt.cyberAccessProgram } }
+      : {}),
     // Memory extraction must see the original history, not a provider summary.
     ...(attempt.trigger === "memory"
       ? { anthropicServerCompaction: false, responsesServerCompaction: false }

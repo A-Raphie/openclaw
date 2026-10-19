@@ -41,6 +41,33 @@ import * as threadOwnership from "./thread-ownership.js";
 setupRunAttemptTestHooks();
 
 describe("Codex attempt subscription recovery", () => {
+  it("rejects an explicit access program when native auth would discard it", async () => {
+    const harness = createStartedThreadHarness(async (method) =>
+      method === "account/read" ? { account: { type: "apiKey" } } : undefined,
+    );
+    const params = createParams(path.join(tempDir, "daybreak-api.jsonl"), tempDir);
+    params.cyberAccessProgram = "daybreak_blue";
+    await expect(runCodexAppServerAttempt(params)).rejects.toThrow(
+      "requires ChatGPT subscription authentication",
+    );
+    expect(harness.requests.some(({ method }) => method === "turn/start")).toBe(false);
+  });
+
+  it("forwards explicit access to the admitted native subscription turn", async () => {
+    const harness = createStartedThreadHarness(async (method) =>
+      method === "account/read" ? { account: { type: "chatgpt" } } : undefined,
+    );
+    const params = createParams(path.join(tempDir, "daybreak-subscription.jsonl"), tempDir);
+    params.cyberAccessProgram = "daybreak_blue";
+    const run = runCodexAppServerAttempt(params);
+    await run.waitForTurnAccepted();
+    expect(harness.requests.find(({ method }) => method === "turn/start")?.params).toMatchObject({
+      cyberAccessProgram: "daybreakBlue",
+    });
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+  });
+
   it("reports an unavailable binding reader before admitting a native turn", async () => {
     const prepare = runAttemptResources.prepareCodexAttemptResources;
     vi.spyOn(runAttemptResources, "prepareCodexAttemptResources").mockImplementationOnce(

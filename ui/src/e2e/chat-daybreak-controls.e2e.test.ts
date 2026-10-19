@@ -11,20 +11,34 @@ const suite = createControlUiE2eSuite({
   startServer: () => startControlUiE2eServer(),
 });
 suite.define(() => {
-  it.each([undefined, "standard"] as const)(
-    "keeps requested access separate from provider-reported %s",
-    async (reported) => {
+  it.each([
+    { reported: undefined, width: 1440, height: 900 },
+    { reported: "standard", width: 1440, height: 900 },
+    { reported: undefined, width: 390, height: 844 },
+  ] as const)(
+    "keeps requested access separate from provider-reported $reported at $width",
+    async ({ reported, width, height }) => {
       await suite.withPage(
-        { viewport: { width: 1120, height: 820 }, colorScheme: "dark" },
+        { viewport: { width, height }, colorScheme: "dark" },
         async ({ page }) => {
           const gateway = await installMockGateway(page, {
-            agentModel: "openai/gpt-5.4",
-            models: [{ id: "gpt-5.4", name: "GPT-5.4", provider: "openai", reasoning: true }],
+            agentModel: "openai/gpt-6.1-sol",
+            models: [
+              {
+                id: "gpt-6.1-sol",
+                name: "GPT-6.1 Sol",
+                provider: "openai",
+                reasoning: true,
+                available: true,
+                supportsFastMode: true,
+                serviceTiers: ["priority", "ultrafast"],
+              },
+            ],
             sessions: [
               {
                 key: "agent:main:main",
                 label: "Main",
-                model: "gpt-5.4",
+                model: "gpt-6.1-sol",
                 modelProvider: "openai",
                 thinkingLevel: "medium",
                 thinkingLevels: [
@@ -42,7 +56,7 @@ suite.define(() => {
               },
               {
                 role: "assistant",
-                model: "gpt-5.4",
+                model: "gpt-6.1-sol",
                 provider: "openai",
                 responseAccessProgram: reported,
                 content: [
@@ -66,12 +80,20 @@ suite.define(() => {
           await expect
             .poll(() => menu.evaluate((element) => element.scrollHeight <= element.clientHeight))
             .toBe(true);
-          const select = picker.locator("[data-chat-access-program]");
-          await expect.poll(() => select.inputValue()).toBe("");
+          await expect
+            .poll(() => picker.locator("[data-chat-speed-option=ultrafast]").count())
+            .toBe(1);
+          const access = picker.locator("[data-chat-access-program]");
+          const blue = access.locator('[data-chat-access-option="daybreak_blue"]');
+          const standard = access.locator('[data-chat-access-option="standard"]');
+          const red = access.locator('[data-chat-access-option="daybreak_red"]');
+          const reset = picker.locator("[data-chat-access-reset]");
+          await expect.poll(() => access.locator('[aria-checked="true"]').count()).toBe(0);
+          await expect.poll(() => red.isDisabled()).toBe(false);
           await expect
             .poll(() => picker.locator("[data-chat-access-reported]").textContent())
             .toContain(reported ? "Last response: Standard" : "Not reported · unverified");
-          await select.selectOption("daybreak_blue");
+          await blue.click();
           await expect
             .poll(async () =>
               (await gateway.getRequests("sessions.patch")).some(
@@ -80,7 +102,7 @@ suite.define(() => {
               ),
             )
             .toBe(true);
-          await expect.poll(() => select.inputValue()).toBe("daybreak_blue");
+          await expect.poll(() => blue.getAttribute("aria-checked")).toBe("true");
           await expect
             .poll(() => picker.locator("[data-chat-access-reported]").textContent())
             .toContain(reported ? "Last response: Standard" : "Not reported · unverified");
@@ -91,15 +113,15 @@ suite.define(() => {
             const frame = await takeControlUiScreenshotFrame(
               page,
               menu,
-              [select, picker.locator("[data-chat-access-reported]")],
+              [access, picker.locator("[data-chat-access-reported]")],
               { animations: "disabled" },
             );
-            const dir = createControlUiE2eArtifactDir("daybreak-after");
+            const dir = createControlUiE2eArtifactDir("daybreak-after-" + width);
             await writeFile(dir + "/after.png", frame.png);
           }
-          await select.selectOption("standard");
-          await expect.poll(() => select.inputValue()).toBe("standard");
-          await select.selectOption("");
+          await standard.click();
+          await expect.poll(() => standard.getAttribute("aria-checked")).toBe("true");
+          await reset.click();
           await expect
             .poll(
               async () =>
@@ -107,7 +129,7 @@ suite.define(() => {
                   ?.cyberAccessProgram,
             )
             .toBeNull();
-          await expect.poll(() => select.inputValue()).toBe("");
+          await expect.poll(() => access.locator('[aria-checked="true"]').count()).toBe(0);
         },
       );
     },

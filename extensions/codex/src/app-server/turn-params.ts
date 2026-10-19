@@ -158,6 +158,16 @@ export async function buildTurnStartParams(
   }
   return {
     threadId: options.threadId,
+    ...(params.cyberAccessProgram !== undefined
+      ? {
+          cyberAccessProgram:
+            params.cyberAccessProgram === "daybreak_blue"
+              ? ("daybreakBlue" as const)
+              : params.cyberAccessProgram === "daybreak_red"
+                ? ("daybreakRed" as const)
+                : ("standard" as const),
+        }
+      : {}),
     ...(params.trigger ? { turnTrigger: params.trigger } : {}),
     // codex-rs/app-server-protocol/src/protocol/v2/turn.rs:292-324 at 91d6f48992ad defines
     // UserInput::Skill; skills/src/selection.rs:60-92 blocks those names from duplicate text

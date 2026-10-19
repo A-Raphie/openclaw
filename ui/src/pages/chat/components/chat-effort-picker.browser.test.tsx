@@ -364,17 +364,17 @@ it("keeps the requested program distinct from provider confirmation and respects
     onSelect,
   };
   await fixture(["low", "high"], "low", false, undefined, true, accessProgram);
-  const select = host!.querySelector<HTMLSelectElement>("[data-chat-access-program]")!;
-  expect(select.value).toBe("");
-  await userEvent.selectOptions(select, "daybreak_red");
+  const red = host!.querySelector<HTMLButtonElement>('[data-chat-access-option="daybreak_red"]')!;
+  expect(red.getAttribute("aria-checked")).toBe("false");
+  await userEvent.click(red);
   expect(onSelect).toHaveBeenLastCalledWith("daybreak_red", "effort-preview");
   await fixture(["low", "high"], "low", false, undefined, true, {
     ...accessProgram,
     requested: "daybreak_red",
     disabled: true,
   });
-  expect(select.value).toBe("daybreak_red");
-  expect(select.disabled).toBe(true);
+  expect(red.getAttribute("aria-checked")).toBe("true");
+  expect(red.disabled).toBe(true);
   expect(host!.querySelector("[data-chat-access-reported]")!.textContent).toContain(
     "Last response: Standard",
   );

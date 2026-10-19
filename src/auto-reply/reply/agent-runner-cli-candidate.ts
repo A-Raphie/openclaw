@@ -50,6 +50,11 @@ export async function runCliFallbackCandidate(
     onSessionWriter: (writer: CompactionAccountingTarget) => void;
   },
 ): ReturnType<typeof runCliAgentWithLifecycle> {
+  if (params.candidateRun.cyberAccessProgram !== undefined) {
+    throw new Error(
+      "Explicit access programs are unsupported by this CLI runtime. Reset Access to the model default or use the OpenClaw or native Codex runtime.",
+    );
+  }
   const turn = params.turn;
   const onPreparedBlockReply = turn.opts?.onPreparedBlockReply;
   const onNativeBlockReply: NonNullable<typeof turn.opts>["onBlockReply"] =

@@ -328,6 +328,7 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
                       : "chat.modelControls.fastMode",
                   )}
                 >
+                  {props.accessProgram && <ChatAccessProgramControl {...props.accessProgram} />}
                   {view().showReasoning && (
                     <div class="chat-controls__reasoning-panel">
                       <div class="chat-controls__reasoning-head">
@@ -463,7 +464,6 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
                       ) : undefined}
                     </div>
                   )}
-                  {props.accessProgram && <ChatAccessProgramControl {...props.accessProgram} />}
                   {props.fastMode.supported && (
                     <div class="chat-controls__speed-panel">
                       <span class="chat-controls__effort-heading">

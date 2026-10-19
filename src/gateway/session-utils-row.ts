@@ -523,6 +523,7 @@ export function materializeSessionRow(input: ReturnType<typeof readSessionRowInp
     thinkingLevels: input.thinkingProjection.thinkingLevels,
     thinkingOptions: input.thinkingProjection.thinkingOptions,
     thinkingDefault: input.thinkingProjection.thinkingDefault,
+    cyberAccessProgram: entry?.cyberAccessProgram,
     fastMode: entry?.fastMode,
     toolOverrides: entry?.toolOverrides,
     effectiveFastMode: input.fastModeState.mode,

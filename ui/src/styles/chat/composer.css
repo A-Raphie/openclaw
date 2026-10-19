@@ -3676,26 +3676,32 @@ html[dir="rtl"] .chat-attachment-loading > span {
   }
 }
 
-.chat-controls__access-label {
-  display: grid;
-  gap: 8px;
-}
-
-.chat-controls__access-select {
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--text-strong);
-  font: inherit;
-  font-size: 12px;
-}
-
 .chat-controls__access-note {
   margin: 0;
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.chat-controls__access-reset {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: default;
+}
+.chat-controls__access-reset:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.chat-controls__access-panel .chat-controls__reasoning-head {
+  margin-bottom: 0;
+}
+.chat-controls__access-panel [data-chat-access-option="daybreak_blue"][aria-checked="true"] {
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 16%, var(--bg));
 }

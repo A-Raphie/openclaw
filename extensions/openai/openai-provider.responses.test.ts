@@ -1,5 +1,9 @@
 import { streamSimpleOpenAIResponses } from "@openclaw/ai/internal/openai";
-import { streamSimple, type Model } from "openclaw/plugin-sdk/llm";
+import {
+  createAssistantMessageEventStream,
+  streamSimple,
+  type Model,
+} from "openclaw/plugin-sdk/llm";
 import { describe, expect, it, vi } from "vitest";
 import { buildOpenAIProvider } from "./openai-provider.js";
 import manifest from "./openclaw.plugin.json" with { type: "json" };
@@ -301,5 +305,46 @@ it.each([null, { cyber: null }, { cyber: "unknown" }, { cyber: "daybreak_blue", 
       }),
     ).toThrow("params.accessPrograms");
     expect(params).toHaveLength(before);
+  },
+);
+
+it.each(["priority", "ultrafast"])(
+  "preserves subscription endpoint and %s alongside Daybreak",
+  async (serviceTier) => {
+    const model: Model<"openai-chatgpt-responses"> = {
+      id: "gpt-6.1-sol",
+      name: "Synthetic subscription",
+      provider: "openai",
+      api: "openai-chatgpt-responses",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      reasoning: true,
+      input: ["text"],
+      contextWindow: 128000,
+      maxTokens: 4096,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
+    const underlying = vi.fn<typeof streamSimple>((_model, _context, options) => {
+      void Promise.resolve(
+        options?.onPayload?.({ model: model.id, service_tier: serviceTier }, model),
+      ).then((request) => params.push(request));
+      return createAssistantMessageEventStream();
+    });
+    const stream = wrapOpenAIResponsesStream({
+      provider: "openai",
+      modelId: model.id,
+      model,
+      streamFn: underlying,
+      nativeWebSearchAllowedByToolPolicy: false,
+      extraParams: { accessPrograms: { cyber: "daybreak_blue" } },
+    });
+    await stream(model, { messages: [] }, {});
+    await vi.waitFor(() =>
+      expect(params.at(-1)).toEqual({
+        model: model.id,
+        service_tier: serviceTier,
+        access_programs: { cyber: "daybreak_blue" },
+      }),
+    );
+    expect(underlying.mock.calls[0]?.[0]).toBe(model);
   },
 );

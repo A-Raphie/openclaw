@@ -118,11 +118,10 @@ export type SessionWorkspaceListResult = ProtocolSessionsFilesListResult & {
   artifacts?: ProtocolArtifactSummary[];
 };
 
-export type CyberAccessProgram = "standard" | "daybreak_blue" | "daybreak_red";
+export type CyberAccessProgram = NonNullable<GatewayWireSessionRow["cyberAccessProgram"]>;
 
 export type GatewaySessionRow = Omit<GatewayWireSessionRow, "archivedBy" | "updatedAt"> &
   Pick<SessionRow, "archivedBy" | "updatedAt"> & {
-    cyberAccessProgram?: CyberAccessProgram;
     /** Transient UI-owned Swarm note overlays, not persisted session fields. */
     swarmPhase?: string;
     swarmPhaseRank?: number;

@@ -87,9 +87,9 @@ Before the deadline:
    including its account settings and request requirements. Preserve explicitly
    configured reasoning capabilities and service tiers for the specific model;
    the old aliases' capabilities are not a contract for every underlying model.
-4. For native Codex, use Codex's Daybreak toggle with an approved specific model.
-   A model selection or OpenClaw's cyber failover setting does not enable that
-   native toggle or grant access.
+4. Select an explicit access program in the chat Access control, or use Codex's
+   own Daybreak controls with an approved specific model. Selecting a model,
+   access program, or cyber-failover target does not grant account access.
 
 Automatic cyber failover now requires an explicit `model` under
 `agents.defaults.embeddedAgent.cyberFailover` (OpenClaw runtime) or
@@ -99,13 +99,37 @@ explicit targets and `mode: "off"` settings are preserved. See
 [model failover](/concepts/model-failover#automatic-cyber-policy-escalation)
 and [Codex runtime behavior](/plugins/codex-harness/runtime-behavior#automatic-daybreak-escalation).
 
+### Chat Access control
+
+Open the chat effort/speed menu. **Access** appears above **Effort** and **Speed**:
+
+- **Standard**, **Blue**, and **Red** explicitly select the requested access program.
+- **Use model default** clears the session override. This is different from
+  selecting Standard: the configured model or provider may choose a default program.
+- **Last response** shows only the program reported by the provider for the
+  selected model. **Not reported · unverified** is not proof of Standard or Daybreak.
+
+The session override is saved independently of speed, survives a session reset,
+and is inherited by a fork unless replaced. Changing the selection affects the next
+admitted turn, not an already-running model call.
+
+The OpenClaw runtime sends the program to its official Responses endpoint. Native
+Codex uses its supported turn-scoped access-program parameter and requires ChatGPT
+subscription authentication for explicit programs. Its API-key runtime currently
+ignores that upstream parameter, so OpenClaw rejects the explicit selection with an
+actionable error instead of silently claiming success. Reset Access to the model
+default or use the OpenClaw runtime for Platform API-key requests. Native Codex may
+not report the program back; the UI then remains unverified.
+
 ### Responses access program and speed
 
-For the OpenClaw runtime on the OpenAI Platform Responses API, set the selected
+For the OpenClaw runtime on an official OpenAI Platform or ChatGPT subscription
+Responses endpoint, set the selected
 model's `params.accessPrograms.cyber` to `standard`, `daybreak_blue`, or
 `daybreak_red`. Omit it or use `accessPrograms: {}` to retain OpenAI's
 model/account/project defaults. Neither `accessPrograms` nor `cyber` accepts
-`null`. This setting does not grant access and does not apply to native Codex.
+`null`. This model-parameter setting does not grant access and does not apply to
+native Codex; use the session Access control for that runtime.
 An explicit incompatible program or missing entitlement returns the provider
 error; OpenClaw does not silently switch to standard safeguards.
 
