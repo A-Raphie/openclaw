@@ -28,6 +28,7 @@ import {
   attachActiveEmbeddedRun,
   detachActiveEmbeddedRun,
 } from "../../agents/embedded-agent-runner/runs.js";
+import { buildPrAttributionPrompt } from "../../agents/pr-attribution.js";
 import { createCronTool } from "../../agents/tools/cron-tool.js";
 import {
   getGatewayToolCallerIdentity,
@@ -92,6 +93,7 @@ import {
   createProviderSurface,
   createTelegramGroupSession,
   ownerParams,
+  nonReasoningModelState,
 } from "./get-reply-run.test-support.js";
 import type { InternalGetReplyOptions } from "./get-reply.types.js";
 import { buildGroupIntro, buildSourceConversationContext } from "./groups.js";
@@ -101,7 +103,6 @@ import {
   buildInboundUserContextPrefix,
   resolveInboundUserContextPromptJoiner,
 } from "./inbound-meta.js";
-import { createModelSelectionStateFixture } from "./model-selection.test-support.js";
 import { prepareReplyConversation } from "./prompt-session-context.js";
 import { enqueueFollowupRun, scheduleFollowupDrain } from "./queue.js";
 import { getExistingFollowupQueue, clearFollowupQueue } from "./queue/state.js";
@@ -439,17 +440,6 @@ const ROOM_EVENT_MESSAGE_TOOL_DIRECTIVE =
 
 type ReplyRunParams = Parameters<typeof runPreparedReply>[0];
 
-function nonReasoningModelState(): ReplyRunParams["modelState"] {
-  return {
-    ...createModelSelectionStateFixture({ agentCfg: {}, provider: "openai", model: "chat-latest" }),
-    resolveDefaultThinkingLevel: async () => "high",
-    resolveThinkingCatalog: async () => [
-      { provider: "openai", id: "chat-latest", name: "Chat Latest", reasoning: false },
-    ],
-    allowedModelCatalog: [{ provider: "openai", id: "chat-latest", name: "Chat Latest" }],
-  };
-}
-
 async function embeddedRuntime() {
   return vi.mocked(await import("../../agents/embedded-agent.runtime.js"));
 }
@@ -553,6 +543,9 @@ function expectTurnText(call: ReturnType<typeof requireRunReplyAgentCall>, text:
     followupRun: { prompt: text, transcriptPrompt: text },
   });
 }
+
+const PR_ATTRIBUTION_OFF = `PR attribution: ⟦openclaw:ctx⟧
+${buildPrAttributionPrompt(false)}`;
 
 function jsonContext(label: string, value: unknown) {
   return [label, "```json", JSON.stringify(value, null, 2), "```"].join("\n");
@@ -1170,6 +1163,7 @@ describe("runPreparedReply media-only handling", () => {
     expectTurnText(call, "please answer here");
     expect(call.followupRun.currentInboundContext?.text).toBe(
       [
+        PR_ATTRIBUTION_OFF,
         "Current message:\nchat_id=-100123\ninbound_event_kind: user_request",
         MESSAGE_TOOL_ONLY_DELIVERY_HINT,
       ].join("\n\n"),
@@ -2855,7 +2849,9 @@ describe("runPreparedReply media-only handling", () => {
 
     const followupRun = requireRunReplyAgentCall().followupRun;
     const context = followupRun.currentInboundContext;
-    expect(followupRun.prompt).toBe("A new session was started via /new or /reset.");
+    expect(followupRun.prompt).toBe(
+      [PR_ATTRIBUTION_OFF, "A new session was started via /new or /reset."].join("\n\n"),
+    );
     for (const event of [
       "Slack reaction added: :eyes:",
       "Slack message in #claw-test from Alice",

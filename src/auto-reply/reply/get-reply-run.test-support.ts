@@ -3,6 +3,7 @@ import type { SessionEntry } from "../../config/sessions.js";
 import { normalizeSessionDeliveryState } from "../../utils/delivery-context.shared.js";
 import type { runPreparedReply } from "./get-reply-run.js";
 import { finalizeInboundContextForSdk } from "./inbound-context.js";
+import { createModelSelectionStateFixture } from "./model-selection.test-support.js";
 import { prepareReplyConversation } from "./prompt-session-context.js";
 
 export function createInboundBody<T extends string>(body: T) {
@@ -154,4 +155,15 @@ export function ownerParams(): Parameters<typeof runPreparedReply>[0] {
     senderIsOwner: true,
   };
   return params;
+}
+
+export function nonReasoningModelState(): Parameters<typeof runPreparedReply>[0]["modelState"] {
+  return {
+    ...createModelSelectionStateFixture({ agentCfg: {}, provider: "openai", model: "chat-latest" }),
+    resolveDefaultThinkingLevel: async () => "high",
+    resolveThinkingCatalog: async () => [
+      { provider: "openai", id: "chat-latest", name: "Chat Latest", reasoning: false },
+    ],
+    allowedModelCatalog: [{ provider: "openai", id: "chat-latest", name: "Chat Latest" }],
+  };
 }

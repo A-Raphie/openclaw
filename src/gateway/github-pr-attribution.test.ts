@@ -13,7 +13,10 @@ import { setUserPreferences } from "../state/user-preferences.test-support.js";
 import { createRequesterPublicationFixture } from "./github-publication-requester.test-support.js";
 
 const checkpoint = vi.hoisted(() => vi.fn());
-vi.mock("./worker-environments/session-repository-checkpoints.js", () => ({
+vi.mock("./worker-environments/session-repository-checkpoints.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("./worker-environments/session-repository-checkpoints.js")
+  >()),
   withSessionRepositoryCheckpoint: (...args: unknown[]) => checkpoint(...args),
 }));
 const mocks = githubPublicationTestMocks();
