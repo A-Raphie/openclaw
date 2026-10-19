@@ -92,20 +92,6 @@ function applyValidatedSourceDefaults(
   return value;
 }
 
-/** Admit once; display projections reuse this check without serializing schemas. */
-export function compileJsonSchemaCheck(schema: JsonSchemaValue): (value: unknown) => boolean {
-  const error = findJsonSchemaShapeError(schema);
-  if (error) {
-    throw new Error(sanitizeTerminalText(`invalid schema: ${error}`));
-  }
-  // Display schemas use standard annotation-only formats, consistently with the browser.
-  // SAFETY: the schema shape was admitted above; normalization returns TypeBox-compatible JSON Schema.
-  const validator = Compile(
-    normalizeJsonSchemaForTypeBox(schema, { format: "annotation" }) as never,
-  );
-  return (value) => validator.Check(value);
-}
-
 function compileSchema(schema: JsonSchemaValue): TypeBoxValidator {
   return withPluginFormatSemantics(() => Compile(normalizeJsonSchemaForTypeBox(schema) as never));
 }
@@ -172,6 +158,8 @@ function checkSchemaWithCurrentFormats(
  */
 export type JsonSchemaValidationError = {
   path: string;
+  /** Exact property segments; display paths can collapse literal dots or slashes. */
+  valuePath?: readonly string[];
   message: string;
   text: string;
   additionalProperty?: string;
@@ -188,10 +176,8 @@ export function parseJsonSchemaIssuePath(
   return path.split(".").map((segment) => parseConfigPathArrayIndex(segment) ?? segment);
 }
 
-function normalizeErrorPath(instancePath: string | undefined): string {
-  const path = Pointer.Indices(instancePath ?? "")
-    .join(".")
-    .replace(/\//g, ".");
+function normalizeErrorPath(valuePath: readonly string[]): string {
+  const path = valuePath.join(".").replace(/\//g, ".");
   return path || "<root>";
 }
 
@@ -296,8 +282,9 @@ function formatValidationErrors(
     const missingProperties = resolveMissingProperties(error);
     const allowedValuesSummary = getAllowedValuesSummary(error);
     const additionalProperty = resolveAdditionalProperty(error);
+    const baseValuePath = Pointer.Indices(error.instancePath ?? "");
+    const basePath = normalizeErrorPath(baseValuePath);
     return (missingProperties.length ? missingProperties : [undefined]).map((missingProperty) => {
-      const basePath = normalizeErrorPath(error.instancePath);
       const path =
         missingProperty === undefined ? basePath : appendPathSegment(basePath, missingProperty);
       const baseMessage =
@@ -311,6 +298,8 @@ function formatValidationErrors(
       const safeMessage = sanitizeTerminalText(message);
       const formattedError: JsonSchemaValidationError = {
         path,
+        valuePath:
+          missingProperty === undefined ? baseValuePath : [...baseValuePath, missingProperty],
         message,
         text: `${safePath}: ${safeMessage}`,
       };

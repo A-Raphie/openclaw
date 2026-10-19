@@ -27,7 +27,7 @@ import { withPluginRuntimeRegistryScope } from "./runtime/gateway-request-scope.
 import { createPluginRecord } from "./status.test-helpers.js";
 import { bindPluginToolCallbacks } from "./tool-factory-runtime.js";
 
-function fixture(schema: unknown = Type.Object({ incidentId: Type.String() })) {
+function fixture(version = 1) {
   const builder = createTestPluginRegistry(createPluginRuntimeMock());
   const record = createPluginRecord({
     id: "incidents",
@@ -41,7 +41,7 @@ function fixture(schema: unknown = Type.Object({ incidentId: Type.String() })) {
     id: "incident",
     surface: "inline",
     label: "Incident dashboard",
-    schema: schema as never,
+    version,
   });
   const source: AnyAgentTool = {
     name: "show_incident",
@@ -49,7 +49,11 @@ function fixture(schema: unknown = Type.Object({ incidentId: Type.String() })) {
     description: "Show an incident",
     parameters: Type.Object({}),
     execute: async () =>
-      api.inlineView("incident", { incidentId: "INC-42" }, { summary: "Showing incident INC-42." }),
+      api.inlineView(
+        "incident",
+        { incidentId: "INC-42" },
+        { version: 1, summary: "Showing incident INC-42." },
+      ),
   };
   api.registerTool(source);
   const entry = builder.registry.tools[0]!;
@@ -88,15 +92,20 @@ describe("native inline tool results", () => {
   it("binds canonical plugin identity and enforces JSON/UTF-8/summary bounds without rewriting data", () => {
     const { api } = fixture();
     const payload = { incidentId: "INC-42", text: "<script>text is plugin data</script>" };
-    const result = api.inlineView("incident", payload, { summary: "Showing incident." });
+    const result = api.inlineView("incident", payload, {
+      version: 1,
+      summary: "Showing incident.",
+    });
     expect(result.details.pluginInlineView).toEqual({
       pluginId: "incidents",
       viewId: "incident",
+      version: 1,
+      summary: "Showing incident.",
       payload,
     });
     expect(result.details.pluginInlineView.payload).toBe(payload);
     expect(
-      api.inlineView("incident", "a".repeat(16_382), { summary: "Exact limit." }),
+      api.inlineView("incident", "a".repeat(16_382), { version: 1, summary: "Exact limit." }),
     ).toBeDefined();
     for (const value of [
       "a".repeat(16_383),
@@ -110,28 +119,48 @@ describe("native inline tool results", () => {
       },
     ]) {
       expect(() =>
-        api.inlineView("incident", value as never, { summary: "Too large or not JSON." }),
+        api.inlineView("incident", value as never, {
+          version: 1,
+          summary: "Too large or not JSON.",
+        }),
       ).toThrow("plain JSON");
     }
-    expect(() => api.inlineView("incident", {}, { summary: " " })).toThrow("summary");
-    expect(() => api.inlineView("incident", {}, { summary: "a".repeat(4097) })).toThrow("4 KiB");
-    expect(() => api.inlineView("incident", {}, { summary: "x" + "\n".repeat(2048) })).toThrow(
+    expect(() => api.inlineView("incident", {}, { version: 1, summary: " " })).toThrow("summary");
+    expect(() => api.inlineView("incident", {}, { version: 1, summary: "a".repeat(4097) })).toThrow(
       "4 KiB",
     );
+    expect(() =>
+      api.inlineView("incident", {}, { version: 1, summary: "x" + "\n".repeat(2048) }),
+    ).toThrow("4 KiB");
   });
 
-  it.each([undefined, "object", { type: "not-a-type" }, { required: "incidentId" }])(
-    "rejects invalid schema registration: %j",
-    (schema) => {
-      const { registry } = fixture(schema === undefined ? null : schema);
+  it.each([0, -1, 65536, 1.5, Number.NaN, undefined])(
+    "rejects missing or invalid version %j",
+    (version) => {
+      const { api, registry } = fixture(version === undefined ? 0 : version);
       expect(registry.controlUiDescriptors).toEqual([]);
-      expect(
-        registry.diagnostics.some(
-          (entry) => entry.level === "error" && entry.message.includes("schema"),
-        ),
-      ).toBe(true);
+      expect(() =>
+        api.inlineView("incident", {}, { version: version!, summary: "Fallback." }),
+      ).toThrow("version");
     },
   );
+
+  it("registers explicit older versions alongside newer interfaces", () => {
+    const { api, registry } = fixture();
+    api.session.controls.registerControlUiDescriptor({
+      id: "incident",
+      surface: "inline",
+      version: 2,
+      label: "Incident v2",
+    });
+    api.session.controls.registerControlUiDescriptor({
+      id: "incident",
+      surface: "inline",
+      version: 1,
+      label: "Duplicate",
+    });
+    expect(registry.controlUiDescriptors.map((entry) => entry.descriptor.version)).toEqual([1, 2]);
+  });
 
   it("projects direct live and persisted results identically without changing the stored envelope", async () => {
     const { registry, tool } = fixture();
@@ -165,8 +194,7 @@ describe("native inline tool results", () => {
         toolCallId: "direct-1",
         toolName: "show_incident",
         summary: "Showing incident INC-42.",
-        label: "Incident dashboard",
-        status: "ok",
+        version: 1,
         payload: { incidentId: "INC-42" },
       };
       expect(asOptionalRecord(history?.details)?.pluginView).toEqual(expected);
@@ -209,36 +237,34 @@ describe("native inline tool results", () => {
     });
   });
 
-  it("preserves summaries for missing plugins/views and incompatible current payloads, without admitting MCP or text", async () => {
+  it("preserves the entire record without a renderer and never admits unbound MCP data", async () => {
     const original = fixture();
     const result = await original.tool.execute("one", {});
     const invocation = { toolCallId: "one", toolName: "show_incident" };
+    const wire = JSON.stringify(result);
+    const saved = JSON.parse(wire);
     const empty = createTestPluginRegistry().registry;
-    expect(projectPluginInlineView(result.details, invocation, empty)).toMatchObject({
-      status: "plugin-missing",
-      summary: "Showing incident INC-42.",
+    withPluginRuntimeRegistryScope(empty, () => {
+      expect(projectPluginInlineView(saved.details, invocation)).toEqual({
+        type: "plugin_view",
+        pluginId: "incidents",
+        viewId: "incident",
+        version: 1,
+        payload: { incidentId: "INC-42" },
+        summary: "Showing incident INC-42.",
+        ...invocation,
+      });
     });
-    const missing = fixture();
-    missing.registry.controlUiDescriptors.length = 0;
-    expect(projectPluginInlineView(result.details, invocation, missing.registry)?.status).toBe(
-      "view-missing",
-    );
-    const changed = fixture(Type.Object({ incidentId: Type.Number() }));
-    expect(projectPluginInlineView(result.details, invocation, changed.registry)?.status).toBe(
-      "invalid-payload",
-    );
     expect(
       projectPluginInlineView(
-        original.api.inlineView("incident", { incidentId: "INC-42" }, { summary: "Unbound." })
-          .details,
+        original.api.inlineView("incident", {}, { version: 1, summary: "Unbound." }).details,
         invocation,
-        original.registry,
       ),
     ).toBeUndefined();
     const mcp = projectMcpCallToolResult({
       content: [{ type: "text", text: JSON.stringify(result) }],
       structuredContent: result.details,
     });
-    expect(projectPluginInlineView(mcp.details, invocation, original.registry)).toBeUndefined();
+    expect(projectPluginInlineView(mcp.details, invocation)).toBeUndefined();
   });
 });

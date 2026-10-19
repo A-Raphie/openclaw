@@ -24,8 +24,11 @@ import {
   PluginInstallTrustSchema,
   PluginOperatorGrantsSchema,
 } from "./plugin-inspection.js";
+import { PluginJsonValueSchema } from "./plugin-json-value.js";
 import { NonEmptyString } from "./primitives.js";
 import { stringLiteralUnion } from "./string-literal-union.js";
+
+export { PluginJsonValueSchema } from "./plugin-json-value.js";
 
 export {
   PLUGIN_UI_CAPABILITIES,
@@ -61,8 +64,6 @@ export {
  * These payloads let the gateway expose plugin-provided UI actions without
  * baking plugin-specific payload shapes into the core protocol.
  */
-/** Arbitrary plugin-owned JSON payload carried opaquely through the gateway. */
-export const PluginJsonValueSchema = Type.Unknown();
 
 export const PluginControlUiDescriptorSchema = closedObject({
   id: NonEmptyString,
@@ -86,6 +87,7 @@ export const PluginControlUiDescriptorSchema = closedObject({
   placement: Type.Optional(Type.String()),
   group: Type.Optional(stringLiteralUnion(["control", "agent"])),
   order: Type.Optional(Type.Number()),
+  version: Type.Optional(Type.Integer({ minimum: 1, maximum: 65535 })),
   schema: Type.Optional(PluginJsonValueSchema),
   requiredScopes: Type.Optional(Type.Array(NonEmptyString)),
 });
@@ -164,7 +166,7 @@ export const PluginsControlUiCatalogSchema = closedObject({
         pluginId: NonEmptyString,
         id: NonEmptyString,
         label: NonEmptyString,
-        schema: Type.Union([Type.Boolean(), Type.Record(Type.String(), Type.Unknown())]),
+        version: Type.Integer({ minimum: 1, maximum: 65535 }),
       }),
     ),
   ),

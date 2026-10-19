@@ -94,6 +94,7 @@ export function listControlUiPluginDescriptors(
       description: descriptor.description,
       placement: descriptor.placement,
       schema: descriptor.schema,
+      version: descriptor.version,
       requiredScopes: descriptor.requiredScopes,
       icon: descriptor.icon,
       path: descriptor.path,

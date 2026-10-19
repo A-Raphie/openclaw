@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { PluginInlineViewBlock } from "../../../../src/shared/plugin-inline-view.js";
+import { extractTextCached } from "../../lib/chat/message-extract.ts";
 import { normalizeMessage } from "../../lib/chat/message-normalizer.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
 import { createProps } from "./chat-thread.test-support.ts";
@@ -12,7 +13,7 @@ const block = (id: string): PluginInlineViewBlock => ({
   toolCallId: id,
   toolName: "show_incident",
   summary: "Showing " + id,
-  status: "ok",
+  version: 1,
   payload: { incidentId: id },
 });
 const result = (id: string, timestamp: number) => ({
@@ -38,6 +39,53 @@ function inlineMessages(props: Parameters<typeof buildChatItems>[0]) {
 }
 
 describe("inline plugin transcript rows", () => {
+  it.each([false, true])(
+    "searches derived history and live summaries with tool details visible=%s",
+    (showToolCalls) => {
+      const saved = ["one", "two"].map((id, index) =>
+        Object.assign(result(id, index + 2), {
+          __openclaw: { id: "saved-" + id, runId: "run" },
+          content: [{ type: "text", text: "Tool metadata received." }],
+        }),
+      );
+      const live = ["one", "two"].map((id, index) => ({
+        role: "assistant",
+        runId: "run",
+        toolCallId: id,
+        timestamp: index + 2,
+        content: [
+          { type: "toolresult", name: "show_incident", details: { pluginView: block(id) } },
+        ],
+      }));
+      for (const source of ["history", "live", "settled"]) {
+        const props = createProps({
+          showToolCalls,
+          messages: source === "live" ? [] : saved,
+          toolMessages: source === "history" ? [] : live,
+        });
+        const unfiltered = inlineRows(props);
+        expect(unfiltered).toHaveLength(2);
+        for (const [searchOpen, searchQuery, indexes] of [
+          [true, " SHOWING ONE ", [0]],
+          [true, "showing", [0, 1]],
+          [true, "unrelated", []],
+          [true, "Tool metadata received", []],
+          [true, "   ", [0, 1]],
+          [false, "unrelated", [0, 1]],
+        ] as const) {
+          const rows = inlineRows({ ...props, searchOpen, searchQuery });
+          expect(
+            rows.map(({ message }) => extractTextCached(message)),
+            source + ": " + searchQuery,
+          ).toEqual(indexes.map((index) => ["Showing one", "Showing two"][index]));
+          expect(rows.map(({ key }) => key)).toEqual(
+            indexes.map((index) => unfiltered[index]!.key),
+          );
+        }
+      }
+    },
+  );
+
   it("shows two independent calls immediately with tool details hidden and deduplicates history settlement", () => {
     const live = (id: string, timestamp: number) => ({
       ...result(id, timestamp),

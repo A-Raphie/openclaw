@@ -6,6 +6,11 @@ import type {
 } from "../../../packages/gateway-protocol/src/schema/plugins.js";
 import { CONTROL_UI_PLUGIN_AUTH_GRANT_TTL_MS } from "../../../src/gateway/control-ui-plugin-frame-contract.js";
 import type {
+  ControlUiSettingsPlacement,
+  ControlUiChannelSettingsView,
+  ControlUiSettingsView,
+} from "../../../src/plugin-sdk/control-ui-settings.js";
+import type {
   ControlUiDisposer,
   ControlUiHost,
   ControlUiReplacement,
@@ -17,6 +22,7 @@ import { readGatewayOperatorAccess } from "../app/operator-access.ts";
 import { hasSameOriginGatewayTransport } from "../dev-gateway.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { isGatewayMethodAdvertised } from "../lib/gateway-methods.ts";
+import { listen } from "../lib/reactive/listener.ts";
 import {
   controlUiPluginAssetGrantError,
   controlUiPluginDeliveryIdentity,
@@ -28,6 +34,7 @@ import type {
   ControlUiPluginCapability,
   ControlUiRegistration,
 } from "./control-ui-capability.ts";
+import { controlUiPluginDistributions } from "./control-ui-distribution.ts";
 
 export type ControlUiPluginOwner = {
   descriptor: PluginControlUiModule;
@@ -62,8 +69,16 @@ const UI_CAPABILITY_BY_CONTRIBUTION = {
 const CONTRIBUTION_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 const ACTIVATION_TIMEOUT_MS = 15_000;
 
+function sameSettingsPlacement(a: ControlUiSettingsPlacement, b: ControlUiSettingsPlacement) {
+  return (
+    a.section === b.section &&
+    a.panel === b.panel &&
+    (a.section !== "channels" || (b.section === "channels" && a.channelId === b.channelId))
+  );
+}
+
 export class ControlUiPluginRuntime implements ControlUiPluginCapability {
-  private readonly inlineChecks = new Map<string, (payload: unknown) => boolean>();
+  private readonly inlineLabels = new Map<string, string>();
   private readonly owners = new Map<string, ControlUiPluginOwner>();
   private readonly preloads = new ControlUiPluginAssetPreloads();
   private readonly selected = new Map<ControlUiSurface, { key: string; signal: AbortSignal }>();
@@ -76,6 +91,7 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
   private connectionId: string | null = null;
   private refreshGeneration = 0;
   private disposed = false;
+  private readonly settingsLifetimes = new Set<AbortController>();
   private firstConnection = true;
   private diagnostics: PluginControlUiDiagnostic[] = [];
   private grantTimer: ReturnType<typeof setInterval> | null = null;
@@ -102,6 +118,90 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
     return [...this.diagnostics, ...warnings];
   }
 
+  loadSettingsView(
+    placement: ControlUiSettingsView["placement"],
+    signal: AbortSignal,
+  ): Promise<{ view: ControlUiSettingsView; signal: AbortSignal; dispose: () => void }>;
+  loadSettingsView(
+    placement: ControlUiChannelSettingsView["placement"],
+    signal: AbortSignal,
+  ): Promise<{ view: ControlUiChannelSettingsView; signal: AbortSignal; dispose: () => void }>;
+  async loadSettingsView(placement: ControlUiSettingsPlacement, signal: AbortSignal) {
+    if (this.disposed) {
+      throw new Error("The plugin UI runtime has ended.");
+    }
+    signal.throwIfAborted();
+    const matches = controlUiPluginDistributions.filter((entry) =>
+      entry.settingsViews?.some((item) => sameSettingsPlacement(item, placement)),
+    );
+    if (matches.length !== 1) {
+      throw new Error("Settings presentation requires one packaged owner.");
+    }
+    const distribution = matches[0]!;
+    const abort = new AbortController();
+    const lifetime = AbortSignal.any([signal, abort.signal]);
+    const disposers = new Set<() => void>();
+    let retired = false;
+    const dispose = () => {
+      if (retired) {
+        return;
+      }
+      retired = true;
+      abort.abort();
+      for (const stop of disposers) {
+        stop();
+      }
+      disposers.clear();
+      this.settingsLifetimes.delete(abort);
+    };
+    this.settingsLifetimes.add(abort);
+    disposers.add(listen(lifetime, "abort", dispose, { once: true }));
+    const styles: HTMLLinkElement[] = [];
+    try {
+      const { loadControlUiPluginAssets } = await import("./control-ui-loader.ts");
+      const module = await raceWithTimeout(
+        loadControlUiPluginAssets(
+          distribution.pluginId,
+          distribution,
+          lifetime,
+          (stop) => disposers.add(stop),
+          styles,
+        ),
+        ACTIVATION_TIMEOUT_MS,
+        () => {
+          throw new Error("Settings presentation timed out.");
+        },
+      );
+      lifetime.throwIfAborted();
+      if (
+        module.pluginId !== distribution.pluginId ||
+        !Array.isArray(module.settingsViews) ||
+        module.settingsViews.length !== distribution.settingsViews?.length
+      ) {
+        throw new Error("Settings presentation does not match its packaged owner and placements.");
+      }
+      const declared = module.settingsViews.every(
+        (view) =>
+          typeof view.mount === "function" &&
+          distribution.settingsViews?.some((item) => sameSettingsPlacement(item, view.placement)),
+      );
+      const views = module.settingsViews.filter((view) =>
+        sameSettingsPlacement(view.placement, placement),
+      );
+      const view = views[0];
+      if (!declared || views.length !== 1 || !view) {
+        throw new Error("Invalid or duplicate Settings presentation.");
+      }
+      for (const style of styles) {
+        style.media = "all";
+      }
+      return { view, signal: lifetime, dispose };
+    } catch (error) {
+      dispose();
+      throw error;
+    }
+  }
+
   get hasPlugins(): boolean {
     return this.owners.size > 0 || this.loadingOwners.size > 0;
   }
@@ -117,8 +217,8 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
       : "pending";
   }
 
-  inlineViewCheck(key: string): ((payload: unknown) => boolean) | undefined {
-    return this.inlineChecks.get(key);
+  inlineViewLabel(key: string): string | undefined {
+    return this.inlineLabels.get(key);
   }
 
   isLoading(pluginId: string): boolean {
@@ -192,7 +292,7 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
       return;
     }
     this.retireOwners();
-    this.inlineChecks.clear();
+    this.inlineLabels.clear();
     this.client = client;
     this.connectionId = connectionId;
     this.diagnostics = [];
@@ -222,7 +322,7 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
     this.loadingOwners.clear();
     this.catalogStatus = "pending";
     this.loadingCatalog = "pending";
-    this.inlineChecks.clear();
+    this.inlineLabels.clear();
     this.publish();
     const current = () =>
       !this.disposed && this.client === client && this.refreshGeneration === generation;
@@ -235,17 +335,11 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
       if (!current()) {
         return;
       }
-      if (catalog.inlineViews?.length) {
-        const { createInlinePayloadCheck } = await import("./control-ui-inline-schema.ts");
-        if (!current()) {
-          return;
-        }
-        for (const descriptor of catalog.inlineViews) {
-          this.inlineChecks.set(
-            descriptor.pluginId + "/" + descriptor.id,
-            createInlinePayloadCheck(descriptor.schema),
-          );
-        }
+      for (const descriptor of catalog.inlineViews ?? []) {
+        this.inlineLabels.set(
+          descriptor.pluginId + "/" + descriptor.id + "@" + descriptor.version,
+          descriptor.label,
+        );
       }
       this.diagnostics = catalog.diagnostics;
       this.catalogStatus = "complete";
@@ -483,14 +577,15 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
     owner: Omit<ControlUiPluginOwner, "host">,
     kind: K,
     value: ControlUiContributions[K],
+    registrationId = value.id,
   ): ControlUiDisposer {
     if (!this.isCurrent(owner)) {
       throw new Error("This plugin UI activation has ended.");
     }
     const entries = owner.contributions[kind];
     // A disposer owns the registered ID even if the plugin later mutates its definition.
-    const id = value.id;
-    if (!CONTRIBUTION_ID.test(id) || entries.has(id)) {
+    const id = registrationId;
+    if (!CONTRIBUTION_ID.test(value.id) || entries.has(id)) {
       throw new Error(`Invalid or duplicate plugin UI contribution: ${id}`);
     }
     const abort = new AbortController();
@@ -528,7 +623,7 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
       for (const [id, entry] of owner.contributions[kind]) {
         if (
           kind === "inlineViews" &&
-          !this.inlineChecks.has(owner.descriptor.pluginId + "/" + id)
+          !this.inlineLabels.has(owner.descriptor.pluginId + "/" + id)
         ) {
           continue;
         }
@@ -635,6 +730,9 @@ export class ControlUiPluginRuntime implements ControlUiPluginCapability {
 
   dispose(): void {
     this.disposed = true;
+    for (const owner of this.settingsLifetimes) {
+      owner.abort();
+    }
     this.preloads.dispose();
     this.retireOwners();
     for (const stop of this.stops) {

@@ -2,6 +2,7 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { classifyGatewayProbePath } from "../gateway/gateway-http-route-contracts.js";
 import { isOperatorScope } from "../gateway/operator-scopes.js";
 import type { ControlUiLinkReaderMetadata } from "../shared/control-ui-link-reader.js";
+import { isPluginInlineViewVersion } from "../shared/plugin-inline-view.js";
 import {
   isPluginJsonValue,
   normalizeHostHookString,
@@ -11,7 +12,6 @@ import {
 } from "./host-hooks.js";
 import type { PluginRegistryState } from "./registry-state.js";
 import type { PluginRecord } from "./registry-types.js";
-import { compileJsonSchemaCheck } from "./schema-validator.js";
 
 /** Copy bounded plugin metadata before it becomes a browser routing contract. */
 function normalizeLinkReaderMetadata(value: unknown): ControlUiLinkReaderMetadata | undefined {
@@ -52,6 +52,8 @@ function normalizeLinkReaderMetadata(value: unknown): ControlUiLinkReaderMetadat
   const previewMethod = value.previewMethod;
   const imageMethod = value.imageMethod;
   if (
+    (value.sessionScoped !== undefined && typeof value.sessionScoped !== "boolean") ||
+    (value.progressive !== undefined && typeof value.progressive !== "boolean") ||
     typeof detailMethod !== "string" ||
     !methodPattern.test(detailMethod) ||
     (previewMethod !== undefined &&
@@ -67,6 +69,8 @@ function normalizeLinkReaderMetadata(value: unknown): ControlUiLinkReaderMetadat
     detailMethod,
     ...(previewMethod !== undefined ? { previewMethod } : {}),
     ...(imageMethod !== undefined ? { imageMethod } : {}),
+    ...(value.sessionScoped !== undefined ? { sessionScoped: value.sessionScoped } : {}),
+    ...(value.progressive !== undefined ? { progressive: value.progressive } : {}),
   };
 }
 
@@ -179,23 +183,20 @@ export function createControlUiRegistrar(state: PluginRegistryState) {
       );
       return;
     }
-    let validateInlinePayload: ((value: unknown) => boolean) | undefined;
-    if (surface === "inline") {
-      try {
-        if (typeof descriptor.schema !== "boolean" && !isRecord(descriptor.schema)) {
-          throw new Error("inline views require a JSON Schema");
-        }
-        validateInlinePayload = compileJsonSchemaCheck(descriptor.schema);
-      } catch (error) {
-        reportRegistrationError(
-          record,
-          "Invalid inline view schema for " + id + ": " + String(error),
-        );
-        return;
-      }
+    if (surface === "inline" && !isPluginInlineViewVersion(descriptor.version)) {
+      reportRegistrationError(
+        record,
+        "Inline view version must be an integer from 1 to 65535: " + id,
+      );
+      return;
     }
     const existing = registry.controlUiDescriptors.find(
-      (entry) => entry.pluginId === record.id && entry.descriptor.id === id,
+      (entry) =>
+        entry.pluginId === record.id &&
+        entry.descriptor.id === id &&
+        (surface !== "inline" ||
+          entry.descriptor.surface !== "inline" ||
+          entry.descriptor.version === descriptor.version),
     );
     if (existing) {
       reportRegistrationError(record, `control UI descriptor already registered: ${id}`);
@@ -252,11 +253,12 @@ export function createControlUiRegistrar(state: PluginRegistryState) {
     registry.controlUiDescriptors.push(
       // Descriptors are admitted metadata, so retained snapshots need no executable lease.
       createIdentityRegistration(record, {
-        ...(validateInlinePayload ? { validateInlinePayload } : {}),
         descriptor: {
           ...descriptor,
           id,
-          surface,
+          ...(descriptor.surface === "inline"
+            ? { surface: descriptor.surface, version: descriptor.version }
+            : { surface: descriptor.surface ?? "session", version: undefined }),
           ...(linkReader ? { linkReader } : {}),
           label,
           ...(description !== undefined ? { description } : {}),

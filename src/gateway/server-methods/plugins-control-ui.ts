@@ -1,4 +1,3 @@
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { GATEWAY_CLIENT_IDS } from "../../../packages/gateway-protocol/src/client-info.js";
 import {
   ErrorCodes,
@@ -92,18 +91,14 @@ export const pluginsControlUiHandlers: GatewayRequestHandlers = {
           if (descriptor.surface !== "inline") {
             return [];
           }
-          // The registrar requires an object/boolean schema for this surface.
-          const schema = descriptor.schema;
-          return typeof schema === "boolean" || isRecord(schema)
-            ? [
-                {
-                  pluginId: descriptor.pluginId,
-                  id: descriptor.id,
-                  label: descriptor.label,
-                  schema,
-                },
-              ]
-            : [];
+          return [
+            {
+              pluginId: descriptor.pluginId,
+              id: descriptor.id,
+              label: descriptor.label,
+              version: descriptor.version!,
+            },
+          ];
         },
       );
       respond(true, { ...catalog, ...(inlineViews.length ? { inlineViews } : {}) });

@@ -36,12 +36,7 @@ export default definePluginEntry({
       surface: "inline",
       label: "Incident dashboard",
       requiredScopes: ["operator.read"],
-      schema: {
-        type: "object",
-        properties: { incidentId: { type: "string" } },
-        required: ["incidentId"],
-        additionalProperties: false,
-      },
+      version: 1,
     });
     api.registerTool({
       name: "show_incident",
@@ -61,6 +56,7 @@ export default definePluginEntry({
           "incident-dashboard",
           { incidentId: incident.incidentId },
           {
+            version: 1,
             summary: incident.incidentId + ": " + incident.title + " — " + incident.status + ".",
           },
         );

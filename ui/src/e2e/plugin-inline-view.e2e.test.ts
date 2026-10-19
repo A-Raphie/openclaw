@@ -30,8 +30,7 @@ const view = (toolCallId: string): PluginInlineViewBlock => ({
   toolName: "show_incident",
   toolCallId,
   summary,
-  status: "ok",
-  label: "Incident dashboard",
+  version: 1,
   payload: { incidentId: "INC-42" },
 });
 const toolResult = (toolCallId: string, timestamp: number) => ({
@@ -45,14 +44,69 @@ const toolResult = (toolCallId: string, timestamp: number) => ({
 const descriptor = {
   id: "incident-dashboard",
   label: "Incident dashboard",
-  schema: {
-    type: "object",
-    properties: { incidentId: { type: "string" } },
-    required: ["incidentId"],
-  },
+  version: 1,
 };
 
 suite.define(() => {
+  it("filters inline views through the visible transcript search", async () => {
+    await suite.withPage(
+      { viewport: { width: 1280, height: 900 }, colorScheme: "light", serviceWorkers: "block" },
+      async ({ page }) => {
+        const prompt = "Review the incident and release checklist.";
+        const match = "Release checklist: smoke tests passed; rollout is ready.";
+        const gateway = await installMockGateway(page, {
+          agentModel: "openai/gpt-4.1",
+          sessionKey,
+          historyMessages: [
+            { role: "user", content: prompt, timestamp: now },
+            toolResult("search-incident", now + 1),
+            { role: "assistant", content: match, timestamp: now + 2 },
+          ],
+          nativePlugins: [
+            {
+              pluginId: "incident-tools",
+              rootDir: path.resolve("examples/inline-incident"),
+              source: "./control-ui.ts",
+              inlineViews: [descriptor],
+            },
+          ],
+          methodResponses: { "incident-tools.get": incident },
+        });
+        await page.goto(controlUiSessionUrl(suite.server.baseUrl, sessionKey, "chat"));
+        const pane = page.locator(".chat-pane-cache__pane--active");
+        const inline = pane.locator('[data-plugin-inline-view="search-incident"]');
+        await inline.getByRole("heading", { name: incident.title }).waitFor();
+        const composer = pane.locator(".agent-chat__composer-combobox textarea");
+        await composer.focus();
+        const shortcut = await page.evaluate(() =>
+          /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "Meta+f" : "Control+f",
+        );
+        await page.keyboard.press(shortcut);
+        const search = pane.getByRole("textbox", { name: "Search messages", exact: true });
+        await search.fill("smoke tests");
+        await expect.poll(() => pane.getByText(prompt, { exact: true }).count()).toBe(0);
+        await pane.getByText(match, { exact: true }).waitFor();
+        if (process.env.OPENCLAW_CAPTURE_UI_PROOF === "1") {
+          const frame = await takeControlUiScreenshotFrame(
+            page,
+            search,
+            [pane.getByText(match, { exact: true })],
+            { animations: "disabled" },
+          );
+          writeFileSync(path.join(suite.artifactDir, "search-filter.png"), frame.png);
+        }
+        expect(await inline.count()).toBe(0);
+        expect(await pane.getByText(summary, { exact: true }).count()).toBe(0);
+        await search.fill("INC-42");
+        await inline.getByRole("heading", { name: incident.title }).waitFor();
+        await search.fill("   ");
+        await inline.getByRole("heading", { name: incident.title }).waitFor();
+        await pane.getByText(match, { exact: true }).waitFor();
+        expect((await gateway.getRequests("chat.send")).length).toBe(0);
+      },
+    );
+  });
+
   it("mounts during a live turn, shares panel state, and lazily reconstructs history without rerunning tools", async () => {
     await suite.withPage(
       { viewport: { width: 1280, height: 900 }, serviceWorkers: "block" },
@@ -243,19 +297,28 @@ suite.define(() => {
         ]);
         await gateway.setMethodResponse("plugins.controlUi.list", {
           ...catalog,
-          inlineViews: [{ ...descriptor, pluginId: "incident-tools", schema: { type: "number" } }],
+          inlineViews: [{ ...descriptor, pluginId: "incident-tools", version: 2 }],
         });
         await gateway.emitGatewayEvent("plugins.controlUi.changed", { revision: "incompatible" });
-        await first.getByText("This saved view is incompatible", { exact: false }).waitFor();
+        await first.getByText("This view is unavailable.", { exact: false }).waitFor();
         await gateway.setMethodResponse("plugins.controlUi.list", {
           ...catalog,
           revision: "revoked",
+          plugins: [],
           inlineViews: [],
         });
         await gateway.emitGatewayEvent("plugins.controlUi.changed", { revision: "revoked" });
         await expect.poll(() => page.locator(".incident-tools-card").count()).toBe(0);
         await first.getByText("This view is unavailable.", { exact: false }).waitFor();
         expect(await page.getByText(summary, { exact: true }).count()).toBeGreaterThan(0);
+        // The saved payload survived unsupported/missing states; reavailability only hydrates the plugin.
+        await gateway.setMethodResponse("plugins.controlUi.list", {
+          ...catalog,
+          revision: "restored",
+        });
+        await gateway.emitGatewayEvent("plugins.controlUi.changed", { revision: "restored" });
+        await first.getByRole("heading", { name: incident.title }).waitFor();
+        expect((await gateway.getRequests("chat.send")).length).toBe(0);
       },
     );
   });

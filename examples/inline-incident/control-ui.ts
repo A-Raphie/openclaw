@@ -126,6 +126,7 @@ export default defineControlUiPlugin({
   activate(host: ControlUiHost) {
     host.ui.registerInlineView({
       id: "incident-dashboard",
+      version: 1,
       mount(container, context) {
         const payload = context.props.payload;
         if (

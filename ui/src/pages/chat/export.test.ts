@@ -7,6 +7,38 @@ afterEach(() => {
 });
 
 describe("exportChatMarkdown", () => {
+  it("exports saved inline summaries for direct and nested results, without component payloads", () => {
+    const view = {
+      type: "plugin_view",
+      pluginId: "incidents",
+      viewId: "incident",
+      version: 7,
+      payload: { incidentId: "private-reference" },
+      summary: "Incident is investigating.",
+      toolCallId: "call",
+      toolName: "show_incident",
+    };
+    const markdown = buildChatMarkdown(
+      [
+        {
+          role: "toolResult",
+          runId: "first",
+          details: { pluginView: view },
+          content: [{ type: "text", text: view.summary }],
+        },
+        {
+          role: "assistant",
+          runId: "second",
+          content: [{ type: "toolResult", details: { pluginView: view } }],
+        },
+      ],
+      "OpenClaw",
+    );
+    expect(markdown?.match(/Incident is investigating\./g)).toHaveLength(2);
+    expect(markdown).not.toContain("private-reference");
+    expect(markdown).not.toContain("plugin_view");
+  });
+
   it.each([
     { name: "empty transcript", messages: [] },
     {
@@ -69,7 +101,7 @@ describe("exportChatMarkdown", () => {
     expect(markdown).toContain("A readable conversation.");
   });
 
-  it("uses transcript speaker normalization without inventing timestamps or exporting silent replies", () => {
+  it("uses transcript speaker normalization and preserves prepared literal control text", () => {
     const markdown = buildChatMarkdown(
       [
         {
@@ -105,7 +137,8 @@ describe("exportChatMarkdown", () => {
       "# Chat with OpenClaw\n\n" +
         "## Kai\n\nPlease check the build.\n\n" +
         "## Build assistant (1970-01-01T00:00:01.000Z)\n\nThe build passed.\n\n" +
-        "## Tool\n\n  exit 0\n\n",
+        "## Tool\n\n  exit 0\n\n\n" +
+        "## OpenClaw\n\nNO_REPLY\n",
     );
   });
 

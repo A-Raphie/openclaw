@@ -17,6 +17,7 @@
     "openclaw": "*"
   },
   "devDependencies": {
+    "openclaw": "workspace:*",
     "esbuild": "0.28.2"
   }
 }

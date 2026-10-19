@@ -1,9 +1,11 @@
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import type {
   ControlUiDisposer,
   ControlUiHost,
   ControlUiPageNavigationOptions,
   ControlUiPageTarget,
 } from "../../../src/plugin-sdk/control-ui.js";
+import { isPluginInlineViewVersion } from "../../../src/shared/plugin-inline-view.js";
 import { serializeSidebarEntry } from "../app-navigation.ts";
 import { isRouteId, pathForRoute, pluginTabLocation } from "../app-route-paths.ts";
 import type { ApplicationContext } from "../app/context.ts";
@@ -119,11 +121,18 @@ export function createControlUiPluginHost(
     request: (method, params = {}) => call(() => owner.client.request(method, params)),
     onEvent(event, listener) {
       return retain(
-        current().gateway.subscribeEvents((frame) => {
-          if (runtime.isCurrent(owner) && frame.event === event) {
-            listener(frame.payload);
-          }
-        }),
+        current().gateway.subscribeEvents(
+          (frame) => {
+            if (
+              runtime.isCurrent(owner) &&
+              frame.event === event &&
+              (event !== "session.message" || asOptionalRecord(frame.payload)?.message != null)
+            ) {
+              listener(frame.payload);
+            }
+          },
+          { includeMessageBodies: event === "session.message" },
+        ),
       );
     },
     subscribe(listener) {
@@ -203,7 +212,8 @@ export function createControlUiPluginHost(
       open({ sessionKey, agentId }) {
         openPreferredApplicationSession(current(), sessionKey, agentId);
       },
-      create: (params) => call((context) => context.sessions.create(params)),
+      create: (params) =>
+        call((context) => context.sessions.create(params, { signal: owner.abort.signal })),
       patch: ({ sessionKey, agentId }, patch) =>
         call(async (context) => {
           // A plugin query may target another global owner. Its mutation does not
@@ -345,7 +355,12 @@ export function createControlUiPluginHost(
       registerAction: (value) => runtime.register(owner, "actions", value),
       registerAccessory: (value) => runtime.register(owner, "accessories", value),
       registerWidget: (value) => runtime.register(owner, "widgets", value),
-      registerInlineView: (value) => runtime.register(owner, "inlineViews", value),
+      registerInlineView: (value) => {
+        if (!isPluginInlineViewVersion(value.version)) {
+          throw new Error("Inline view version must be an integer from 1 to 65535.");
+        }
+        return runtime.register(owner, "inlineViews", value, value.id + "@" + value.version);
+      },
       registerReplacement: (value) => runtime.register(owner, "replacements", value),
       selectReplacement(surface, id) {
         current();

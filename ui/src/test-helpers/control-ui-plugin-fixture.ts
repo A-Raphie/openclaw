@@ -7,7 +7,7 @@ export type NativeControlUiPluginFixture = {
   pluginId: string;
   rootDir: string;
   source: string;
-  inlineViews?: readonly { id: string; label: string; schema: Record<string, unknown> | boolean }[];
+  inlineViews?: readonly { id: string; label: string; version: number }[];
 };
 
 const builds = new Map<string, Promise<PluginManifestControlUi>>();
@@ -52,7 +52,7 @@ export async function prepareNativeControlUiPluginFixtures(
         (fixture.inlineViews ?? []).map((view) => ({
           id: view.id,
           label: view.label,
-          schema: view.schema,
+          version: view.version,
           pluginId: fixture.pluginId,
         })),
       ),

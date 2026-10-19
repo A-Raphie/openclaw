@@ -2,6 +2,8 @@ import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import type { AgentToolResult } from "../agents/runtime/index.js";
 import {
   PLUGIN_INLINE_VIEW_MAX_BYTES,
+  isPluginInlineViewVersion,
+  readPluginInlineViewDescriptor,
   type PluginInlineViewDescriptor,
 } from "../shared/plugin-inline-view.js";
 import { isPluginJsonValue, type PluginJsonValue } from "./host-hook-json.js";
@@ -22,10 +24,13 @@ export function createPluginInlineViewResult(
   pluginId: string,
   viewId: string,
   payload: PluginJsonValue,
-  options: { summary: string },
+  options: { version: number; summary: string },
 ): PluginInlineViewResult {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(viewId)) {
     throw new Error("Inline view requires a registered view id.");
+  }
+  if (!isPluginInlineViewVersion(options.version)) {
+    throw new Error("Inline view version must be an integer from 1 to 65535.");
   }
   if (typeof options.summary !== "string" || !options.summary.trim()) {
     throw new Error("Inline view requires a nonblank text summary.");
@@ -40,7 +45,15 @@ export function createPluginInlineViewResult(
   }
   return {
     content: [{ type: "text", text: options.summary }],
-    details: { pluginInlineView: { pluginId, viewId, payload } },
+    details: {
+      pluginInlineView: {
+        pluginId,
+        viewId,
+        version: options.version,
+        payload,
+        summary: options.summary,
+      },
+    },
   };
 }
 
@@ -52,21 +65,15 @@ export function bindPluginInlineViewInvocation<T extends AgentToolResult<unknown
   toolCallId: string,
 ): T {
   const details = asOptionalRecord(result.details);
-  const descriptor = asOptionalRecord(details?.pluginInlineView);
+  const descriptor = readPluginInlineViewDescriptor(details?.pluginInlineView);
   if (!descriptor || descriptor.pluginId !== pluginId) {
-    return result;
-  }
-  const summary = result.content
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("\n");
-  if (!summary.trim()) {
     return result;
   }
   return {
     ...result,
     details: {
       ...details,
-      pluginInlineViewInvocation: { pluginId, toolName, toolCallId, summary },
+      pluginInlineViewInvocation: { pluginId, toolName, toolCallId },
     },
   };
 }

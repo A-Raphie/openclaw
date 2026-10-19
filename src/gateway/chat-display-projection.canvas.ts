@@ -37,7 +37,7 @@ export function isToolResultHistoryBlockType(type: unknown): boolean {
 export function projectToolResultDetails(
   details: unknown,
   maxChars: number,
-  invocation: { toolCallId?: unknown; toolName?: unknown } = {},
+  invocation: Record<string, unknown> = {},
 ): { details: Record<string, unknown> | undefined; truncated: boolean } {
   const record = readRecord(details);
   if (!record) {
