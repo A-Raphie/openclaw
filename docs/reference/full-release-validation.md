@@ -14,7 +14,10 @@ whole release.
 
 Test failures remain failures. Full Release Validation never automatically reruns
 failed or timed out jobs. Diagnose the original failure before using an explicit
-operator recovery command.
+operator recovery command. Trusted release tooling computes FRV's aggregate
+verdict using its [checked-in waiver policy](/reference/full-release-validation/evidence#release-tooling-waivers).
+Publication requires FRV to conclude **success**; failed tests and waiver reasons
+remain visible in its evidence.
 
 This page is an index. The reference is documented on seven pages, one per
 reader job. Open the page that matches your task and complete that validation
@@ -33,7 +36,7 @@ to the immutable coverage identity.
 | [Top-level stages](/reference/full-release-validation/stages)                                       | The umbrella stage matrix, evidence reuse, artifact producers, and decision states.                |
 | [Release checks stages](/reference/full-release-validation/release-checks)                          | The `OpenClaw Release Checks` stage matrix and the Docker release-path chunks.                     |
 | [Release profiles and focused reruns](/reference/full-release-validation/profiles)                  | Comparing profile coverage and picking a focused `rerun_group` or suite filter.                    |
-| [Evidence to keep](/reference/full-release-validation/evidence)                                     | Recording evidence, trusted publication waivers, and the backing workflow files.                   |
+| [Evidence to keep](/reference/full-release-validation/evidence)                                     | Recording evidence, checked-in release-tooling waivers, and the backing workflow files.            |
 
 ## Where each section moved
 

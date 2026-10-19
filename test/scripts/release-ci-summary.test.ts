@@ -2450,7 +2450,9 @@ describe("release CI summary child correlation", () => {
     },
   );
 
-  it("recomputes mixed-attempt evidence with unchanged frozen inputs", async () => {
+  it("recomputes mixed-attempt evidence for the same release version", async () => {
+    const version = "2026.9.1";
+
     const fixture = trustedMainPackageFixture({
       manifestVersion: 3,
       workflowSha: "a".repeat(40),
@@ -2482,6 +2484,8 @@ describe("release CI summary child correlation", () => {
       getRunAttemptJobs: (runId: string, runAttempt: number) => Array<Record<string, unknown>>;
       loadExecutionPlan: () => Record<string, unknown>;
     };
+    const releaseVersion = { targetVersion: version };
+    Object.assign(manifest.validationInputs, releaseVersion);
     const plannedChild = {
       dispatchName: "Dispatch release checks",
       displayTitle: fixture.childRun.display_title,
@@ -2498,6 +2502,7 @@ describe("release CI summary child correlation", () => {
       workflowSha: fixture.childRun.head_sha,
     };
     const executionPlan = buildReleaseExecutionPlanArtifact({
+      ...releaseVersion,
       attemptEvidenceVersion: 2,
       candidate: null,
       children: [plannedChild],
@@ -3542,19 +3547,6 @@ describe("release CI summary child correlation", () => {
         selected,
       ),
     ).toThrow("selected child is missing from manifest: NPM Telegram Beta E2E");
-  });
-
-  it("rejects non-empty recorded legacy Telegram waivers without changing coverage", () => {
-    const raw = rawManifest({});
-    raw.releaseProfile = "stable";
-    Object.assign(raw.validationInputs, {
-      telegramWaiver: "2026.10.1-owner-approved",
-      targetVersion: "2026.10.1",
-      releasePackageSpec: "openclaw@2026.10.1",
-    });
-    expect(() => validateParentManifest(raw, { runAttempt: 2, runId: "29090000000" })).toThrow(
-      /Non-empty legacy telegram_waiver/u,
-    );
   });
 
   it("keeps historical non-reuse v2 manifests readable without validation inputs", () => {

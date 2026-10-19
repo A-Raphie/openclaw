@@ -6338,28 +6338,6 @@ render_github_release_notes() { cp "$2" "$1"; printf '%s\\n' '{"verificationIncl
       JSON.stringify({
         openclawNpmTarball: "https://example.invalid/openclaw.tgz",
         openclawNpmIntegrity: "sha512-fixture",
-        ...(mode.fullReleasePreflight
-          ? {
-              validationWaivers: {
-                schema: "openclaw.release-validation-waivers/v1",
-                targetVersion: mode.version,
-                candidateSha: "d".repeat(40),
-                parentRunId: fullReleaseRunId,
-                parentRunAttempt: 1,
-                waivers: [
-                  {
-                    childRole: "releaseChecksIndependent",
-                    childRunId: "999",
-                    childRunAttempt: 1,
-                    jobName: "Run QA Lab live Telegram lane",
-                    suiteId: "qa-live-telegram",
-                    reason: "Third-party Telegram credential outage",
-                    approvedBy: "maintainer",
-                  },
-                ],
-              },
-            }
-          : {}),
       }),
     );
     const resume = fixture.run(
@@ -6407,12 +6385,6 @@ render_github_release_notes() { cp "$2" "$1"; printf '%s\\n' '{"verificationIncl
     const proofText = readFileSync(join(fixture.root, "release-verification.md"), "utf8");
     expect(proofText).not.toContain("Stable soak waived by operator:");
     expect(proofText).toContain("npm Telegram beta E2E: not supplied");
-    if (mode.fullReleasePreflight) {
-      expect(proofText).toContain("waived — not a pass");
-      expect(proofText).toContain("Reason: Third-party Telegram credential outage");
-      expect(proofText).toContain("Approver: @maintainer");
-      expect(proofText).not.toContain("waived by the release owner");
-    }
     expect
       .soft(proofText)
       .toContain(
@@ -8020,17 +7992,15 @@ NODE
     expect(evidenceStep.run).toContain(
       "actions/runs/${FULL_RELEASE_VALIDATION_RUN_ID}/attempts/${FULL_RELEASE_VALIDATION_RUN_ATTEMPT}",
     );
-    expect(evidenceStep.run).toContain("await authenticateStableCloseoutValidation({");
+    expect(evidenceStep.run).toContain(
+      'String(run.run_attempt ?? "") !== process.env.FULL_RELEASE_VALIDATION_RUN_ATTEMPT',
+    );
     expect(evidenceStep.run).toContain(
       'manifest_asset="openclaw-${evidence_version}-release-manifest.json"',
     );
     expect(evidenceStep.run).toContain('gh_with_retry release download "$EVIDENCE_TAG"');
-    expect(evidenceStep.run).toContain(
-      "fullReleaseValidationRunId: process.env.FULL_RELEASE_VALIDATION_RUN_ID,",
-    );
-    expect(evidenceStep.run).toContain(
-      "fullReleaseValidationRunAttempt: process.env.FULL_RELEASE_VALIDATION_RUN_ATTEMPT,",
-    );
+    expect(evidenceStep.run).toContain(".runId == $run_id");
+    expect(evidenceStep.run).toContain(".runAttempt == $run_attempt");
     expect(workflow).toContain(
       '--full-release-validation-run-attempt "$FULL_RELEASE_VALIDATION_RUN_ATTEMPT"',
     );
@@ -14751,7 +14721,6 @@ printf '%s\\n' "$DEEPSEEK_API_KEY" "$DEEPINFRA_API_KEY"`,
     for (const source of [
       "scripts/release-ci-summary.mjs",
       "scripts/lib/release-validation-waivers.mjs",
-      "scripts/lib/release-validation-waivable-lanes.json",
       "scripts/lib/release-evidence-identity.mjs",
       "scripts/release-qualification-admission.mjs",
       "scripts/lib/qualification-admission-baselines.mjs",

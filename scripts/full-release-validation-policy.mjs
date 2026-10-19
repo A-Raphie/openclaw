@@ -25,6 +25,10 @@ import {
 } from "./lib/full-release-manifest.mjs";
 import { changelogEntryPath, isReleaseChangelogPath } from "./lib/release-changelog.mjs";
 import { validateQualificationBaselines } from "./lib/release-upgrade-baseline.mjs";
+import {
+  evaluateReleaseChildPolicy,
+  isFailedReleaseJob as isFailedJob,
+} from "./lib/release-validation-waivers.mjs";
 import { classifyReleaseTrain, parseReleaseVersion } from "./lib/release-version.mjs";
 import { parseGithubResponse } from "./pr-lib/gh-api-preflight.mjs";
 import { validateQualificationCoverage } from "./release-qualification-coverage.mjs";
@@ -64,7 +68,6 @@ export function validateReleaseManifestAdvisoryJobs(manifest) {
   return validateReleaseAdvisoryJobs(manifest.advisoryJobs);
 }
 
-const SUCCESSFUL_JOB_CONCLUSIONS = new Set(["neutral", "skipped", "success"]);
 const MAX_REPORTED_ISSUES = 25;
 const MAX_SUMMARY_ISSUES = 5;
 const MAX_LABEL_LENGTH = 200;
@@ -993,9 +996,8 @@ function releaseExecutionPlanShape(payload) {
       ...(Object.hasOwn(payload, "qualificationCoverage")
         ? ["qualificationCoverage", "qualificationInputs"]
         : []),
-      // Frozen execution plans retain this retired field in their authenticated schema.
-      ...(Object.hasOwn(payload, "telegramWaiver") ? ["targetVersion", "telegramWaiver"] : []),
-      ...(Object.hasOwn(payload, "coveragePolicy") ? ["targetVersion", "coveragePolicy"] : []),
+      "targetVersion",
+      ...(Object.hasOwn(payload, "coveragePolicy") ? ["coveragePolicy"] : []),
       ...(Object.hasOwn(payload, "sourceAdmissionContract")
         ? ["sourceAdmissionContract", "sourceAdmission"]
         : []),
@@ -1033,18 +1035,13 @@ function executionPlanDigestPayload(plan) {
         publicationAdmission: plan.publicationAdmission,
       }
     : {};
-  // Hash historical bytes unchanged; publication tooling rejects nonempty legacy grants.
-  const legacyFields = Object.hasOwn(plan, "telegramWaiver")
-    ? { targetVersion: plan.targetVersion, telegramWaiver: plan.telegramWaiver }
-    : {};
   const coverage = Object.hasOwn(plan, "coveragePolicy")
-    ? { targetVersion: plan.targetVersion, coveragePolicy: plan.coveragePolicy }
+    ? { coveragePolicy: plan.coveragePolicy }
     : {};
   const attemptAware = Object.hasOwn(plan, "attemptEvidenceVersion");
   return {
     ...source,
     ...publication,
-    ...legacyFields,
     ...(attemptAware
       ? {
           ...coverage,
@@ -1072,6 +1069,7 @@ function executionPlanDigestPayload(plan) {
     ...(attemptAware ? { repository: plan.repository } : {}),
     rerunGroup: plan.rerunGroup,
     targetSha: plan.targetSha,
+    targetVersion: plan.targetVersion,
     trustedWorkflow: plan.trustedWorkflow,
     version: plan.version,
     workflowRef: plan.workflowRef,
@@ -1159,7 +1157,7 @@ export function buildReleaseExecutionPlanArtifact({
     ...(publicationAdmissionContract !== undefined
       ? { publicationAdmissionContract, publicationAdmission }
       : {}),
-    ...(coveragePolicy !== undefined ? { coveragePolicy, targetVersion } : {}),
+    ...(coveragePolicy !== undefined ? { coveragePolicy } : {}),
     ...(childReuse !== undefined ? { childReuse: structuredClone(childReuse) } : {}),
     version: 1,
     kind: "openclaw.full-release-execution-plan",
@@ -1168,6 +1166,10 @@ export function buildReleaseExecutionPlanArtifact({
     workflowRef: boundedString(expected.workflowRef, MAX_LABEL_LENGTH),
     workflowSha: boundedString(expected.workflowSha, MAX_LABEL_LENGTH),
     targetSha: boundedString(expected.targetSha, MAX_LABEL_LENGTH),
+    targetVersion: boundedString(
+      targetVersion ?? candidate?.package?.version ?? sourceAdmission?.projection?.version,
+      MAX_LABEL_LENGTH,
+    ),
     trustedWorkflow: normalizedTrustedWorkflow(trustedWorkflow),
     releaseProfile: boundedString(releaseProfile, MAX_LABEL_LENGTH),
     rerunGroup: boundedString(rerunGroup, MAX_LABEL_LENGTH),
@@ -1297,7 +1299,10 @@ function validateCandidatePlanBinding(plan, expectedCandidateRequest) {
   }
   if (plan.candidate !== null) {
     const candidate = validateFullReleaseCandidateBinding(plan.candidate);
-    if (JSON.stringify(candidate.request) !== JSON.stringify(request)) {
+    if (
+      JSON.stringify(candidate.request) !== JSON.stringify(request) ||
+      plan.targetVersion !== candidate.package.version
+    ) {
       throw new Error("release candidate binding request differs from the execution plan");
     }
   }
@@ -1410,15 +1415,15 @@ function blockerIndex(issues) {
   return issues.map((issue) => jsonSha256(blockerEvidence(issue))).toSorted();
 }
 
-function isFailedJob(job) {
+export function terminalPolicyPass(child, targetVersion) {
+  const policy = evaluateReleaseChildPolicy({ child, targetVersion });
   return (
-    job.status === "completed" && !SUCCESSFUL_JOB_CONCLUSIONS.has(String(job.conclusion ?? ""))
+    child.status === "completed" &&
+    child.jobs.every((job) => job.status === "completed") &&
+    (child.conclusion === "success" ||
+      (child.conclusion === "failure" && policy.waivers.length > 0)) &&
+    policy.blockingJobs.length === 0
   );
-}
-
-export function terminalPolicyPass(child) {
-  const failures = child.jobs.filter(isFailedJob);
-  return child.status === "completed" && child.conclusion === "success" && failures.length === 0;
 }
 
 export function planReleaseChildRerun({ childKey, jobs }) {
@@ -1489,9 +1494,9 @@ function releaseState(cancelled, activeRunIds, blockers, errors) {
   );
 }
 
-function releaseChildBlockers(selected) {
+function releaseChildBlockers(selected, targetVersion) {
   const childJobBlockers = selected.flatMap((child) =>
-    child.jobs.filter(isFailedJob).map((job) => ({
+    evaluateReleaseChildPolicy({ child, targetVersion }).blockingJobs.map((job) => ({
       child: child.key,
       conclusion: job.conclusion,
       job: job.name,
@@ -1513,7 +1518,7 @@ function releaseChildBlockers(selected) {
         child.runId &&
         child.runAttempt &&
         child.status === "completed" &&
-        !terminalPolicyPass(child) &&
+        !terminalPolicyPass(child, targetVersion) &&
         !childJobBlockerKeys.has(`${child.key}:${child.runId}`),
     )
     .map((child) => ({
@@ -1535,6 +1540,7 @@ export function classifyReleaseSnapshot({
   extraBlockers = [],
   extraErrors = [],
   localFailures = [],
+  targetVersion,
 }) {
   const selected = children.filter((child) => child.selected);
   const active = selected.filter(
@@ -1543,7 +1549,7 @@ export function classifyReleaseSnapshot({
   const childErrors = selected.flatMap((child) =>
     (child.errors ?? []).filter((error) => error.kind !== "dispatch_missing"),
   );
-  const childBlockers = releaseChildBlockers(selected);
+  const childBlockers = releaseChildBlockers(selected, targetVersion);
   const rawBlockers = [
     ...localFailures,
     ...extraBlockers,
@@ -1560,6 +1566,11 @@ export function classifyReleaseSnapshot({
   return {
     activeRunIds,
     advisoryJobs: [],
+    waivers: selected.flatMap((child) =>
+      evaluateReleaseChildPolicy({ child, targetVersion }).waivers.map((waiver) =>
+        Object.assign({}, waiver, { runId: child.runId, runAttempt: child.runAttempt }),
+      ),
+    ),
     blockerCount: rawBlockers.length,
     blockerIndex: blockerIndex(rawBlockers),
     blockers,
@@ -1662,6 +1673,7 @@ export function buildReleaseStateArtifact({
     executionPlanSha256: executionPlan.sha256,
     state: decision.state,
     advisoryJobs: decision.advisoryJobs ?? [],
+    waivers: decision.waivers ?? [],
     activeRunIds,
     blockerCount: decision.blockerCount ?? completeBlockerIndex.length,
     blockerIndex: completeBlockerIndex,
@@ -2121,6 +2133,7 @@ export function validateReleaseStateArtifact(payload, expected, expectedMode) {
     ...payload,
     activeRunIds,
     advisoryJobs: validateReleaseAdvisoryJobs(payload.advisoryJobs),
+    waivers: payload.waivers ?? [],
     blockerCount: machineEvidence ? payload.blockerCount : null,
     blockerIndex: completeBlockerIndex,
     blockers,
@@ -2252,7 +2265,11 @@ function verifyStateStructure(state, executionPlan, label) {
     extraBlockers: executionPlan.blockers,
     extraErrors: executionPlan.errors,
     localFailures: releasePlanGateFailures(executionPlan.gates),
+    targetVersion: executionPlan.targetVersion,
   });
+  if (!isDeepStrictEqual(state.waivers, baseline.waivers)) {
+    throw new Error(`${label} waivers differ from checked-in release tooling policy`);
+  }
   if (JSON.stringify(state.activeRunIds) !== JSON.stringify(baseline.activeRunIds)) {
     throw new Error(`${label} activeRunIds differs from canonical release policy`);
   }
@@ -2483,6 +2500,11 @@ function releaseStateDetailLines(payload, maxItems = MAX_SUMMARY_ISSUES) {
   }
   for (const advisory of payload.advisoryJobs ?? []) {
     lines.push(issueSummary(`Advisory [${advisory.class}]`, advisory));
+  }
+  for (const waiver of payload.waivers ?? []) {
+    lines.push(
+      `- Waived (not a test pass): ${waiver.childRole} / ${waiver.jobName}; ${waiver.reason}`,
+    );
   }
   const omitted =
     Math.max(0, payload.blockers.length - normalizedMax) +

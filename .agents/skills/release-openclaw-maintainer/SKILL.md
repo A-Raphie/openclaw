@@ -27,22 +27,18 @@ Read only the references needed for the selected phase:
 
 ## Shared release boundaries
 
-Every selected validation lane must succeed unless an exact failed third-party
-live-provider or Telegram lane is accepted by the sole trusted P-side
-[publication waiver mechanism](../../../docs/reference/full-release-validation/evidence.md#publication-waivers).
-Waivers are declared at verification/publication against an already-run FRV,
-never in candidate workflows or dispatch inputs. They do not change C/Q or
-dispatch a new FRV, and remain **waived — not a pass**, with reason and approver.
-Never-waivable requirements include Windows and macOS Node and other
-normal CI jobs, install smoke, survivor
+FRV must conclude **success** under pinned P's
+[checked-in release-tooling policy](../../../docs/reference/full-release-validation/evidence.md#release-tooling-waivers).
+Only exact failed live-provider or Telegram leaves may be waived, without
+skipping tests or changing C/Q. All other required lanes must succeed: Windows
+and macOS Node and other normal CI jobs, install smoke, survivor
 lanes, `update-first-hop-compat*`, pack/npm qualification, package integrity,
 and Linux/Windows/macOS Gateway checks, including Windows packaged
 install/upgrade checks in Release Checks. A cancelled run still blocks. Preserve
 first failures and classify each one as below before recovery. Stable
 publication requires stable/full evidence, soak, and blocking performance.
-Beta-profile evidence cannot authorize stable publication. No waiver can bypass
-these artifact, CI, install/upgrade, soak, performance, or integrity requirements.
-All nine Gateway install/upgrade
+Beta-profile evidence cannot authorize stable publication. None of those hard
+gates, soak, or performance can be waived. All nine Gateway install/upgrade
 combinations across Linux, Windows, and macOS are required for all-group
 qualification. Preserve identity, provenance, complete evidence, and existing
 publication approvals.
@@ -55,9 +51,10 @@ that is not a regression (for example the 2026.9.6 "Assign to…" bug). A real
 blocker is a regression in shipped bytes or behavior, or an update/install/
 publish defect; fix it on the release branch. Rerun a flake on
 the same Release SHA with at most two recorded reruns by default, and file a
-fix-in-parallel issue or PR on `main` with the evidence. Never re-cut, change
-tooling, or start a new FRV for a flake. A flake that remains red blocks publication
-unless the exact P-side allowlist exception applies. Main-only failures and infrastructure
+fix-in-parallel issue or PR on `main` with the evidence. Never re-cut for a flake.
+A deliberate tooling-code waiver requires FRV validation under the new pinned P,
+not a publisher override. An unwaived flake that remains red blocks publication.
+Main-only failures and infrastructure
 failures (runner outages, GitHub ghost jobs, hosted-runner offload) count as
 flakes for the release.
 
@@ -87,11 +84,7 @@ workflow SHA) and current attempt. The sealed
 manifest supplies the SDK evidence digest and npm publication decisions; it
 never acknowledges SDK API changes, so supply
 `plugin_sdk_api_acknowledgement` whenever the SDK report contains changes. The
-publisher accepts only independently authenticated P-side waivers on its data
-allowlist; candidate-side skips and legacy non-empty Telegram grants are rejected.
-Use `--validation-waivers-json` with an existing `--full-release-run` and the
-normal direct publisher, not the prepared button. Every other required job must
-still be successful. Explicit
+publisher accepts only successful FRV and cannot grant a waiver. Explicit
 publisher inputs select publication scope; the candidate helper still validates its explicit
 SDK acknowledgement when needed.
 
@@ -131,9 +124,9 @@ matching record, and root index may use `split-changelog-release-v1`
 to reuse product proof while qualifying new publication bytes. Any other
 source delta, rename, or deletion returns to the Code SHA loop. Historical
 root-only receipts retain `changelog-only-release-v1`.
-New qualification freezes **Q=C**: the entire qualification workflow closure
-belongs to the candidate. Keep independently trusted **P** (admission, verifier,
-and publisher) separate. A Q harness repair requires a new C/Q and newly bound
+New test qualification freezes **Q=C**: the candidate's test workflow closure
+belongs to the candidate. Keep independently trusted **P** (admission, aggregate
+decision, verifier, and publisher) separate. A Q harness repair requires a new C/Q and newly bound
 evidence; P-only or infrastructure repairs can preserve the candidate. Missing
 qualification contracts need a deliberate backport, never future-main fallback.
 

@@ -273,12 +273,12 @@ describe("full release execution plan", () => {
     expect(affectedActiveRunIds([reused], [{ runId: "101" }])).toEqual([]);
   });
 
-  it("retains the published empty retry field in the original execution-plan digest", () => {
+  it("binds empty retry metadata into the execution-plan digest without allowing retries", () => {
     const current = executionPlan(
       { childPhaseVersion: 3, rerunGroup: "ci" },
       { attemptEvidenceVersion: 3, candidateRequest: canonicalCandidateRequest() },
     );
-    // The published v2026.9.6 artifact hashes this ordered wire shape.
+    // Empty retired retry metadata is part of the recorded wire shape, not a grant.
     const digestPayload = {
       knownFlakyJobs: [],
       ...Object.fromEntries(
@@ -298,6 +298,7 @@ describe("full release execution plan", () => {
           "repository",
           "rerunGroup",
           "targetSha",
+          "targetVersion",
           "trustedWorkflow",
           "version",
           "workflowRef",

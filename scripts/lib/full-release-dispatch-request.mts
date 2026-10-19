@@ -184,11 +184,6 @@ function validateDispatchRecord(value: unknown): asserts value is DispatchRecord
     "Invalid retained dispatch request identity",
   );
   const wireInputs: Record<string, string> = {};
-  // Retained frozen requests may record the old input, never a new omission grant.
-  requireDispatch(
-    request.inputs.telegram_waiver === undefined || request.inputs.telegram_waiver === "",
-    "Legacy telegram_waiver must be empty. Declare a P-side publication waiver against the already-run Full Release Validation instead; do not resume or redispatch a candidate waiver.",
-  );
   for (const [key, input] of Object.entries(request.inputs)) {
     requireDispatch(
       /^[a-z][a-z0-9_]*$/u.test(key) &&

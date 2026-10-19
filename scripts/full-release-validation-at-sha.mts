@@ -850,11 +850,6 @@ function resolveDispatchSelection(workflowSha: string, overrides: Record<string,
     const raw: unknown =
       wireOverrides[key] ?? definition.default ?? (definition.type === "boolean" ? false : "");
     const text = String(raw);
-    // Frozen workflow schemas may retain the removed input, but fresh dispatches cannot grant it.
-    requireDispatch(
-      key !== "telegram_waiver" || text === "",
-      "Legacy telegram_waiver must be empty. Declare a P-side publication waiver against an already-run Full Release Validation instead; do not redispatch to grant a waiver.",
-    );
     let value: string | number | boolean = text;
     if (definition.type === "boolean") {
       requireDispatch(["true", "false"].includes(text), `Input ${key} must be true or false`);

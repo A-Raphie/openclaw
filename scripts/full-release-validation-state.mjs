@@ -55,6 +55,10 @@ import {
   releaseManifestChildEvidence,
 } from "./lib/full-release-manifest.mjs";
 import { createReleasePublishInputs } from "./lib/release-publish-inputs.mjs";
+import {
+  evaluateReleaseChildPolicy,
+  validateReleaseWaiverAggregates,
+} from "./lib/release-validation-waivers.mjs";
 import { downloadFullReleaseNpmPreflight } from "./npm-preflight-tooling-identity.mjs";
 import { verifyQualificationAdmission } from "./release-qualification-admission.mjs";
 
@@ -286,11 +290,33 @@ export async function readChild(child, previous, signal, options = {}) {
       },
       run,
     });
-    return validateChildBinding(child, run, {
+    const snapshot = validateChildBinding(child, run, {
       jobs: evidence.jobs,
       observedRunAttempts: evidence.observedRunAttempts,
       sha256: evidence.compositeJobsSha256,
     });
+    if (snapshot.status === "completed") {
+      const policy = evaluateReleaseChildPolicy({
+        child: snapshot,
+        targetVersion: options.targetVersion,
+      });
+      const jobs = evidence.jobs.map((job) =>
+        attempts
+          .find((attempt) => attempt.runAttempt === job.acceptedRunAttempt)
+          .jobs.find((raw) => raw.name === job.name),
+      );
+      await validateReleaseWaiverAggregates({
+        policy,
+        jobs,
+        getJobLog:
+          options.readJobLog ??
+          ((id) =>
+            runGh(["api", `repos/${process.env.GITHUB_REPOSITORY}/actions/jobs/${id}/logs`], {
+              signal,
+            })),
+      });
+    }
+    return snapshot;
   } catch (error) {
     const degraded = classifyReleaseGhTransportError(error) === "transient";
     const provenanceMismatch =
@@ -1257,6 +1283,7 @@ async function collectMode(mode) {
         },
       ],
       localFailures: gateFailures,
+      targetVersion: executionPlan.targetVersion,
     });
     writePayload(decision, { cancelledRunIds, requested: true });
     finished = true;
@@ -1315,6 +1342,7 @@ async function collectMode(mode) {
       plan.map((child, index) =>
         readChild(child, snapshots[index], abortController.signal, {
           reuseSelection: executionPlan.childReuse?.[child.key],
+          targetVersion: executionPlan.targetVersion,
         }),
       ),
     );
@@ -1325,6 +1353,7 @@ async function collectMode(mode) {
       extraBlockers: [...executionPlan.blockers, ...decisionReuse.blockers],
       extraErrors: [...transportReadErrors, ...executionPlan.errors, ...decisionReuse.errors],
       localFailures: gateFailures,
+      targetVersion: executionPlan.targetVersion,
     });
     if (Date.now() >= nextHeartbeat) {
       console.log(formatReleaseStateHeartbeat(mode, decision));
@@ -1352,6 +1381,7 @@ async function collectMode(mode) {
             ...cancellationErrors,
           ],
           localFailures: gateFailures,
+          targetVersion: executionPlan.targetVersion,
         });
       }
     }
@@ -1459,6 +1489,9 @@ async function validateManifestMode() {
     throw new Error("release manifest publication admission differs from its immutable plan");
   }
   validateReleaseCoveragePolicyBinding(executionPlan, manifest.validationInputs);
+  if ((manifest.validationInputs?.targetVersion ?? "") !== executionPlan.targetVersion) {
+    throw new Error("release manifest target version differs from its immutable plan");
+  }
   const expectedChildRunIds = Object.fromEntries(
     executionPlan.children.map((child) => [
       child.key,
@@ -1484,6 +1517,7 @@ async function validateManifestMode() {
     : undefined;
   if (
     manifest.targetSha !== executionPlan.targetSha ||
+    JSON.stringify(rawManifest.waivers ?? []) !== JSON.stringify(drain?.waivers ?? []) ||
     manifest.releaseProfile !== executionPlan.releaseProfile ||
     manifest.rerunGroup !== executionPlan.rerunGroup ||
     JSON.stringify(sortJsonValueKeys(manifest.childRunIds)) !==

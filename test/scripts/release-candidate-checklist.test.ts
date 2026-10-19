@@ -227,41 +227,6 @@ describe("release candidate checklist", () => {
     expect(() => parseArgs(flags)).toThrow(message);
   });
 
-  it("only declares P-side waivers against an explicitly selected existing FRV", () => {
-    const declaration = JSON.stringify({
-      schema: "openclaw.release-validation-waivers/v1",
-      targetVersion: "2026.10.4",
-      candidateSha: "b".repeat(40),
-      parentRunId: "111",
-      parentRunAttempt: 1,
-      waivers: [
-        {
-          childRole: "releaseChecksIndependent",
-          childRunId: "222",
-          childRunAttempt: 1,
-          jobName:
-            "Run repo/live E2E validation / Native live suites (Native live Z.AI Coding Plan)",
-          suiteId: "native-live-src-agents-zai-coding",
-          reason: "Provider credential outage",
-          approvedBy: "maintainer",
-        },
-      ],
-    });
-    const flags = ["--tag", "v2026.10.4", "--validation-waivers-json", declaration];
-    expect(() => parseArgs(flags)).toThrow("requires an existing --full-release-run");
-    expect(() =>
-      parseArgs([
-        ...flags,
-        "--full-release-run",
-        "111",
-        "--publication-route",
-        "prepared",
-        "--publish-workflow-ref",
-        publishWorkflowRef,
-      ]),
-    ).toThrow("requires --publication-route normal");
-  });
-
   it("requires an explicit prepared route and preserves historical normal state semantics", () => {
     const normal = parseArgs(["--tag", "v2026.9.1", "--publish-workflow-ref", publishWorkflowRef]);
     expect(normal.publicationRoute).toBe("normal");
@@ -595,10 +560,6 @@ describe("release candidate checklist", () => {
       };
       const authenticatedEvidence = {
         source: "direct",
-        evidence: {
-          current: { manifest: fullManifest },
-          conclusions: { allRequiredSucceeded: true },
-        },
         publicationAdmission: registryAdmission
           ? {
               observations: {
@@ -2331,7 +2292,6 @@ describe("release candidate checklist", () => {
     separatePackage?: boolean;
     providerMode?: string;
     waived?: boolean;
-    waiverSuite?: string;
     qualificationSha?: string;
     qualificationRef?: string;
     transport?: "missing" | "moved";
@@ -2374,31 +2334,10 @@ describe("release candidate checklist", () => {
       status: "passed",
     },
     {
-      name: "P-waived Telegram stays visible without dispatching replacement qualification",
+      name: "FRV Telegram waiver is disclosed without supplementary validation",
       coveragePolicy: "npm-stable-v1",
       waived: true,
-      status: "waived — not a pass",
-    },
-    {
-      name: "source QA waiver does not waive successful package proof",
-      coveragePolicy: "npm-stable-v1",
-      waived: true,
-      waiverSuite: "qa-live-telegram",
-      status: "covered-by-full-release-validation",
-    },
-    {
-      name: "package waiver does not cover a separately packed tarball",
-      coveragePolicy: "npm-stable-v1",
-      waived: true,
-      separatePackage: true,
-      status: "passed",
-    },
-    {
-      name: "mock package waiver does not cover a different provider mode",
-      coveragePolicy: "npm-stable-v1",
-      waived: true,
-      providerMode: "live-frontier",
-      status: "passed",
+      status: "waived",
     },
     { name: "missing Q transport", transport: "missing", error: "qualification ref" },
     { name: "moved Q transport", transport: "moved", error: "qualification ref" },
@@ -2490,17 +2429,6 @@ describe("release candidate checklist", () => {
         targetSha,
         npmUsesFullRun: !scenario.separatePackage,
         fullValidationEvidence: {
-          validationWaivers: scenario.waived
-            ? {
-                waivers: [
-                  {
-                    suiteId: scenario.waiverSuite ?? "package-telegram-e2e",
-                    reason: "Telegram provider outage",
-                    approvedBy: "maintainer",
-                  },
-                ],
-              }
-            : undefined,
           coveragePolicy: scenario.coveragePolicy,
           source: scenario.source ?? "sha-pinned-main",
           run: { headSha: scenario.qualificationSha ?? targetSha, headBranch: qualificationRef },
@@ -2508,6 +2436,16 @@ describe("release candidate checklist", () => {
             current: {
               manifest: {
                 releaseProfile: options.releaseProfile,
+                waivers: scenario.waived
+                  ? [
+                      {
+                        childRole: "releaseChecksCandidate",
+                        jobName:
+                          "Run package acceptance / Telegram package acceptance / Run package Telegram E2E",
+                        reason: "reviewed fixture outage",
+                      },
+                    ]
+                  : [],
               },
             },
           },

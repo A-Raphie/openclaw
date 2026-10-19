@@ -58,11 +58,7 @@ export function verifyReleaseToolingIdentity(
     releasePublishRunId?: string;
     runGh?: (args: string[]) => string;
   },
-): ReleaseToolingIdentity & { releasePublishActorLogin?: string };
-
-export function resolveReleasePublicationOperator(
-  input: Parameters<typeof verifyReleaseToolingIdentity>[0] & { actorLogin: string },
-): string;
+): ReleaseToolingIdentity;
 
 export function validateReleasePublishParentRun(input: {
   identity: Pick<ReleaseToolingIdentity, "fullRef" | "ref" | "sha">;

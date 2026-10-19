@@ -51,6 +51,7 @@ export function buildReleaseValidationManifest({ plan, drain, context }) {
     publishInputs: context.publishInputs,
     // Keep the wire field; current release policy admits no advisory jobs.
     advisoryJobs: [],
+    waivers: drain?.waivers ?? [],
     childEvidence,
     ...(plan.qualificationCoverage
       ? {
@@ -117,6 +118,7 @@ export function buildReleaseValidationManifest({ plan, drain, context }) {
         runReleaseSoak: context.runReleaseSoak,
         validationInputs: {
           ...context.validationInputs,
+          ...(plan.targetVersion ? { targetVersion: plan.targetVersion } : {}),
           ...(plan.sourceAdmissionContract
             ? {
                 ...publicationIntentInputs(plan.sourceAdmission),

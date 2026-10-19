@@ -543,8 +543,6 @@ export async function validatePublishPreflightNpm(
     preflightRunId: string;
     fullReleaseValidationRunId: string;
     fullReleaseValidationRunAttempt: string;
-    validationWaiversJson?: string;
-    approverLogin?: string;
     fullManifest?: PublishPreflightRecord;
     pluginSdkApiAcknowledgement: string;
     currentSelectorRef: string;
@@ -603,8 +601,6 @@ export async function validatePublishPreflightNpm(
     );
   }
   await verifyNpmPreflightPublicationLineage({
-    validationWaivers: options.validationWaiversJson,
-    approverLogin: options.approverLogin,
     manifest: qualified ? options.fullManifest : undefined,
     repository: repo,
     sourceSha: options.targetSha,

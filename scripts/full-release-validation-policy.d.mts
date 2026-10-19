@@ -128,7 +128,7 @@ export function composeReleaseChildAttemptEvidence(input: {
   run: ReleaseRecord;
 }): ReleaseRecord;
 
-export function terminalPolicyPass(child: ReleaseRecord): boolean;
+export function terminalPolicyPass(child: ReleaseRecord, targetVersion?: string): boolean;
 
 export function classifyReleaseSnapshot(input: ReleaseRecord): ReleaseStateArtifact;
 export function releasePlanGateFailures(gates: ReleaseRecord[]): ReleaseRecord[];

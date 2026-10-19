@@ -9,8 +9,10 @@ import {
 } from "../../scripts/docker-release-artifacts.mjs";
 import {
   buildReleaseExecutionPlanArtifact,
+  composeReleaseAttemptJobs,
   validateReleaseExecutionPlanArtifact,
 } from "../../scripts/full-release-validation-policy.mjs";
+import { RELEASE_VALIDATION_WAIVERS } from "../../scripts/lib/release-validation-waivers.mjs";
 import {
   downloadFullReleaseNpmPreflight,
   verifyNpmPreflightProducer,
@@ -25,6 +27,10 @@ import { fixture as admissionFixture } from "./release-qualification-admission.t
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const sha256 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+const originalWaivers = [...RELEASE_VALIDATION_WAIVERS];
+afterEach(() =>
+  RELEASE_VALIDATION_WAIVERS.splice(0, RELEASE_VALIDATION_WAIVERS.length, ...originalWaivers),
+);
 
 function consumers(
   f: ReturnType<typeof candidatePublicationFixture>,
@@ -85,6 +91,79 @@ function npmProducer(f: ReturnType<typeof candidatePublicationFixture>) {
 }
 
 describe("candidate-owned publish consumer chain", () => {
+  it.each(["success", "failure", "cancelled"])(
+    "requires a successful FRV even with a checked-in leaf waiver: parent %s",
+    async (parentConclusion) => {
+      const f = candidatePublicationFixture();
+      const role = "releaseChecksIndependent";
+      const planned = f.plan.children.find((entry) => entry.key === role);
+      assert(planned);
+      const targetVersion = f.manifest.validationInputs.targetVersion;
+      assert(targetVersion);
+      const grant = {
+        targetVersion,
+        childRole: role,
+        jobName:
+          "Run repo/live E2E validation / Native live suites (Native live gateway profiles OpenAI)",
+        reason: "Synthetic checked-in provider outage grant.",
+      };
+      RELEASE_VALIDATION_WAIVERS.push(grant);
+      const [aggregate] = await f.client.getRunAttemptJobs(planned.runId);
+      assert(aggregate);
+      const jobs = [
+        {
+          ...aggregate,
+          id: 90101,
+          conclusion: "failure",
+          steps: [{ name: "Verify release check results", conclusion: "failure" }],
+        },
+        { ...aggregate, id: 90102, name: grant.jobName, conclusion: "failure", steps: [] },
+      ];
+      const composite = composeReleaseAttemptJobs([{ jobs, runAttempt: 1 }], {
+        plannedRunAttempt: 1,
+        effectiveRunAttempt: 1,
+      });
+      Object.assign(f.manifest.childEvidence[role]!, {
+        jobs: composite.jobs,
+        compositeJobsSha256: composite.sha256,
+      });
+      Object.assign(f.manifest, { waivers: [{ ...grant, runId: planned.runId, runAttempt: 1 }] });
+      f.parent.conclusion = parentConclusion;
+      const client = {
+        ...f.client,
+        getRunView: (id: string) => ({ ...f.client.getRunView(id), conclusion: parentConclusion }),
+        getRun: async (id: string) => {
+          const run = await f.client.getRun(id);
+          return id === planned.runId ? { ...run, conclusion: "failure" } : run;
+        },
+        getRunAttemptJobs: async (id: string) =>
+          id === planned.runId ? jobs : f.client.getRunAttemptJobs(id),
+        getJobLog: (id: number) =>
+          id === 90101
+            ? Promise.resolve(
+                "2026-10-18T00:00:00Z ##[error]live_repo_e2e_release_checks ended with failure\n",
+              )
+            : f.client.getJobLog(id),
+      };
+      if (parentConclusion !== "success") {
+        await expect(validateReleaseRunEvidence(verifier(f), client)).rejects.toThrow(
+          "parent run is not completed/success",
+        );
+        await expect(consumers(f, client).npm()).rejects.toThrow();
+        await expect(consumers(f, client).docker()).rejects.toThrow();
+        return;
+      }
+      const evidence = await validateReleaseRunEvidence(verifier(f), client);
+      expect(evidence.current.conclusion).toBe("success");
+      expect(evidence.children.find((entry) => entry.role === role)).toMatchObject({
+        conclusion: "failure",
+        waivers: [grant],
+      });
+      await expect(consumers(f, client).npm()).resolves.toEqual(f.npmQualified);
+      await expect(consumers(f, client).docker()).resolves.toBeDefined();
+    },
+  );
+
   it.each(["same qualification", "changed candidate", "changed input", "changed P", "revoked P"])(
     "selects a direct admitted root across transport refs only for %s",
     async (scenario) => {
@@ -157,7 +236,7 @@ describe("candidate-owned publish consumer chain", () => {
           valid: true,
           directRoot: true,
           root: { runId: root.runId, workflowRefProof: "candidate-owned-admission-v1" },
-          conclusions: { allRequiredSucceeded: true },
+          current: { conclusion: "success" },
         });
         expect(evidence.manifest.publicationArtifacts).toEqual(root.manifest.publicationArtifacts);
         expect(evidence.children.map((child) => child.runId)).toEqual(
@@ -288,7 +367,7 @@ describe("candidate-owned publish consumer chain", () => {
       expect(
         result.children.every((child) => child.workflowSha === root.q && child.runAttempt === 1),
       ).toBe(true);
-      expect(result.conclusions.allRequiredSucceeded).toBe(true);
+      expect(result.current.conclusion).toBe("success");
       const publication = consumers(
         retainArtifacts ? { ...root, manifest: current.manifest } : current,
         client,

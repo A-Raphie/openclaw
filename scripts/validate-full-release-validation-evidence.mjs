@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // Binds Full Release Validation run metadata to its supported evidence manifest.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { readFileSync } from "node:fs";
 import { text } from "node:stream/consumers";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
@@ -25,14 +24,8 @@ import {
 import { sortJsonValueKeys } from "./lib/canonical-json.mjs";
 import { resolveReleaseContextIdentity } from "./lib/release-context.mjs";
 import { resolveReleasePublishInputs } from "./lib/release-publish-inputs.mjs";
-import {
-  formatReleaseValidationWaivers,
-  parseReleaseValidationWaivers,
-  validateReleaseWaiverApproverAuthority,
-} from "./lib/release-validation-waivers.mjs";
 import { createReleaseEvidenceClient, validateReleaseRunEvidence } from "./release-ci-summary.mjs";
 import { qualificationAdmissionContract } from "./release-qualification-coverage.mjs";
-import { resolveReleasePublicationOperator } from "./release-tooling-identity.mjs";
 
 const FULL_RELEASE_WORKFLOW = "Full Release Validation";
 const FULL_RELEASE_WORKFLOW_PATH = ".github/workflows/full-release-validation.yml";
@@ -76,11 +69,9 @@ function displayValue(value) {
  * @typedef {object} StrictReleaseEvidence
  * @property {unknown} [schema]
  * @property {unknown} [valid]
- * @property {{ runId?: unknown, targetSha?: unknown, runAttempt?: unknown, manifest?: unknown, workflowRefProof?: unknown }} [current]
- * @property {{ runId?: unknown, targetSha?: unknown, manifest?: unknown }} [root]
+ * @property {{ runId?: unknown, targetSha?: unknown, runAttempt?: unknown, manifest?: unknown, workflowRefProof?: unknown, conclusion?: unknown }} [current]
+ * @property {{ runId?: unknown, targetSha?: unknown, manifest?: unknown, conclusion?: unknown }} [root]
  * @property {{ changedPaths?: unknown, evidenceSha?: unknown, policy?: unknown, rootRunId?: unknown, selectedRunId?: unknown } | null} [evidenceReuse]
- * @property {unknown} [validationWaivers]
- * @property {{ allRequiredSucceeded?: unknown, allRequiredSatisfied?: unknown }} [conclusions]
  */
 /**
  * @typedef {object} FullReleaseValidationManifest
@@ -109,7 +100,6 @@ function displayValue(value) {
  * @property {{ coveragePolicy?: unknown, targetVersion?: unknown, targetContextRef?: unknown, knownFlakyJobsJson?: unknown }} [validationInputs]
  * @property {unknown} [qualificationCoverage]
  * @property {{ changedPaths?: unknown, evidenceSha?: unknown, policy?: unknown, runId?: unknown, selectedRunId?: unknown }} [evidenceReuse]
- * @property {unknown} [validationWaivers]
  */
 /**
  * @typedef {object} FullReleaseValidationEvidenceOptions
@@ -125,8 +115,6 @@ function displayValue(value) {
  * @property {string} [expectedWorkflowBranch]
  * @property {import("./full-release-publication-contract.mjs").PublicationSelection | (() => import("./full-release-publication-contract.mjs").PublicationSelection)} [expectedPublicationSelection]
  * @property {{ npmDistTag: string }} [expectedCoreNpmPublication]
- * @property {unknown} [validationWaivers]
- * @property {string} [approverLogin]
  * @property {(sha: string) => string} [getWorkflowSource]
  * @property {(sha: string) => boolean} [isTrustedMainAncestor]
  * @property {(params: { repository: string, runId: string, targetSha: string }) => StrictReleaseEvidence} [validateEvidenceReuseStrictly]
@@ -178,32 +166,10 @@ export function validateFullReleaseValidationEvidence({
   expectedWorkflowBranch,
   expectedPublicationSelection,
   expectedCoreNpmPublication,
-  validationWaivers,
   getWorkflowSource,
   isTrustedMainAncestor,
   validateEvidenceReuseStrictly,
 }) {
-  const requestedWaivers = parseReleaseValidationWaivers(validationWaivers);
-  let strictEvidence;
-  const strict = () => {
-    if (!strictEvidence) {
-      if (typeof validateEvidenceReuseStrictly !== "function") {
-        throw new Error("Publication evidence requires authenticated strict validation.");
-      }
-      strictEvidence = validateEvidenceReuseStrictly({
-        repository: expectedRepository,
-        runId: String(expectedRunId),
-        targetSha: expectedTargetSha,
-      });
-    }
-    return strictEvidence;
-  };
-  const requiredEvidenceSatisfied = (evidence) =>
-    requestedWaivers
-      ? evidence?.conclusions?.allRequiredSatisfied === true &&
-        publicationObservationJson(evidence.validationWaivers) ===
-          publicationObservationJson(requestedWaivers)
-      : evidence?.conclusions?.allRequiredSucceeded === true;
   if (
     expectedReleaseTag?.includes("-alpha.") ||
     expectedCoreNpmPublication?.npmDistTag === "alpha" ||
@@ -237,6 +203,7 @@ export function validateFullReleaseValidationEvidence({
     ["repository", expectedRepository],
     ["event", "workflow_dispatch"],
     ["status", "completed"],
+    ["conclusion", "success"],
   ];
   for (const [key, expected] of checks) {
     if (run[key] !== expected) {
@@ -244,19 +211,6 @@ export function validateFullReleaseValidationEvidence({
         `Referenced full release validation run ${expectedRunId} must have ${key}=${expected}, got ${run[key] ?? "<missing>"}.`,
       );
     }
-  }
-  if (
-    run.conclusion !== "success" &&
-    !(
-      run.conclusion === "failure" &&
-      requestedWaivers &&
-      strict().valid === true &&
-      requiredEvidenceSatisfied(strict())
-    )
-  ) {
-    throw new Error(
-      `Referenced full release validation run ${expectedRunId} must have conclusion=success, got ${run.conclusion ?? "<missing>"}; failed evidence requires an authenticated exact P-side waiver.`,
-    );
   }
   if (!Number.isInteger(run.runAttempt) || run.runAttempt < 1) {
     throw new Error(`Referenced full release validation run ${expectedRunId} has invalid attempt.`);
@@ -304,22 +258,6 @@ export function validateFullReleaseValidationEvidence({
     if (scalarString(manifest[key]) !== expected) {
       throw new Error(
         `Full release validation manifest ${key} mismatch: expected ${expected}, got ${displayValue(manifest[key])}.`,
-      );
-    }
-  }
-  if (requestedWaivers) {
-    const authenticated = strict();
-    if (
-      authenticated.valid !== true ||
-      authenticated.current?.runId !== String(expectedRunId) ||
-      authenticated.current?.runAttempt !== run.runAttempt ||
-      authenticated.current?.targetSha !== expectedTargetSha ||
-      !requiredEvidenceSatisfied(authenticated) ||
-      publicationObservationJson(authenticated.current?.manifest) !==
-        publicationObservationJson(manifest)
-    ) {
-      throw new Error(
-        "P-side waiver evidence differs from its authenticated exact-run projection.",
       );
     }
   }
@@ -383,6 +321,20 @@ export function validateFullReleaseValidationEvidence({
   const publicationAdmission = validatePublicationAdmissionBinding(manifest, {
     publicationAdmissionContract: registryContract,
   });
+  let strictEvidence;
+  const strict = () => {
+    if (!strictEvidence) {
+      if (typeof validateEvidenceReuseStrictly !== "function") {
+        throw new Error("Publication evidence requires authenticated strict validation.");
+      }
+      strictEvidence = validateEvidenceReuseStrictly({
+        repository: expectedRepository,
+        runId: String(expectedRunId),
+        targetSha: expectedTargetSha,
+      });
+    }
+    return strictEvidence;
+  };
   validateReleaseManifestAdvisoryJobs(manifest);
   if (sourceAdmission) {
     // Historical recovery must not acquire a new publication-selection contract.
@@ -446,7 +398,7 @@ export function validateFullReleaseValidationEvidence({
       authenticated.current?.runId !== String(expectedRunId) ||
       authenticated.current?.targetSha !== expectedTargetSha ||
       authenticated.current?.runAttempt !== run.runAttempt ||
-      !requiredEvidenceSatisfied(authenticated) ||
+      authenticated.current?.conclusion !== "success" ||
       publicationObservationJson(authenticated.current?.manifest) !==
         publicationObservationJson(manifest)
     ) {
@@ -463,7 +415,7 @@ export function validateFullReleaseValidationEvidence({
       authenticated.current?.runAttempt !== run.runAttempt ||
       authenticated.current?.targetSha !== expectedTargetSha ||
       authenticated.current?.workflowRefProof !== "candidate-owned-admission-v1" ||
-      !requiredEvidenceSatisfied(authenticated) ||
+      authenticated.current?.conclusion !== "success" ||
       publicationObservationJson(authenticated.current?.manifest) !==
         publicationObservationJson(manifest)
     ) {
@@ -574,7 +526,7 @@ export function validateFullReleaseValidationEvidence({
       scalarString(reusedEvidence.evidenceReuse?.rootRunId) !== scalarString(reuse.runId) ||
       scalarString(reusedEvidence.evidenceReuse?.selectedRunId) !==
         scalarString(reuse.selectedRunId) ||
-      !requiredEvidenceSatisfied(reusedEvidence)
+      reusedEvidence.current?.conclusion !== "success"
     ) {
       throw new Error("SHA-pinned validation evidence reuse failed strict chain validation.");
     }
@@ -614,15 +566,10 @@ export async function authenticateFullReleaseValidationEvidence(options, client)
       trustedWorkflowSha: options.expectedTrustedWorkflowSha,
       verifierSourceSha: options.verifierSourceSha,
       verifierSourceContent: options.verifierSourceContent,
-      validationWaivers: options.validationWaivers,
-      approverLogin: options.approverLogin,
     },
     { ...evidenceClient, getWorkflowSource },
   );
-  if (
-    !evidence.conclusions.allRequiredSucceeded &&
-    !(evidence.validationWaivers && evidence.conclusions.allRequiredSatisfied)
-  ) {
+  if (evidence.current.conclusion !== "success") {
     throw new Error("Required release validation evidence did not pass.");
   }
   if (evidence.current.runAttempt !== run.runAttempt) {
@@ -640,12 +587,7 @@ export async function authenticateFullReleaseValidationEvidence(options, client)
     getWorkflowSource,
     validateEvidenceReuseStrictly: () => evidence,
   });
-  return {
-    ...result,
-    evidence,
-    validationWaivers: evidence.validationWaivers,
-    publicationAdmission: manifest.publicationAdmission ?? null,
-  };
+  return { ...result, evidence, publicationAdmission: manifest.publicationAdmission ?? null };
 }
 
 // Publication consumers replace ancestry only after the full FRV owner has
@@ -657,8 +599,6 @@ export async function authenticateCandidateOwnedArtifact({
   qualificationSha,
   publisherSha,
   publisherFullRef = "refs/heads/main",
-  validationWaivers,
-  approverLogin,
   client,
 }) {
   if (!manifest?.sourceAdmission?.qualificationAdmission) {
@@ -681,8 +621,6 @@ export async function authenticateCandidateOwnedArtifact({
       trustedWorkflowSha: publisherSha,
       verifierSourceSha: publisherSha,
       verifierSourceContent: readFileSync(new URL("./release-ci-summary.mjs", import.meta.url)),
-      validationWaivers,
-      approverLogin,
     },
     evidenceClient,
   );
@@ -697,8 +635,7 @@ export async function authenticateCandidateOwnedArtifact({
     evidence.current.targetSha !== candidateSha ||
     evidence.current.runAttempt !== Number(manifest.runAttempt) ||
     evidence.current.workflowRefProof !== "candidate-owned-admission-v1" ||
-    (!evidence.conclusions.allRequiredSucceeded &&
-      !(evidence.validationWaivers && evidence.conclusions.allRequiredSatisfied)) ||
+    evidence.current.conclusion !== "success" ||
     !isDeepStrictEqual(evidence.current.manifest, sortJsonValueKeys(manifest))
   ) {
     throw new Error("Publication artifact is not bound to authenticated candidate qualification");
@@ -711,14 +648,9 @@ export async function authenticateCandidateOwnedArtifact({
   const authority = structuredClone({
     descriptor: manifest.sourceAdmission.qualificationAdmission,
     admission: evidence.qualificationAdmission,
-    waiverApprovers: [...new Set(evidence.validationWaivers?.waivers.map((row) => row.approvedBy))],
   });
-  const revalidateAuthority = () => {
+  const revalidateAuthority = () =>
     evidenceClient.revalidateQualificationAdmissionAuthority(authority);
-    for (const login of authority.waiverApprovers) {
-      validateReleaseWaiverApproverAuthority(login, evidenceClient.getMaintainerPermission(login));
-    }
-  };
   revalidateAuthority();
   return { ...evidence, revalidateAuthority };
 }
@@ -746,9 +678,7 @@ async function main() {
     throw new Error("MANIFEST_FILE is required.");
   }
   const run = JSON.parse(await text(process.stdin));
-  const manifest = existsSync(manifestPath)
-    ? JSON.parse(readFileSync(manifestPath, "utf8"))
-    : undefined;
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const trustedMainRef = process.env.TRUSTED_MAIN_REF ?? "refs/remotes/origin/main";
   const consumer = process.env.PUBLICATION_CONSUMER ?? "";
   const coreProjection = consumer === "core-npm" || consumer === "docker-only";
@@ -764,20 +694,6 @@ async function main() {
   if (consumer === "publisher" && process.env.PUBLISH_DOCKER_ONLY === "true") {
     throw new Error("Contradictory Docker-only publication operands.");
   }
-  const publicationOperator = process.env.VALIDATION_WAIVERS_JSON
-    ? resolveReleasePublicationOperator({
-        actorLogin: process.env.GITHUB_ACTOR,
-        repository: process.env.GITHUB_REPOSITORY,
-        workflowSha: process.env.TRUSTED_WORKFLOW_SHA ?? process.env.GITHUB_WORKFLOW_SHA,
-        workflowFullRef: process.env.TRUSTED_WORKFLOW_FULL_REF ?? process.env.GITHUB_REF,
-        workflowRef: process.env.TRUSTED_WORKFLOW_REF ?? process.env.GITHUB_REF_NAME,
-        releasePublishRunId: process.env.RELEASE_PUBLISH_RUN_ID,
-        releasePublishRunAttempt: process.env.RELEASE_PUBLISH_RUN_ATTEMPT,
-        releasePublishRef: process.env.RELEASE_PUBLISH_REF,
-        releasePublishFullRef: process.env.RELEASE_PUBLISH_FULL_REF,
-        releasePublishParentStatePolicy: process.env.RELEASE_PUBLISH_PARENT_STATE_POLICY,
-      })
-    : undefined;
   const result = await authenticateFullReleaseValidationEvidence({
     run,
     manifest,
@@ -818,9 +734,7 @@ async function main() {
               }),
             ).publicationSelection
         : undefined,
-    manifestPath: manifest ? manifestPath : undefined,
-    validationWaivers: process.env.VALIDATION_WAIVERS_JSON,
-    approverLogin: publicationOperator,
+    manifestPath,
     verifierSourceSha: process.env.WORKFLOW_SHA ?? process.env.GITHUB_SHA,
     verifierSourceContent: readFileSync(
       process.env.STRICT_VALIDATOR_FILE ??
@@ -828,24 +742,6 @@ async function main() {
     ),
     isTrustedMainAncestor: (sha) => gitIsAncestor(sha, trustedMainRef),
   });
-  // This is authenticated P output, not a success seal attributed to the candidate.
-  mkdirSync(dirname(manifestPath), { recursive: true });
-  writeFileSync(manifestPath, `${JSON.stringify(result.evidence.current.manifest, null, 2)}\n`);
-  if (publicationOperator && process.env.GITHUB_ENV) {
-    const { appendFileSync } = await import("node:fs");
-    appendFileSync(
-      process.env.GITHUB_ENV,
-      `VALIDATION_WAIVER_APPROVER_LOGIN=${publicationOperator}\n`,
-    );
-  }
-  if (result.validationWaivers) {
-    const waiverSummary = formatReleaseValidationWaivers(result.validationWaivers);
-    console.log(waiverSummary);
-    if (process.env.GITHUB_STEP_SUMMARY) {
-      const { appendFileSync } = await import("node:fs");
-      appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n${waiverSummary}\n`);
-    }
-  }
   console.log(
     `Using full release validation run ${result.run.databaseId} (${result.source}): ${result.run.url}`,
   );

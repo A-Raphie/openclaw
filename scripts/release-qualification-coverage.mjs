@@ -175,7 +175,12 @@ export function resolveQualificationCoverage(policy, inputs) {
   return { ...inventory, children };
 }
 
-export function validateQualificationJobs(jobs, requiredNames, label = "Qualification") {
+export function validateQualificationJobs(
+  jobs,
+  requiredNames,
+  label = "Qualification",
+  waivedJobNames = new Set(),
+) {
   if (!Array.isArray(jobs)) {
     throw new Error(label + " job inventory is missing");
   }
@@ -184,7 +189,8 @@ export function validateQualificationJobs(jobs, requiredNames, label = "Qualific
     if (
       matches.length !== 1 ||
       matches[0].status !== "completed" ||
-      matches[0].conclusion !== "success"
+      (matches[0].conclusion !== "success" &&
+        !(matches[0].conclusion === "failure" && waivedJobNames.has(name)))
     ) {
       throw new Error(label + " required job did not succeed exactly once: " + name);
     }

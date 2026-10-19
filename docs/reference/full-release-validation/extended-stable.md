@@ -1,6 +1,6 @@
 ---
 doc-schema-version: 1
-summary: "Extended-stable validation dispatch, changelog-only Release SHA reuse, coverage policies, and Telegram deferrals and waivers"
+summary: "Extended-stable validation dispatch, changelog-only Release SHA reuse, coverage policies, and beta Telegram deferrals"
 title: "Extended-stable and changelog-only validation"
 read_when:
   - Validating an extended-stable candidate
@@ -147,10 +147,12 @@ Codex `final`, reads randomized workspace inputs, writes their exact artifact,
 and sends explicit completion. This catches the v2026.7.1 regression where an
 ordinary progress send terminated the turn.
 
-Selected source Telegram QA and standalone npm Telegram tests must pass before
-normal release validation can pass. Selected Package Acceptance Telegram must also pass in every profile. Missing credentials,
-an exhausted pool, and failed attempts do not count as successful proof. Exact
-candidate identity, credential isolation, and lease cleanup remain required.
+Selected source Telegram QA, standalone npm Telegram, and Package Acceptance
+Telegram tests still run. A failed leaf blocks validation unless the pinned
+[release-tooling policy](/reference/full-release-validation/evidence#release-tooling-waivers)
+grants that exact failure. Missing credentials or an exhausted pool do not count
+as successful proof. Exact candidate identity, credential isolation, and lease
+cleanup remain required.
 
 Package Acceptance Telegram E2E is automatically deferred for every beta-profile
 `all` run without soak, including beta-profile checks of `main`.
@@ -160,14 +162,6 @@ keep Telegram selected by default. The existing
 `-f skip_package_telegram_e2e=true` input remains available for an explicit beta
 deferral; it is rejected for `stable` and `full` and does not disable the focused
 `rerun_group=npm-telegram` workflow.
-
-Stable/full qualification always selects its Telegram coverage. The only waiver
-path is the trusted [P-side publication declaration](/reference/full-release-validation/evidence#publication-waivers)
-against exact failed jobs in an already-run FRV. It does not change the
-candidate, omit tests, or dispatch another FRV. Empty retired inputs in frozen
-release and extended-stable evidence remain readable; non-empty historical
-grants are rejected, never converted into failed-lane proof. The beta-only
-package deferral above is unchanged.
 
 Source Telegram QA uses the release checks' shared context check: an exact candidate
 SHA must remain an ancestor of its release branch, or equal its release tag.

@@ -917,25 +917,6 @@ describe("full-release-validation-at-sha", () => {
     expect(fixture.gitCalls().some((args) => args[0] === "push")).toBe(false);
   });
 
-  it.each(["", "2026.8.1-owner-approved"])(
-    "accepts only an empty retired candidate waiver input: %j",
-    (legacyValue) => {
-      const fixture = createDispatchFixture({
-        workflowSource: CURRENT_WORKFLOW_SOURCE.replace(
-          "      provider:\n",
-          '      telegram_waiver:\n        type: string\n        default: ""\n      provider:\n',
-        ),
-      });
-      const result = fixture.run(["--dry-run", "-f", `telegram_waiver=${legacyValue}`]);
-      expect(result.status, result.stderr).toBe(legacyValue ? 1 : 0);
-      if (legacyValue) {
-        expect(result.stderr).toContain("Legacy telegram_waiver must be empty");
-        expect(result.stderr).toContain("already-run Full Release Validation");
-      }
-      expect(fixture.calls("POST")).toEqual([]);
-    },
-  );
-
   it("binds release decisions to the exact parent attempt and tooling SHA", () => {
     const payload = {
       kind: "openclaw.full-release-decision",

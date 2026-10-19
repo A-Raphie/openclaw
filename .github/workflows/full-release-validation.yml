@@ -2447,6 +2447,8 @@ jobs:
     if: always()
     runs-on: *linux_runner_small
     timeout-minutes: 720
+    env:
+      RELEASE_STATE_SCRIPT: &release_state_script ${{ fromJSON(needs.resolve_target.outputs.source_admission_json || '{}').qualificationAdmission != null && format('{0}/qualification-verifier/scripts/full-release-validation-state.mjs', github.workspace) || format('{0}/scripts/full-release-validation-state.mjs', github.workspace) }}
     outputs:
       state: ${{ steps.state.outputs.state }}
     steps:
@@ -2487,7 +2489,7 @@ jobs:
           FULL_RELEASE_STATE_PATH: ${{ runner.temp }}/full-release-decision/full-release-decision.json
         run: &full_release_state |
           set -euo pipefail
-          node scripts/full-release-validation-state.mjs "$FULL_RELEASE_STATE_MODE"
+          node "$RELEASE_STATE_SCRIPT" "$FULL_RELEASE_STATE_MODE"
 
       - name: Upload release decision
         if: always() && steps.state.outputs.state != ''
@@ -2515,6 +2517,8 @@ jobs:
     if: always()
     runs-on: *linux_runner_small
     timeout-minutes: 720
+    env:
+      RELEASE_STATE_SCRIPT: *release_state_script
     outputs:
       state: ${{ steps.state.outputs.state }}
       normal_ci_conclusion: ${{ steps.state.outputs.normalCi_conclusion }}
@@ -2532,6 +2536,8 @@ jobs:
           sparse-checkout: scripts
           sparse-checkout-cone-mode: false
           persist-credentials: false
+
+      - *qualification_evidence_verifier_checkout
 
       - name: Download immutable release execution plan
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -2630,6 +2636,8 @@ jobs:
     if: always()
     runs-on: *linux_runner_ubuntu
     timeout-minutes: 10
+    env:
+      RELEASE_STATE_SCRIPT: *release_state_script
     steps:
       - name: Require qualified publication artifacts
         if: inputs.rerun_group == 'all'
@@ -2669,6 +2677,8 @@ jobs:
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
+      - *qualification_evidence_verifier_checkout
+
       - name: Download immutable release execution plan
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -2704,7 +2714,7 @@ jobs:
           DIAGNOSTIC_DRAIN_ATTEMPTS_PATH: ${{ runner.temp }}/full-release-diagnostic-attempts
           RELEASE_DECISION_PATH: ${{ runner.temp }}/full-release-decision/full-release-decision.json
           DIAGNOSTIC_DRAIN_PATH: ${{ runner.temp }}/full-release-diagnostics/full-release-diagnostic-manifest.json
-        run: node scripts/full-release-validation-state.mjs select
+        run: node "$RELEASE_STATE_SCRIPT" select
 
       - name: Verify exact release state artifacts
         env:
@@ -2714,7 +2724,7 @@ jobs:
           RELEASE_EXECUTION_PLAN_PATH: ${{ runner.temp }}/full-release-execution-plan/full-release-execution-plan.json
           RELEASE_DECISION_PATH: ${{ runner.temp }}/full-release-decision/full-release-decision.json
           DIAGNOSTIC_DRAIN_PATH: ${{ runner.temp }}/full-release-diagnostics/full-release-diagnostic-manifest.json
-        run: node scripts/full-release-validation-state.mjs verify
+        run: node "$RELEASE_STATE_SCRIPT" verify
 
       # Exact IDs from the sealed plan prevent verification from drifting to a newer upload.
       # Parent-owned candidate plans are rejected before same-parent continuation.
@@ -2850,7 +2860,7 @@ jobs:
           PREPARED_DOCKER_RUN_ATTEMPT: ${{ needs.prepare_docker_release.outputs.prepared_run_attempt }}
           PREPARED_DOCKER_ARTIFACT_NAME: ${{ needs.prepare_docker_release.outputs.prepared_artifact_name }}
           PREPARED_DOCKER_MANIFEST_SHA256: ${{ needs.prepare_docker_release.outputs.prepared_manifest_sha256 }}
-        run: node scripts/full-release-validation-state.mjs write-manifest
+        run: node "$RELEASE_STATE_SCRIPT" write-manifest
 
       - name: Validate release validation manifest
         env:
@@ -2861,7 +2871,7 @@ jobs:
           RELEASE_DECISION_PATH: ${{ runner.temp }}/full-release-decision/full-release-decision.json
           DIAGNOSTIC_DRAIN_PATH: ${{ runner.temp }}/full-release-diagnostics/full-release-diagnostic-manifest.json
           RELEASE_VALIDATION_MANIFEST_PATH: ${{ runner.temp }}/full-release-validation/full-release-validation-manifest.json
-        run: node scripts/full-release-validation-state.mjs validate-manifest
+        run: node "$RELEASE_STATE_SCRIPT" validate-manifest
 
       - name: Upload release validation manifest
         if: ${{ success() }}
