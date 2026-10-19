@@ -3,6 +3,19 @@ import { minimatch } from "minimatch";
 import { expect, it } from "vitest";
 import { parse } from "yaml";
 
+it("stops Windows boundary checks when the Node fixtures fail", () => {
+  const workflow = parse(readFileSync(".github/workflows/linux-app.yml", "utf8"));
+  const boundary = workflow.jobs["test-windows-power"].steps.find(
+    (step: { name: string }) =>
+      step.name === "Verify Windows runtime, installer, and desktop boundaries",
+  );
+  expect(boundary.run.trim().split("\n")).toEqual([
+    "node --test ../scripts/test-stage-runtime.mjs ../scripts/test-stage-package.mjs",
+    "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
+    "cargo +stable test --locked --bin openclaw-desktop",
+  ]);
+});
+
 it("keeps Node without workspace dependencies for the macOS Cargo tests", () => {
   const workflow = parse(readFileSync(".github/workflows/linux-app.yml", "utf8"));
   const job = workflow.jobs["test-macos"];

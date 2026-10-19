@@ -177,10 +177,9 @@ test("reuses npm tarballs across isolated same-commit package installs", async (
     const { parentPort, workerData } = require("node:worker_threads");
     const archive = fs.readFileSync(workerData);
     let tarballFetches = 0;
+    parentPort.on("message", () => parentPort.postMessage({ tarballFetches }));
     const server = http.createServer((request, response) => {
-      if (request.url === "/requests") {
-        response.end(JSON.stringify({ tarballFetches }));
-      } else if (request.url === "/codex.tgz") {
+      if (request.url === "/codex.tgz") {
         tarballFetches++;
         response.writeHead(200, {
           "Content-Type": "application/octet-stream",
@@ -273,7 +272,10 @@ test("reuses npm tarballs across isolated same-commit package installs", async (
       stdio: "pipe",
     });
     assert.ok(fs.existsSync(path.join(cache, "_cacache")), `${alias} did not populate the reusable npm cache`);
-    const requests = await fetch(`${origin}/requests`).then((response) => response.json());
+    // Synchronous npm can outlive an idle HTTP socket; read the worker-owned counter over IPC.
+    const counted = once(registry, "message");
+    registry.postMessage("requests");
+    const [requests] = await counted;
     assert.equal(requests.tarballFetches, 1, `${alias} downloaded the already cached tarball`);
     const staged = read(work, "manifest.json");
     const stagedCore = path.join(work, "package/node_modules/openclaw");
