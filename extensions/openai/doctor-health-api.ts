@@ -46,7 +46,11 @@ export const daybreakAliasHealthCheck: HealthCheck = {
 };
 
 export function registerOpenAIDoctorChecks(host: {
+  getHealthCheck: (id: string) => HealthCheck | undefined;
   registerHealthCheck: (check: HealthCheck) => void;
 }): void {
+  if (host.getHealthCheck(daybreakAliasHealthCheck.id) === daybreakAliasHealthCheck) {
+    return;
+  }
   host.registerHealthCheck(daybreakAliasHealthCheck);
 }

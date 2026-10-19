@@ -56,7 +56,10 @@ type BundledHealthApi = {
     memoryCoreActive: boolean;
   }) => void;
   registerPolicyDoctorChecks?: (host: { registerHealthCheck: typeof registerHealthCheck }) => void;
-  registerOpenAIDoctorChecks?: (host: { registerHealthCheck: typeof registerHealthCheck }) => void;
+  registerOpenAIDoctorChecks?: (host: {
+    getHealthCheck: typeof getHealthCheck;
+    registerHealthCheck: typeof registerHealthCheck;
+  }) => void;
 };
 
 type WorkerProviderHealthApi = {
@@ -321,7 +324,7 @@ function registerOpenAIHealthChecks(
   loadBundledPluginPublicArtifactModuleSync<BundledHealthApi>({
     dirName: "openai",
     artifactBasename: "doctor-health-api.js",
-  }).registerOpenAIDoctorChecks?.({ registerHealthCheck: registerCheck });
+  }).registerOpenAIDoctorChecks?.({ getHealthCheck, registerHealthCheck: registerCheck });
 }
 
 function registerCuaHealthChecks(

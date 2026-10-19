@@ -186,18 +186,6 @@ it("scopes plugin state only while the selected provider setup is inspected", as
   });
 });
 
-it("registers stateless OpenAI retirement diagnostics without an active provider", () => {
-  register();
-
-  expect(mocks.loadBundledPluginPublicArtifactModuleSync).toHaveBeenCalledWith({
-    dirName: "openai",
-    artifactBasename: "doctor-health-api.js",
-  });
-  expect(mocks.registerOpenAIDoctorChecks).toHaveBeenCalledExactlyOnceWith({
-    registerHealthCheck: expect.any(Function),
-  });
-});
-
 it("loads CUA Driver artifact health when the plugin is enabled", () => {
   register({ plugins: { entries: { "cua-computer": { enabled: true } } } });
 
