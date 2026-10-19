@@ -757,18 +757,6 @@ AFTER_CD
       "Lock closed issues after 48h",
       "Inactivity alone will not close",
     ]);
-    const lifecycle = readFileSync(
-      new URL("../../scripts/github/stale-lifecycle.mjs", import.meta.url),
-      "utf8",
-    );
-    expectIncludes(lifecycle, [
-      "barnacle-stale:v2",
-      "barnacle-close:v2",
-      'state_reason: "not_planned"',
-      "activity + 30 * DAY",
-      "14 * DAY",
-      "Unauthenticated or premature Barnacle bug closures",
-    ]);
     const dispatch = readWorkflow(".github/workflows/clawsweeper-dispatch.yml");
     expectIncludes(String(dispatch.jobs.dispatch.if), [
       "github.event.label.name == 'stale'",

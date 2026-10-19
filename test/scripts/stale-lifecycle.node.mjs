@@ -844,6 +844,101 @@ describe("Barnacle unified lifecycle", () => {
     }
   }
 
+  for (const kind of ["issue", "pull-request"]) {
+    for (const surface of ["closure", "reply"]) {
+      for (const change of [
+        "none",
+        "no-stale",
+        "bad-barnacle",
+        "reason-label",
+        "body",
+        "ownership",
+        ...(kind === "pull-request" ? ["head"] : []),
+      ]) {
+        it(`${kind} ${surface} publication re-admits after page two: ${change}`, async () => {
+          const seed = kind === "issue" ? issueSnapshot() : snapshot();
+          seed.pr.title = "Fix a gateway delivery regression";
+          seed.pr.body =
+            "## What Problem This Solves\n\nA gateway reply was lost.\n\n## Evidence\n\nRegression coverage reproduces the lost reply.";
+          seed.pr.labels = [{ name: "r: moltbook" }];
+          seed.comments = Array.from({ length: 101 }, (_, id) =>
+            comment(id + 1, "Automated review note", OLD),
+          );
+          const h = harness(seed);
+          h.options.github.paginate = async () => [
+            { filename: "src/gateway/delivery.ts", status: "modified" },
+            { filename: "test/gateway-delivery.test.ts", status: "modified" },
+          ];
+          const permission = h.options.github.rest.repos.getCollaboratorPermissionLevel;
+          h.options.github.rest.repos.getCollaboratorPermissionLevel = async (params) =>
+            params.username === "new-owner"
+              ? { data: { permission: "write", role_name: "write" } }
+              : permission(params);
+          let lookup = 0;
+          let changed = false;
+          const list = h.options.github.rest.issues.listComments;
+          h.options.github.rest.issues.listComments = async (params) => {
+            if (params.page === 1) {
+              lookup++;
+            }
+            const result = await list(params);
+            // The closure's initial snapshot already reads comments. Change
+            // only the publisher's second page, after its former admission.
+            if (params.page === 2 && lookup === (surface === "reply" ? 1 : 2)) {
+              changed = true;
+              if (["no-stale", "bad-barnacle"].includes(change)) {
+                h.state.pr.labels.push({ name: change });
+              } else if (change === "reason-label") {
+                h.state.pr.labels = [];
+              } else if (change === "body") {
+                h.state.pr.body += "\nNew human context.";
+              } else if (change === "head") {
+                h.state.pr.head.sha = "b".repeat(40);
+              } else if (change === "ownership") {
+                h.state.pr.assignees = [{ id: 456, login: "new-owner", type: "User" }];
+              }
+            }
+            return result;
+          };
+          const payload = {
+            action: "labeled",
+            label: { name: "r: moltbook" },
+            [kind === "issue" ? "issue" : "pull_request"]: seed.pr,
+            ...(surface === "reply" ? { comment: { id: 500, body: "moltbook", user: human } } : {}),
+          };
+          const options = {
+            github: h.options.github,
+            context: { repo: h.options.context.repo, payload },
+            expectedAppId: 2729701,
+          };
+          let failure;
+          await runBarnacleAutoResponse(options).catch((error) => {
+            failure = error;
+          });
+          assert.equal(changed, true);
+          if (change === "none") {
+            assert.equal(failure, undefined);
+            assert.deepEqual(
+              h.writes,
+              surface === "reply" ? ["warning"] : ["warning", "close", "lock"],
+            );
+            await runBarnacleAutoResponse(options);
+            assert.equal(h.state.comments.length, 102);
+            assert.equal(h.writes.filter((write) => write === "warning").length, 1);
+          } else {
+            assert.deepEqual(h.writes, []);
+            assert.equal(h.state.comments.length, 101);
+            assert.equal(h.state.pr.state, "open");
+            assert.equal(h.state.pr.locked, undefined);
+            if (failure) {
+              assert.match(failure.message, /changed during response admission/);
+            }
+          }
+        });
+      }
+    }
+  }
+
   for (const failure of ["accepted-comment", "readback", "hold"]) {
     it(`response ${failure} never closes unverified and reconciles a receipt`, async () => {
       const seed = issueSnapshot();

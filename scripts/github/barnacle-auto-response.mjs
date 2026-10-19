@@ -1059,8 +1059,8 @@ export async function runBarnacleAutoResponse({ github, context, core = console,
       "update",
     ]) {
       guarded.rest.issues[method] = async (params) => {
-        await admit();
         if (method !== "createComment") {
+          await admit();
           const response = await github.rest.issues[method](params);
           if (method === "addLabels") {
             const labels = new Set(expectedTarget.labels.map((label) => label.name ?? label));
@@ -1091,6 +1091,9 @@ export async function runBarnacleAutoResponse({ github, context, core = console,
             comment.body === body &&
             comment.created_at === comment.updated_at,
         );
+        // Pagination may outlive a new hold or changed target. Re-admit at
+        // publication, including receipt reuse, before this wrapper returns.
+        await admit();
         const response = previous
           ? { data: previous }
           : await github.rest.issues.createComment({ ...params, body });
