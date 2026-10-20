@@ -8,6 +8,8 @@ export const en: TranslationMap & {
   gatewayLogs: TranslationMap;
   standingGrants: TranslationMap;
   approvalHistory: TranslationMap;
+  approvalPage: TranslationMap;
+  execApproval: TranslationMap;
   secretsStore: TranslationMap &
     Record<
       "allowedHosts" | "allowedHostsPlaceholder" | "protectedSecret" | "agentReadable" | "hint",
@@ -1071,81 +1073,11 @@ export const en: TranslationMap & {
       "{count} sensitive values hidden. Use the reveal button above to edit the raw config.",
   },
   execApproval: {
-    scope: {
-      standingGrant:
-        'Always allow runs this exact command for "{automation}" without asking, until revoked (revocable)',
-      standingGrantDays:
-        'Always allow runs this exact command for "{automation}" without asking, for {count} days (revocable)',
-      messageSend: "Sends to {count} recipient(s) via {target}",
-      payment: "Pays {amount} {currency} to {target}",
-      externalPost: "Posts externally to {target}",
-    },
-    expiresIn: "expires in {time}",
-    expired: "expired",
-    execApprovalNeeded: "Exec approval needed",
-    pluginApprovalNeeded: "Plugin approval needed",
-    requestedBySession: "Approval requested by session {session}",
-    pending: "{count} pending",
-    otherPending: "Other pending requests",
-    reviewRequest: "Review approval from {agent}: {command}",
-    decisionRequest: "{decision}: {command}",
-    agentPendingOne: "{count} pending approval",
-    agentPending: "{count} pending approvals",
-    allowOnce: "Allow once",
-    alwaysAllow: "Always allow",
-    alwaysAllowHere: "Always allow here",
-    allowAlwaysUnavailable: "Allow Always is unavailable for this command.",
     reviewOnly: "Review only. Sign in with approval access to record a decision.",
-    deny: "Deny",
-    details: "Details",
-    labels: {
-      host: "Host",
-      session: "Session",
-      cwd: "CWD",
-      resolved: "Resolved",
-      security: "Security",
-      ask: "Ask",
-    },
   },
   approvalPage: {
     brandName: "OpenClaw",
-    eyebrow: "Operator approval",
-    loadingTitle: "Loading approval",
-    loadingDescription: "Checking the current approval state with the Gateway.",
-    unavailableTitle: "Approval unavailable",
-    unavailableDescription:
-      "This approval could not be found or this device is not authorized to review it.",
-    connectionErrorTitle: "Connection interrupted",
-    connectionErrorDescription:
-      "OpenClaw cannot confirm or record a decision while disconnected. Reconnect to check the current status.",
-    retry: "Retry",
-    execTitle: "Command approval",
-    pending: "Waiting for your decision",
-    pendingDescription: "Review the request carefully. The first answer from any surface wins.",
-    approvedHere: "Approved here",
-    deniedHere: "Denied here",
-    resolvedElsewhere: "Resolved elsewhere",
-    resolvedElsewhereDescription:
-      "Another surface or an earlier attempt recorded the decision first.",
-    approved: "Approved",
-    denied: "Denied",
-    expired: "Expired",
-    cancelled: "Cancelled",
-    allowedOnceDescription: "The operation was approved for this request only.",
-    allowedAlwaysDescription: "The operation was approved with the always-allow decision.",
-    deniedDescription: "The operation was denied and will not continue.",
-    expiredDescription: "No decision arrived before the deadline, so the operation was denied.",
-    cancelledDescription: "The requesting run ended before a decision could be used.",
-    summaryLabel: "Summary",
-    commandLabel: "Command",
-    requestLabel: "Request details",
-    nodeLabel: "Node",
-    expiresLabel: "Expires",
-    resolvedLabel: "Resolved",
     actionsLabel: "Approval decisions",
-    resolvingDecision: "Recording {decision}…",
-    safeToClose: "The decision is recorded. You can close this page.",
-    openControlUi: "Open Control UI",
   },
   agentTools: {},
   skillGroups: {
@@ -2949,11 +2881,6 @@ export const en: TranslationMap & {
       checksPending: "{count} running",
       finished: "Finished {time}",
       empty: "Answers come from this session's transcript and its project files.",
-      starters: {
-        changed: "What changed?",
-        stopped: "Why did it stop?",
-        remaining: "What's left?",
-      },
       askLabel: "Ask in side chat",
       askPlaceholder: "Ask a question",
       askImageQuestion: "What does this image show?",
@@ -2967,7 +2894,7 @@ export const en: TranslationMap & {
       askMissing: "This session is no longer available.",
       askModelUnavailable: "No utility model is configured for this session.",
       askImageUnsupported:
-        "This Side chat model cannot read images. Choose an image-capable utility model, then retry.",
+        "This Side chat model cannot read images. Choose an image-capable model, then retry.",
       askRateLimited: "Side chat reached its question limit. Try again shortly.",
       askUnavailable: "Side chat cannot answer right now.",
       askRetry: "Retry",

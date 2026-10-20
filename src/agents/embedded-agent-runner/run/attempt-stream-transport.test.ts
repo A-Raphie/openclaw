@@ -51,7 +51,7 @@ const admittedRunContext = {
 
 function transportEnvironment() {
   return {
-    settingsManager: { getGlobalSettings: () => ({}), getProjectSettings: () => ({}) },
+    settingsManager: { getGlobalSettings: () => ({}) },
     workspaceOnly: false,
     abortSignal: new AbortController().signal,
     codeModeControlsEnabled: false,

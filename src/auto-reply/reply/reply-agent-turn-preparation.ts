@@ -48,6 +48,7 @@ import {
   resolveFollowupAbortSignal,
   type FollowupRun,
 } from "./queue/types.js";
+import { prepareReplySourceAdmission } from "./reply-source-admission.js";
 import { admitReplyTurn } from "./reply-turn-admission.js";
 import { prepareReplyTurnContext } from "./reply-turn-preflight.js";
 import type { createReplyTurnRotationEvidence } from "./reply-turn-rotation.js";
@@ -85,6 +86,7 @@ export type AdmittedFollowupTurn = {
   preflightFailurePayload?: ReplyPayload;
   preflightError?: Error;
   restartRecovery?: ReplyRestartRecoveryClaimController;
+  releaseSourceAdmission?: () => Promise<void>;
 };
 
 function isSameSessionGeneration(
@@ -263,6 +265,7 @@ export async function prepareReplyAgentTurn<TConfigured>(
     let queuedFollowupAdmitted = false;
     let admissionFailed = false;
     let callerOwnsOperation = false;
+    let releaseSourceAdmission: (() => Promise<void>) | undefined;
     try {
       callerOwnsOperation = params.onOperationOwned?.(operation) === true;
       params.queued.run.onOperationAdmitted?.(operation);
@@ -479,6 +482,13 @@ export async function prepareReplyAgentTurn<TConfigured>(
               await params.onCompactionNotice?.(phase, text, turn);
             }
           : undefined;
+      releaseSourceAdmission = await prepareReplySourceAdmission({
+        operation,
+        followupRun: turn.queued,
+        recorder: turn.queued.userTurnTranscriptRecorder,
+        runId: turn.runId,
+      });
+      turn.releaseSourceAdmission = releaseSourceAdmission;
       const preflightEntry = session.current();
       try {
         await params.signalRunStart?.();
@@ -575,6 +585,7 @@ export async function prepareReplyAgentTurn<TConfigured>(
       }
       // Only a returned turn transfers presentation cleanup to the runner.
       queuedFollowupAdmitted = false;
+      releaseSourceAdmission = undefined;
       return { kind: "admitted", configured, turn } as const;
     } catch (error) {
       admissionFailed = true;
@@ -584,11 +595,18 @@ export async function prepareReplyAgentTurn<TConfigured>(
       }
       throw failure;
     } finally {
-      if (queuedFollowupAdmitted) {
-        await settleQueuedFollowupPresentation(params.defaults.opts?.onQueuedFollowupSettled);
-      }
-      if (admissionFailed && !callerOwnsOperation) {
-        operation.complete();
+      try {
+        if (queuedFollowupAdmitted) {
+          await settleQueuedFollowupPresentation(params.defaults.opts?.onQueuedFollowupSettled);
+        }
+      } finally {
+        try {
+          await releaseSourceAdmission?.();
+        } finally {
+          if (admissionFailed && !callerOwnsOperation) {
+            operation.complete();
+          }
+        }
       }
     }
   } catch (error) {

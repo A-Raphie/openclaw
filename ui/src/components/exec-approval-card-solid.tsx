@@ -13,13 +13,16 @@ import type {
   ExecApprovalRequest,
   ExecApprovalRequestPayload,
 } from "../app/exec-approval.ts";
+import { registerApprovalPromptsEnglish } from "../i18n/locales/en-approval-prompts.ts";
 import { formatCountdown } from "../lib/format.ts";
-import { t } from "../lib/reactive/i18n.ts";
+import { registerEnglishCatalog, t } from "../lib/reactive/i18n.ts";
 import { resolveSessionDisplayName } from "../lib/session-display.ts";
 import { defineSolidBridge } from "../lib/solid-bridge.ts";
 import type { JSX as SolidJSX } from "../types/solid-elements.d.ts";
 import { sidebarAttentionFocusRef } from "./sidebar-attention-focus.ts";
 import { Icon } from "./solid/icon.tsx";
+
+registerEnglishCatalog(registerApprovalPromptsEnglish);
 
 declare module "@solidjs/web" {
   namespace JSX {
@@ -169,6 +172,22 @@ function renderExecBody(
   return (
     <>
       {" "}
+      {request.streamProposal ? (
+        <p class="exec-approval-summary">
+          {t(
+            request.host === "sandbox"
+              ? "execApproval.watcherSandboxSummary"
+              : request.host === "gateway"
+                ? "execApproval.watcherGatewaySummary"
+                : "execApproval.watcherSummary",
+          )}
+        </p>
+      ) : null}
+      {request.warningText ? (
+        <div class="exec-approval-warning" role="note">
+          {request.warningText}
+        </div>
+      ) : null}
       {renderCommandWithSpans(request)}
       {request.scope ? (
         <div class="exec-approval-scope">{summarizeApprovalScopeLabel(request.scope)}</div>
@@ -211,6 +230,16 @@ function renderPluginBody(active: ExecApprovalRequest, variant: ExecApprovalCard
 }
 
 function approvalDecisionLabel(decision: ExecApprovalDecision, approval: ExecApprovalRequest) {
+  const proposal = approval.kind === "exec" ? approval.request.streamProposal : undefined;
+  if (proposal && decision !== "allow-always") {
+    return t(
+      decision === "deny"
+        ? "execApproval.cancelWatcher"
+        : proposal.operation === "add"
+          ? "execApproval.startWatcher"
+          : "execApproval.saveWatcher",
+    );
+  }
   if (approval.kind === "plugin" && Array.isArray(approval.pluginActions)) {
     for (const action of approval.pluginActions) {
       if (isRecord(action) && action.kind === "decision" && action.decision === decision) {
@@ -256,6 +285,9 @@ export function resolveApprovalDecisions(
 }
 
 export function approvalTitle(active: ExecApprovalRequest): string {
+  if (active.kind === "exec" && active.request.streamProposal) {
+    return active.request.streamProposal.name;
+  }
   return active.kind !== "exec"
     ? (active.pluginTitle ?? t("execApproval.pluginApprovalNeeded"))
     : t("execApproval.execApprovalNeeded");
@@ -316,6 +348,13 @@ export function SidebarApprovalRow(props: SidebarApprovalRowProps) {
           <Show when={approval().request.scope}>
             {(scope) => (
               <div class="exec-approval-scope">{summarizeApprovalScopeLabel(scope())}</div>
+            )}
+          </Show>
+          <Show when={approval().request.warningText}>
+            {(warning) => (
+              <div class="sidebar-approval-row__message" role="note">
+                {warning()}
+              </div>
             )}
           </Show>
           <div
@@ -428,7 +467,13 @@ function ExecApprovalCardContent(props: ExecApprovalCardProps) {
         ? renderExecBody(active().request, props.variant)
         : renderPluginBody(active(), props.variant)}
       {active().kind === "exec" && !decisions().includes("allow-always") ? (
-        <div class="exec-approval-warning">{t("execApproval.allowAlwaysUnavailable")}</div>
+        <div class="exec-approval-warning">
+          {t(
+            active().request.streamProposal
+              ? "execApproval.watcherApprovalScope"
+              : "execApproval.allowAlwaysUnavailable",
+          )}
+        </div>
       ) : undefined}
       {props.connected && !props.canGrant ? (
         <div

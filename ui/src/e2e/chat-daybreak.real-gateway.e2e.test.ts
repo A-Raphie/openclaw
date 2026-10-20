@@ -235,6 +235,9 @@ suite.define(() => {
           const menu = picker.locator(".chat-controls__effort-menu");
           const select = picker.locator("[data-chat-access-program]");
           const open = async () => {
+            await expect
+              .poll(() => picker.locator("summary").getAttribute("aria-disabled"))
+              .toBe("false");
             if (!(await menu.isVisible())) {
               await picker.locator("summary").click();
             }

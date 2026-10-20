@@ -92,6 +92,9 @@ struct OpenClawClientCredentialStoreTests {
             #expect(try owner.execute(removal).changed == false)
 
             _ = try owner.createSocketCredentials(.init(path: composed, token: composed, updatedAtMs: 1))
+            #expect(try !owner.replaceSocketCredentials(
+                .init(path: "replacement", token: "replacement", updatedAtMs: 2),
+                expectedToken: decomposed))
             var socket = ClientCredentialOperation(kind: .socketEnsure)
             socket.fallback = .init(path: "fallback", token: "fallback", updatedAtMs: 3)
             socket.requested = .init(path: decomposed, token: decomposed)
@@ -164,6 +167,21 @@ struct OpenClawClientCredentialStoreTests {
             owner.close()
             #expect(try self.externalSQLite(url, "BEGIN EXCLUSIVE").code == 0)
             #expect(throws: OpenClawNativeStateError.self) { try owner.readIdentity(key: "primary") }
+        }
+    }
+
+    @Test func `restored socket token can be replaced only by its observed value`() throws {
+        try self.withRoot { root in
+            do {
+                let owner = try Store(rootURL: root)
+                defer { owner.close() }
+                _ = try owner.createSocketCredentials(.init(path: "/socket", token: nil, updatedAtMs: 20))
+                let replacement = Store.SocketCredentials(path: "/socket", token: "fresh-token", updatedAtMs: 1)
+                #expect(try owner.replaceSocketCredentials(replacement, expectedToken: nil))
+                #expect(try !owner.replaceSocketCredentials(
+                    .init(path: "/socket", token: "stale-replacement", updatedAtMs: 100), expectedToken: nil))
+                #expect(try owner.readSocketCredentials() == replacement)
+            }
         }
     }
 
