@@ -32,10 +32,16 @@ it.skipIf(!stableRoot)(
     const stableManifest = JSON.parse(
       await readFile(path.join(stableRoot, "package.json"), "utf8"),
     );
-    const stableVersion = process.env.OPENCLAW_TEST_INSTALLED_STABLE_VERSION ?? "2026.10.1";
-    expect(["2026.10.1", "2026.10.3"]).toContain(stableVersion);
+    const stableVersion = process.env.OPENCLAW_TEST_INSTALLED_STABLE_VERSION ?? "2026.10.5";
+    const stableSchemas =
+      stableVersion === "2026.10.5"
+        ? { agent: 25, state: 20 }
+        : stableVersion === "2026.10.1" || stableVersion === "2026.10.3"
+          ? { agent: 24, state: 20 }
+          : undefined;
+    if (!stableSchemas) throw new Error("Unsupported installed stable upgrade fixture version");
     expect(stableManifest.version).toBe(stableVersion);
-    expect(stableManifest.openclaw.schemaVersions).toEqual({ agent: 24, state: 20 });
+    expect(stableManifest.openclaw.schemaVersions).toEqual(stableSchemas);
     const fixture = await createQuestionUpgradeFixture(stableRoot, signal);
     const { instance } = fixture;
     let client: Awaited<ReturnType<typeof acquireGatewayTestClient>> | undefined;
@@ -179,9 +185,9 @@ it.skipIf(!stableRoot)(
         await stop();
         const baseline = await inspectUpgradeDatabases(instance.state.stateDir);
         const baselineAgent = baseline.find((row) => row.cacheCount !== undefined);
-        expect(baselineAgent?.version).toBe(24);
+        expect(baselineAgent?.version).toBe(stableSchemas.agent);
         expect(baselineAgent?.cacheCount).toBeGreaterThan(0);
-        expect(baseline.some((row) => row.version === 20)).toBe(true);
+        expect(baseline.some((row) => row.version === stableSchemas.state)).toBe(true);
         trace("stable-persisted", {
           binaryVersion: stableManifest.version,
           versions: baseline.map((row) => row.version),
@@ -209,10 +215,10 @@ it.skipIf(!stableRoot)(
         expect(doctor.code).toBe(0);
         const migrated = await inspectUpgradeDatabases(instance.state.stateDir);
         const migratedAgent = migrated.find((row) => row.cacheCount !== undefined);
-        expect(migratedAgent?.version).toBe(28);
+        expect(migratedAgent?.version).toBe(32);
         expect(migratedAgent).toMatchObject({ hasQuestions: true, hasOutboxSequence: true });
         expect(migratedAgent?.cacheDigest).toBe(baselineAgent?.cacheDigest);
-        expect(migrated.some((row) => row.version === 22)).toBe(true);
+        expect(migrated.some((row) => row.version === 29)).toBe(true);
         trace("candidate-doctor", {
           versions: migrated.map((row) => row.version),
           cacheCount: migratedAgent?.cacheCount,
@@ -266,9 +272,9 @@ it.skipIf(!stableRoot)(
         });
         const restored = await inspectUpgradeDatabases(instance.state.stateDir);
         const restoredAgent = restored.find((row) => row.cacheCount !== undefined);
-        expect(restoredAgent?.version).toBe(24);
+        expect(restoredAgent?.version).toBe(stableSchemas.agent);
         expect(restoredAgent?.cacheDigest).toBe(baselineAgent?.cacheDigest);
-        expect(restored.some((row) => row.version === 20)).toBe(true);
+        expect(restored.some((row) => row.version === stableSchemas.state)).toBe(true);
         fixture.useBinary(path.join(stableRoot, "openclaw.mjs"));
         expect(
           (

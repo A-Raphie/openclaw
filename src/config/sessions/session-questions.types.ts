@@ -2,16 +2,18 @@ import type {
   QuestionRecord,
   QuestionResolvedEvent,
 } from "../../../packages/gateway-protocol/src/index.js";
-import type { RestartRecoveryOperatorSource } from "../../gateway/operator-run-recovery-source.schema.js";
+import type {
+  RestartRecoveryOperatorSource,
+  QueuedOperatorRecoverySource,
+} from "../../gateway/operator-run-recovery-source.codec.js";
 import type { DurableQuestionSessionBinding } from "../../gateway/question-session-access.types.js";
-import type { UserChannelAuthorizationReference } from "../../state/user-profiles.types.js";
 import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 
 type QuestionContinuationProvenance = {
   issuer: "operator" | "channel";
   sourceRunId: string;
   recoverySource?: RestartRecoveryOperatorSource;
-  channelAuthorizationReference?: UserChannelAuthorizationReference;
+  channelRecoverySource?: Extract<QueuedOperatorRecoverySource, { kind: "channel" }>["snapshot"];
   delivery?: DeliveryContext;
 };
 

@@ -9,7 +9,16 @@ export const registryRowSchema = z
     store: digest,
     locator: digest,
     schemaVersion: headerInteger,
-    expectedSchemaVersion: z.union([z.literal(25), z.literal(26), z.literal(27), z.literal(28)]),
+    expectedSchemaVersion: z.union([
+      z.literal(25),
+      z.literal(26),
+      z.literal(27),
+      z.literal(28),
+      z.literal(29),
+      z.literal(30),
+      z.literal(31),
+      z.literal(32),
+    ]),
     sha256: digest,
   })
   .strict();

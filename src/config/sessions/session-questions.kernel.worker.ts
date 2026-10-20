@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { Selectable } from "kysely";
+import { decodeQueuedOperatorRecoverySource } from "../../gateway/operator-run-recovery-source.codec.js";
 import type { DurableQuestionSessionBinding } from "../../gateway/question-session-access.types.js";
 import {
   executeSqliteQuerySync,
@@ -7,15 +8,20 @@ import {
   getNodeSqliteKysely,
 } from "../../infra/kysely-sync.js";
 import { getAdmittedSqliteSchemaFacts } from "../../infra/sqlite-schema-facts.js";
-import type { OpenClawAgentReadOnlyDatabase } from "../../state/openclaw-agent-db-readonly.js";
+import {
+  withOpenClawAgentDatabaseReadOnly,
+  type OpenClawAgentReadOnlyDatabase,
+} from "../../state/openclaw-agent-db-readonly.js";
 import type { DB } from "../../state/openclaw-agent-db.generated.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
+import { cloneEnvWithPlatformSemantics } from "../config-env-vars.js";
 import { readSessionEntryRow } from "./session-accessor.sqlite-entry-read.js";
 import { captureSessionEntryReadSource } from "./session-entry-read-source.js";
 import { SessionQuestionCustodyRetiredError } from "./session-questions-custody-error.js";
 import type {
   DurableQuestion,
   SessionQuestionOperation,
+  SessionQuestionReadInput,
   SessionQuestionResult,
 } from "./session-questions.types.js";
 
@@ -41,12 +47,23 @@ function parseQuestionContinuationStatus(value: string): DurableQuestion["contin
 function decodeQuestion(row: Selectable<DB["session_questions"]>): DurableQuestion {
   const record: DurableQuestion["record"] = JSON.parse(row.definition_json);
   const outcome = row.result_json ? JSON.parse(row.result_json) : undefined;
+  const provenance: DurableQuestion["provenance"] = JSON.parse(row.provenance_json);
+  if (provenance.channelRecoverySource) {
+    const source = decodeQueuedOperatorRecoverySource({
+      kind: "channel",
+      snapshot: provenance.channelRecoverySource,
+    });
+    if (source.kind !== "channel") {
+      throw new Error("Question channel source changed its kind");
+    }
+    provenance.channelRecoverySource = source.snapshot;
+  }
   return {
     record: outcome ? { ...record, ...outcome } : record,
     sessionKey: row.session_key,
     sessionId: row.session_id,
     lifecycleRevision: row.lifecycle_revision,
-    provenance: JSON.parse(row.provenance_json),
+    provenance,
     sessionBinding: JSON.parse(row.session_binding_json),
     ...(row.resolution_id ? { resolutionId: row.resolution_id } : {}),
     ...(row.terminal_at !== null
@@ -168,4 +185,23 @@ function assertCapturedQuestionBinding(
       "Durable question custody session generation changed.",
     );
   }
+}
+
+/** The transcript worker delegates the complete synchronous, admitted question read. */
+export function readSessionQuestionOperation(
+  request: SessionQuestionReadInput,
+): SessionQuestionResult {
+  const result = withOpenClawAgentDatabaseReadOnly(
+    (database) =>
+      request.custodyBinding && request.operation.kind === "get"
+        ? readSessionQuestionCustodyInDatabase(
+            database,
+            request.custodyBinding,
+            request.operation.id,
+          )
+        : readSessionQuestions(database, request.operation),
+    { ...request.database, env: cloneEnvWithPlatformSemantics(request.env) },
+    { snapshot: Boolean(request.custodyBinding) },
+  );
+  return result.found ? result.value : request.operation.kind === "list" ? [] : undefined;
 }
