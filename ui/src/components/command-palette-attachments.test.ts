@@ -122,7 +122,73 @@ async function mount(options: Parameters<typeof createDraftFixture>[0] = {}) {
   };
 }
 
-describe("command palette paste-only images", () => {
+describe("command palette attachments", () => {
+  it("owns dropped files immediately, retains intent through failures/removal, and clears an empty draft", async () => {
+    const { palette, input, query, start, create, context } = await mount();
+    const surface = query<HTMLElement>(".cmd-palette")!;
+    const dispatch = (type: string, files: File[] = []) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(event, "dataTransfer", {
+        value: { types: ["Files"], files, dropEffect: "none" },
+      });
+      surface.dispatchEvent(event);
+      return event;
+    };
+    dispatch("dragenter");
+    expect(surface.hasAttribute("data-attachment-drop-active")).toBe(true);
+    expect(
+      dispatch("drop", [image(), new File(["brief"], "brief.pdf", { type: "application/pdf" })])
+        .defaultPrevented,
+    ).toBe(true);
+    expect(surface.hasAttribute("data-attachment-drop-active")).toBe(false);
+    await palette.updateComplete;
+    await waitForSolid(() =>
+      expect(query(".cmd-palette__search")?.hasAttribute("inert")).toBe(true),
+    );
+    expect(input.getAttribute("aria-controls")).toBeNull();
+    expect(input.placeholder).toBe("What would you like to do with these files?");
+    expect(start().disabled).toBe(true);
+    readers[0]!.dispatchEvent(new ProgressEvent("error"));
+    finishRead(1, "data:application/pdf;base64,YnJpZWY=");
+    setInputValue(input, "Review");
+    await palette.updateComplete;
+    expect(start().disabled).toBe(true);
+    key(input, { key: "Enter", metaKey: true });
+    expect(create).not.toHaveBeenCalled();
+    await waitForSolid(() => expect(query(".chat-attachment-thumb--error")).not.toBeNull());
+    const failed = query(".chat-attachment-thumb--error")!;
+    failed.querySelector<HTMLButtonElement>(".chat-attachment-remove")!.click();
+    await palette.updateComplete;
+    expect(start().disabled).toBe(false);
+    query<HTMLButtonElement>(".chat-attachment-remove")!.click();
+    await palette.updateComplete;
+    expect(query(".cmd-palette__search")?.hasAttribute("inert")).toBe(true);
+    key(input, { key: "Enter" });
+    expect(context.navigate).not.toHaveBeenCalled();
+    setInputValue(input, "");
+    await palette.updateComplete;
+    expect(query(".cmd-palette__search")?.hasAttribute("inert")).toBe(false);
+  });
+
+  it("keeps ready and pending attachments when dismissed, but releases them on disconnect", async () => {
+    const registered = vi.spyOn(payloads, "registerChatAttachmentPayload");
+    const { palette, input, query } = await mount();
+    paste(input, [image("ready.png"), image("pending.png")]);
+    finishRead(0);
+    await palette.updateComplete;
+    const attachment = registered.mock.calls[0]![0].attachment;
+    key(input, { key: "Escape" });
+    finishRead(1);
+    await palette.updateComplete;
+    expect(payloads.getChatAttachmentDataUrl(attachment)).not.toBeNull();
+    await openPalette(palette);
+    await waitForSolid(() =>
+      expect(query(".chat-attachments-preview")?.querySelectorAll("img")).toHaveLength(2),
+    );
+    palette.remove();
+    expect(payloads.getChatAttachmentDataUrl(attachment)).toBeNull();
+  });
+
   it.each([true, false])(
     "keeps non-image paste native with uploads enabled=%s",
     async (uploadsEnabled) => {
@@ -142,7 +208,7 @@ describe("command palette paste-only images", () => {
         const loadingInput = document.createElement("textarea");
         loadingInput.addEventListener("paste", (event) => loading.handlePaste(event));
         expect(paste(loadingInput, [image()]).defaultPrevented).toBe(true);
-        expect(loading.captureHandoff()()?.imageFiles).toBeUndefined();
+        expect(loading.captureHandoff()()?.attachmentFiles).toBeUndefined();
       }
       expect(readers).toHaveLength(0);
       expect(query(".chat-attachments-preview")).toBeNull();
@@ -180,7 +246,7 @@ describe("command palette paste-only images", () => {
     expect(context.gateway.setSessionKey).not.toHaveBeenCalled();
   });
 
-  it.each(["dismiss", "disconnect", "owner"])(
+  it.each(["disconnect", "owner"])(
     "retires ready payloads and ignores late reads after %s",
     async (reason) => {
       const registered = vi.spyOn(payloads, "registerChatAttachmentPayload");
@@ -190,9 +256,7 @@ describe("command palette paste-only images", () => {
       await palette.updateComplete;
       const attachment = registered.mock.calls[0]![0].attachment;
       expect(payloads.getChatAttachmentDataUrl(attachment)).not.toBeNull();
-      if (reason === "dismiss") {
-        key(input, { key: "Escape" });
-      } else if (reason === "disconnect") {
+      if (reason === "disconnect") {
         palette.remove();
       } else {
         Object.assign(context.gateway, { connectionRevision: 2 });
@@ -337,9 +401,8 @@ describe("command palette paste-only images", () => {
       publish();
     }
     if (limited) {
-      // A valid text/remaining-image prompt could be sent explicitly, but the
-      // cold submit must not silently drop a rejected clipboard image.
-      await vi.waitFor(() => expect(start().disabled).toBe(false));
+      // A rejected slot keeps the palette in compose mode and blocks partial submission.
+      await vi.waitFor(() => expect(start().disabled).toBe(true));
       expect(queryAll(".chat-attachment-thumb")).toHaveLength(outcome === "partial" ? 2 : 1);
       expect(query(".chat-attachment-failures")?.textContent).toContain("oversized.gif");
     }

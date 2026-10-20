@@ -214,13 +214,27 @@ describe("cold command palette input custody", () => {
         state.clear();
         state.begin();
         expect(take()).toBeUndefined();
-        expect(state.captureHandoff()()?.imageFiles).toBeUndefined();
+        expect(state.captureHandoff()()?.attachmentFiles).toBeUndefined();
       } else {
-        expect(take()).toMatchObject({ value: "", imageFiles: [file], submitRequested: true });
+        expect(take()).toMatchObject({ value: "", attachmentFiles: [file], submitRequested: true });
         expect(take()).toBeUndefined();
       }
     },
   );
+
+  it("hands dropped non-image files to the canonical draft exactly once", async () => {
+    const { state, input } = await mountLoader();
+    const file = new File(["brief"], "brief.pdf", { type: "application/pdf" });
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "dataTransfer", { value: { types: ["Files"], files: [file] } });
+    input.dispatchEvent(event);
+    flush();
+    expect(event.defaultPrevented).toBe(true);
+    expect(input.placeholder).toBe("What would you like to do with these files?");
+    const take = state.captureHandoff();
+    expect(take()?.attachmentFiles).toEqual([file]);
+    expect(take()).toBeUndefined();
+  });
 
   it.each([
     { modifier: { ctrlKey: true }, submit: true, value: "Start this background task" },

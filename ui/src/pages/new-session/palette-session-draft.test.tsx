@@ -46,7 +46,9 @@ describe("PaletteSessionDraft", () => {
       readers.push(this);
     });
     host.draft.setMessage("Carry my cold Send into the required worker");
-    host.draft.adoptImageFiles([new File(["cold attachment"], "cold.txt", { type: "text/plain" })]);
+    host.draft.adoptAttachmentFiles([
+      new File(["cold attachment"], "cold.txt", { type: "text/plain" }),
+    ]);
     await host.updateComplete;
     await waitForSolid(() =>
       expect(host.querySelector('.chat-attachment-loading[data-state="reading"]')).not.toBeNull(),

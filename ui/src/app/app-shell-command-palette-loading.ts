@@ -167,7 +167,7 @@ function createCommandPaletteLoading(host: Pick<CommandPaletteShellHost, "contex
   };
   const active = () => current.returnFocus !== undefined;
   const shown = createMemo(() => read().returnFocus !== undefined);
-  let imageFiles: File[] = [];
+  let attachmentFiles: File[] = [];
   let mentionTrigger: number | undefined;
   let input: HTMLTextAreaElement | undefined;
   let composing = false;
@@ -190,7 +190,7 @@ function createCommandPaletteLoading(host: Pick<CommandPaletteShellHost, "contex
     pendingHandoff = undefined;
     composing = false;
     input = undefined;
-    imageFiles = [];
+    attachmentFiles = [];
     mentionTrigger = undefined;
   }
   onCleanup(reset);
@@ -215,7 +215,7 @@ function createCommandPaletteLoading(host: Pick<CommandPaletteShellHost, "contex
       selectionDirection: "none" as const,
     };
     const { returnFocus, submitRequested } = current;
-    const files = imageFiles;
+    const files = attachmentFiles;
     const trigger = mentionTrigger;
     // Transfer the original focus target without restoring it between the two inputs.
     input?.closest<OpenClawModalDialog>("openclaw-modal-dialog")?.setReturnFocusTarget(null);
@@ -224,7 +224,7 @@ function createCommandPaletteLoading(host: Pick<CommandPaletteShellHost, "contex
       ...draft,
       returnFocus,
       ...(submitRequested ? { submitRequested: true as const } : {}),
-      ...(files.length ? { imageFiles: files } : {}),
+      ...(files.length ? { attachmentFiles: files } : {}),
       ...(trigger !== undefined ? { mentionTrigger: trigger } : {}),
     };
   }
@@ -234,6 +234,10 @@ function createCommandPaletteLoading(host: Pick<CommandPaletteShellHost, "contex
       return active();
     },
     value: () => presentation().draft?.value ?? "",
+    hasAttachments: () => {
+      presentation();
+      return attachmentFiles.length > 0;
+    },
     submitRequested: () => presentation().submitRequested,
     defined: () => presentation().defined,
     waitingForComposition: () => handoffPending,
@@ -354,8 +358,36 @@ function createCommandPaletteLoading(host: Pick<CommandPaletteShellHost, "contex
           showToast({ message: uploadsDisabledMessage() });
           return;
         }
-        imageFiles.push(...files);
+        attachmentFiles.push(...files);
+        publish({ ...current });
       }
+    },
+    handleDragOver(event: DragEvent): void {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect =
+          active() &&
+          !current.submitRequested &&
+          uploadsEnabled(host.context?.config) &&
+          Array.from(event.dataTransfer.types).includes("Files")
+            ? "copy"
+            : "none";
+      }
+    },
+    handleDrop(event: DragEvent): void {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!active() || current.submitRequested || !event.dataTransfer?.files.length) {
+        return;
+      }
+      if (!uploadsEnabled(host.context?.config)) {
+        showToast({ message: uploadsDisabledMessage() });
+        return;
+      }
+      // Keep raw Files in memory until the canonical draft owns admission/reads.
+      attachmentFiles.push(...event.dataTransfer.files);
+      publish({ ...current });
     },
     handleKeydown(event: KeyboardEvent): void {
       if (composing || event.isComposing || event.keyCode === 229) {
@@ -367,7 +399,7 @@ function createCommandPaletteLoading(host: Pick<CommandPaletteShellHost, "contex
         event.stopPropagation();
         if (
           !event.repeat &&
-          (current.draft?.value.trim() || imageFiles.length > 0) &&
+          (current.draft?.value.trim() || attachmentFiles.length > 0) &&
           matchesShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.modifiedEnter, event)
         ) {
           publish({ ...current, submitRequested: true });

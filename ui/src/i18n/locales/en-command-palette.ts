@@ -17,6 +17,8 @@ const enCommandPalette = {
     startSessionBackground: "Start new session in background",
     startingSession: "Starting…",
     promptRequired: "Write a prompt to start a session.",
+    attachmentPrompt: en.palette.attachmentPrompt,
+    removeFailedAttachments: "Remove or reattach failed files before starting a session.",
     searchingSessions: "Searching sessions…",
     searchingCommands: "Searching commands…",
     clearSearch: "Clear search",

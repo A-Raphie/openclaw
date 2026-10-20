@@ -22,6 +22,23 @@ For unmatched HTTP paths, the app-shell fallback respects the request's `Accept`
 
 It speaks **directly to the Gateway WebSocket** on the same port.
 
+## Command palette file attachments
+
+Open the command palette with **Cmd+K** on macOS or **Ctrl+K** elsewhere. Drop
+images or files onto the palette, or paste images into its input, to prepare a
+new background session without changing your current conversation or composer.
+
+The first attachment switches the palette from navigation to **New session**.
+Add optional instructions, adjust the session settings, then choose **New session**
+or press **Cmd/Ctrl+Enter**. Dropping a file does not start the session by itself.
+Preparation and failed files remain visible; remove or reattach failed files
+before starting. File admission and size limits match the chat composer.
+
+Closing the palette keeps its attachment draft in memory for the same Gateway
+and account. Removing the final attachment keeps new-session mode while
+instructions remain; clearing both files and instructions restores navigation.
+Reloading or leaving the app does not preserve this in-memory draft.
+
 ## Temporary disconnections
 
 When the connection drops, the Control UI keeps loaded catalogs, automation
