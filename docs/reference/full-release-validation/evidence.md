@@ -85,6 +85,11 @@ manifest writing, and final validation. Candidate workflows still run every
 selected test; a waiver does not omit a test or change its raw conclusion.
 State, manifest, and summary retain each waived failure and its reason.
 
+Waiver support requires a candidate workflow that routes state operations to
+admitted P. Pre-cutover frozen workflows retain strict validation; changing P
+alone does not retrofit waiver support. Readers still accept the historical empty
+`telegram_waiver` field without rewriting authenticated evidence.
+
 Only exact terminal **failed** live-provider or Telegram leaves are eligible.
 Every other required result must pass. Missing, skipped, cancelled, timed-out,
 incomplete, or mismatched required evidence still blocks. Normal CI, npm/Docker

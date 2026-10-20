@@ -35,6 +35,7 @@ import { createCommandTest, type CommandFixture } from "../helpers/command-fixtu
 import { requireNodeTool } from "../helpers/node-toolchain.js";
 import { writePublishablePluginFixture } from "../helpers/publishable-plugin-fixture.js";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
+import { resolveWorkflowBash } from "../helpers/workflow-bash.js";
 import { prepareCopiedSourceModules } from "./copied-source-modules.test-support.js";
 import { preparedScriptWrapperPreload } from "./prepared-script-wrapper.test-support.js";
 import {
@@ -52,6 +53,7 @@ const templateDirs = useAutoCleanupTempDirTracker(afterAll);
 let toolingTemplate: { loose: string; packed: string };
 const repo = resolve(".");
 const nodeExecutable = realpathSync(requireNodeTool("node"));
+const workflowBash = process.platform === "darwin" ? resolveWorkflowBash() : "bash";
 const workflowPath = ".github/workflows/full-release-validation.yml";
 type Step = {
   name: string;
@@ -293,7 +295,7 @@ console.log('{"status":"identical"}');
             });
           }
           const result = await processFixture.run(
-            "bash",
+            workflowBash,
             ["-c", expectDefined(step.run, "transport command")],
             {
               cwd: root,
@@ -1176,13 +1178,13 @@ globalThis.Date = class extends OriginalDate {
     effects.push(step.name);
     const result =
       options.registry === "parent-interrupt"
-        ? spawnSync("bash", ["-c", step.run], {
+        ? spawnSync(workflowBash, ["-c", step.run], {
             cwd: step["working-directory"] ? join(root, step["working-directory"]) : root,
             env,
             encoding: "utf8",
             timeout: 30_000,
           })
-        : await processFixture.run("bash", ["-c", step.run], {
+        : await processFixture.run(workflowBash, ["-c", step.run], {
             cwd: step["working-directory"] ? join(root, step["working-directory"]) : root,
             env,
             encoding: "utf8",
@@ -2623,6 +2625,7 @@ describe("publication source intent and durable binding", () => {
       expect(publicationSourceJson(historical)).toBe(historicalBytes);
       const retained = structuredClone(historical);
       retained.coverage.known_flaky_jobs_json = "[]";
+      retained.coverage.telegram_waiver = "";
       const { digest: _retiredDigest, ...retainedContent } = retained;
       retained.digest = createHash("sha256")
         .update(publicationSourceJson(retainedContent))
@@ -2635,15 +2638,28 @@ describe("publication source intent and durable binding", () => {
         }),
       ).toBe(retained);
       expect(publicationSourceJson(retained)).toBe(retainedBytes);
+      for (const [key, value] of [
+        ["known_flaky_jobs_json", '["normalCi:test"]'],
+        ["telegram_waiver", "legacy-omission"],
+      ] as const) {
+        expect(() =>
+          validatePublicationSourceBinding({
+            sourceAdmissionContract: "1",
+            sourceAdmission: {
+              ...retained,
+              coverage: { ...retained.coverage, [key]: value },
+            },
+          }),
+        ).toThrow(`${key} must be empty`);
+      }
+      const withoutLegacyField = structuredClone(retained);
+      delete withoutLegacyField.coverage.telegram_waiver;
       expect(() =>
         validatePublicationSourceBinding({
           sourceAdmissionContract: "1",
-          sourceAdmission: {
-            ...retained,
-            coverage: { ...retained.coverage, known_flaky_jobs_json: '["normalCi:test"]' },
-          },
+          sourceAdmission: withoutLegacyField,
         }),
-      ).toThrow("known_flaky_jobs_json must be empty");
+      ).toThrow("source admission digest mismatch");
       expect(() =>
         validatePublicationSourceBinding({
           sourceAdmissionContract: "1",
