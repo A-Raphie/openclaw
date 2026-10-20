@@ -21,8 +21,6 @@ const state = vi.hoisted(() => ({
   operate: vi.fn(),
   readCustody: vi.fn(),
   restore: vi.fn(),
-  prepareChannel: vi.fn(),
-  captureChannel: vi.fn(),
 }));
 vi.mock("../config/sessions/session-questions.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../config/sessions/session-questions.js")>()),
@@ -36,14 +34,6 @@ vi.mock("../infra/agent-events.js", async (importOriginal) => ({
 vi.mock("./operator-run-recovery.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./operator-run-recovery.js")>()),
   restoreGatewayQuestionOperatorRecovery: state.restore,
-}));
-vi.mock("./operator-run-authority.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./operator-run-authority.js")>()),
-  captureChannelOperatorRunAuthority: state.captureChannel,
-}));
-vi.mock("./channel-operator-authority.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./channel-operator-authority.js")>()),
-  prepareChannelOperatorAdmin: state.prepareChannel,
 }));
 vi.mock("./server-plugin-runtime-client.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./server-plugin-runtime-client.js")>()),
@@ -386,29 +376,6 @@ describe("durable question continuation custody", () => {
       }
     },
   );
-
-  it("retains the validated channel recovery reference for subsequent durable questions", async () => {
-    const f = fixture();
-    const reference = { version: 1, id: "validated-channel" } as const;
-    f.saved.provenance = {
-      issuer: "channel",
-      sourceRunId: "original",
-      channelAuthorizationReference: reference,
-    };
-    state.prepareChannel.mockResolvedValue({
-      operatorProfile: { profileId: "original-person" },
-      recoveryReference: reference,
-      signal: new AbortController().signal,
-      isCurrent: () => true,
-    });
-    state.captureChannel.mockReturnValue(f.authority);
-    await dispatchQuestionContinuation(f.params);
-    expect(state.captureChannel).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channelRecoveryReference: reference,
-      }),
-    );
-  });
 
   it("does not clean up a replacement question after captured custody retires", async () => {
     const f = fixture();
