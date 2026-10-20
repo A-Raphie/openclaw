@@ -88,10 +88,6 @@ suite.define(() => {
             health: "waiting-on-user",
             headline: "Waiting for the next instruction",
           });
-          await page
-            .locator(`[data-session-key="${keys[1]}"]`)
-            .getByText("Waiting for the next instruction", { exact: true })
-            .waitFor();
         }
         await gateway.emitGatewayEvent(
           "chat",
@@ -101,6 +97,14 @@ suite.define(() => {
           .locator(".chat-thread-inner")
           .getByText("Visible chat stays live", { exact: true })
           .waitFor();
+        if (mode === "preview-off") {
+          // Hidden previews keep their stream subscription without adding a second row line.
+          expect(
+            await page
+              .locator(`[data-session-key="${keys[1]}"] .sidebar-recent-session__subtitle`)
+              .count(),
+          ).toBe(0);
+        }
       });
     },
   );

@@ -20,6 +20,19 @@ import { flushMockTimers, mockGatewayTest as it } from "./mock-gateway-page.test
 const getGateway = (window: MockGatewayWindow) =>
   expectDefined(window.openclawControlUiE2eGateway, "Mock Gateway was not installed");
 
+it("serves protocol-valid empty Custodian history without method advertisement", async ({
+  gatewayPage,
+}) => {
+  gatewayPage.execute(createControlUiMockGatewayInitScript({ featureMethods: ["openclaw.chat"] }));
+  const { request } = gatewayPage.connect();
+  await flushMockTimers();
+
+  const history = await request("custodian-history", "openclaw.chat.history", {});
+
+  expect(Compile(SystemAgentChatHistoryResultSchema).Check(history)).toBe(true);
+  expect(history.turns).toEqual([]);
+});
+
 it("serves protocol-valid empty channel status and pairing defaults", async ({ gatewayPage }) => {
   gatewayPage.execute(createControlUiMockGatewayInitScript());
   const { request } = gatewayPage.connect();

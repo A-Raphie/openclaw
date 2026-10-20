@@ -1,16 +1,14 @@
 import type { AgentRuntimeRestrictionErrorDetails } from "../../../../packages/gateway-protocol/src/agent-runtime-restriction-error-details.js";
 import { normalizeThinkLevel } from "../../../../src/auto-reply/thinking.shared.js";
 import { GatewayRequestError } from "../../api/gateway.ts";
-import type {
-  CyberAccessProgram,
-  FastMode,
-  GatewaySessionRow,
-  SessionsListResult,
-} from "../../api/types.ts";
+import type { CyberAccessProgram, GatewaySessionRow, SessionsListResult } from "../../api/types.ts";
 import { t } from "../../i18n/index.ts";
 import { registerModelControlsEnglish } from "../../i18n/locales/en-model-controls.ts";
 import { resolvePreferredServerChatModelValue } from "../../lib/chat/model-ref.ts";
-import { resolveChatModelOverrideValue } from "../../lib/chat/model-select-state.ts";
+import {
+  normalizeChatFastModeInput,
+  resolveChatModelOverrideValue,
+} from "../../lib/chat/model-select-state.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { isSessionRuntimePinned } from "../../lib/model-runtime-choice.ts";
 import { isAgentRuntimeRestrictionErrorDetails } from "../../lib/protocol-validators.generated/session-input.js";
@@ -248,12 +246,7 @@ export function switchChatSetting(
     );
   }
   if (selection.kind === "fastMode") {
-    const next: FastMode | undefined =
-      selection.value === ""
-        ? undefined
-        : selection.value === "auto" || selection.value === "ultrafast"
-          ? selection.value
-          : selection.value === "on";
+    const next = normalizeChatFastModeInput(selection.value);
     if (captured.settings.fastMode === next) {
       return Promise.resolve(true);
     }
