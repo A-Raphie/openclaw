@@ -12,17 +12,13 @@ import { isPerAgentSessionStoreConfig } from "../../config/sessions/session-stor
 import { prepareSessionStoreTargetInventory } from "../../config/sessions/session-store-target-inventory.js";
 import { prepareSessionStoreTargetInventoryRead } from "../../config/sessions/session-store-target-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { GatewayRecoveryRuntime } from "../../gateway/server-instance-runtime.types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import type { CommandLane } from "../../process/lanes.js";
 import { LEGACY_IMPLICIT_AGENT_ID } from "../../routing/session-key.js";
-import type { SessionControllerInput } from "../../sessions/session-controller.mailbox.js";
 import {
   AgentDatabaseAdmissionError,
   readAgentDatabaseAdmissionRefusal,
 } from "../../state/agent-database-admission.js";
 import { resolveAgentSessionDirs } from "../session-dirs.js";
-import type { MainSessionRecoverySkipReason } from "./main-session-restart-recovery-diagnostics.js";
 
 export const mainSessionRecoveryLog = createSubsystemLogger("main-session-restart-recovery");
 export const DEFAULT_RECOVERY_DELAY_MS = 5_000;
@@ -57,27 +53,6 @@ export type ExhaustedRestartRecoveryTarget = ExpectedRestartRecoveryTarget & {
   storePath: string;
 };
 
-export type RecoverMainSessionStoreParams = {
-  storeAgentId?: string;
-  preparedEntries?: readonly { sessionKey: string; entry: SessionEntry }[];
-  cfg?: OpenClawConfig;
-  controllerInput?: SessionControllerInput;
-  lane?: CommandLane.Main | CommandLane.RestartRecovery;
-  observationOnly?: boolean;
-  onExhaustedTarget?: (target: ExhaustedRestartRecoveryTarget) => void;
-  onSkipped?: (reason: MainSessionRecoverySkipReason) => void;
-  onPreparationPending?: (target: ExhaustedRestartRecoveryTarget) => void;
-  passId?: string;
-  storePath: string;
-  stateDir?: string;
-  handledSessionKeys: Set<string>;
-  expectedTarget?: ExpectedRestartRecoveryTarget;
-  lifecycleGeneration?: string;
-  shouldContinue?: () => boolean;
-  signal?: AbortSignal;
-  gatewayRuntime: GatewayRecoveryRuntime;
-};
-
 export function resolveRestartRecoveryTerminalClientRunId(
   entry: Pick<SessionEntry, "restartRecoveryDeliverySourceRunId" | "restartRecoverySourceIngress">,
 ): string | undefined {
@@ -100,6 +75,15 @@ export async function discoverRestartRecoveryStoreTargets(params: {
   const storeTargets: SessionStoreTarget[] = [];
   const stateDir = params.stateDir ?? resolveStateDir(process.env);
   const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+  const reportedRefusals = new Set<string>();
+  const reportRefusal = (target: SessionStoreTarget) => {
+    const refusal = readAgentDatabaseAdmissionRefusal(target.agentId, { env });
+    if (refusal && !reportedRefusals.has(target.agentId) && params.shouldContinue?.() !== false) {
+      reportedRefusals.add(target.agentId);
+      params.onUnavailable?.(target, new AgentDatabaseAdmissionError(refusal));
+    }
+    return refusal;
+  };
   if (params.cfg) {
     // Recovery must not reopen a deleted or otherwise unconfigured agent database merely
     // because its old directory still exists on disk. Those stores are intentionally fenced
@@ -129,6 +113,14 @@ export async function discoverRestartRecoveryStoreTargets(params: {
     );
     if (params.shouldContinue?.() === false) {
       return [];
+    }
+    // Native recovery inventory excludes refused sources before opening them. Keep
+    // their current admission diagnostic even though no target row can be returned.
+    for (const agentId of selectedAgentIds) {
+      reportRefusal({
+        agentId,
+        storePath: resolveSessionStorePathCore(params.cfg.session?.store, { agentId, env }),
+      });
     }
     for (const target of targets) {
       const storePath = path.resolve(target.storePath);
@@ -162,14 +154,7 @@ export async function discoverRestartRecoveryStoreTargets(params: {
       if (params.cfg === undefined && params.agentIds && !params.agentIds.has(target.agentId)) {
         return false;
       }
-      const refusal = readAgentDatabaseAdmissionRefusal(target.agentId, { env });
-      if (refusal) {
-        if (params.shouldContinue?.() !== false) {
-          params.onUnavailable?.(target, new AgentDatabaseAdmissionError(refusal));
-        }
-        return false;
-      }
-      return true;
+      return !reportRefusal(target);
     })
     .toSorted(
       (a, b) => a.storePath.localeCompare(b.storePath) || a.agentId.localeCompare(b.agentId),

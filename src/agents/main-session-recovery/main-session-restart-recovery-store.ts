@@ -27,6 +27,7 @@ import {
 } from "./main-session-recovery-state.js";
 import { commitMainSessionRecovery } from "./main-session-recovery-store.js";
 import { resumeMainSession } from "./main-session-restart-dispatch.js";
+import type { RecoverMainSessionStoreParams } from "./main-session-restart-dispatch.types.js";
 import {
   completePendingFinalRecoveryWithNotice,
   markSessionCompletedAfterRecoveryCheckpoint,
@@ -56,7 +57,6 @@ import {
   resolveMainSessionResumePolicy,
 } from "./main-session-restart-recovery-resume-policy.js";
 import {
-  type RecoverMainSessionStoreParams,
   mainSessionRecoveryLog,
   MAX_RECOVERY_RETRIES,
 } from "./main-session-restart-recovery-shared.js";
