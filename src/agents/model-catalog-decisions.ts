@@ -535,6 +535,7 @@ export function createModelCatalogDecisions(params: ModelCatalogDecisionParams) 
             providerId,
             profileId,
             authStore,
+            refresh: options.refresh,
             config: params.cfg,
             agentDir: params.agentDir ?? resolveAgentDir(params.cfg, params.agentId),
             workspaceDir,

@@ -301,9 +301,14 @@ export function createPreparedAccountCatalogAccess(
                 ? createAccount(identityKey, { source: "profile", credential: params.credential })
                 : captured;
               published.outcomes = outcomes;
-              if (pending.refresh && captured.serviceTierObservations?.length) {
+              if (pending.refresh) {
                 scheduleExpiry();
-                onChanged?.();
+                if (
+                  captured.serviceTierObservations?.length ||
+                  !isDeepStrictEqual(captured.outcomes, outcomes)
+                ) {
+                  onChanged?.();
+                }
               }
               return published;
             })

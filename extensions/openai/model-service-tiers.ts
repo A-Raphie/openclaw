@@ -37,37 +37,47 @@ function readOpenAICodexServiceTiers(
   });
 }
 
+/** Only explicit caller-specific metadata grants a program, never a model name or plan. */
+export function readOpenAIModelAccessPrograms(
+  rows: readonly unknown[],
+  route: { api: string; baseUrl: string; runtimeIds: readonly string[] },
+): NonNullable<ProviderCatalogOutcome["modelAccessPrograms"]> {
+  return rows.flatMap((row) => {
+    const record = asOptionalRecord(row);
+    const modelId = normalizeOptionalString(record?.slug) ?? normalizeOptionalString(record?.id);
+    const cyber = asOptionalRecord(record?.available_access_programs)?.cyber;
+    if (
+      !modelId ||
+      !Array.isArray(cyber) ||
+      !cyber.every((program) => typeof program === "string")
+    ) {
+      return [];
+    }
+    const programs = cyber.filter(
+      (program): program is "standard" | "daybreak_blue" | "daybreak_red" =>
+        program === "standard" || program === "daybreak_blue" || program === "daybreak_red",
+    );
+    return route.runtimeIds.map((runtimeId) => ({
+      modelId,
+      runtimeId,
+      api: route.api,
+      baseUrl: route.baseUrl,
+      cyber: programs,
+    }));
+  });
+}
+
 /**
  * A successful account-scoped listing is authoritative even when every row is hidden; static
  * hints must not invent subscription access. Hidden rows stay listed: the account is entitled.
  */
 export function buildOpenAICodexReadyOutcome(rows: readonly unknown[]): ProviderCatalogOutcome {
   const modelServiceTiers = readOpenAICodexServiceTiers(rows);
-  const modelAccessPrograms: NonNullable<ProviderCatalogOutcome["modelAccessPrograms"]>[number][] =
-    rows.flatMap((row) => {
-      const record = asOptionalRecord(row);
-      const modelId = normalizeOptionalString(record?.slug) ?? normalizeOptionalString(record?.id);
-      const cyber = asOptionalRecord(record?.available_access_programs)?.cyber;
-      if (
-        !modelId ||
-        !Array.isArray(cyber) ||
-        !cyber.every((program) => typeof program === "string")
-      ) {
-        return [];
-      }
-      const programs = cyber.filter(
-        (program): program is "standard" | "daybreak_blue" | "daybreak_red" =>
-          program === "standard" || program === "daybreak_blue" || program === "daybreak_red",
-      );
-      // The same authenticated Responses account supports both host and native transports.
-      return ["openclaw", "codex"].map((runtimeId) => ({
-        modelId,
-        runtimeId,
-        api: "openai-chatgpt-responses",
-        baseUrl: OPENAI_CODEX_RESPONSES_BASE_URL,
-        cyber: programs,
-      }));
-    });
+  const modelAccessPrograms = readOpenAIModelAccessPrograms(rows, {
+    api: "openai-chatgpt-responses",
+    baseUrl: OPENAI_CODEX_RESPONSES_BASE_URL,
+    runtimeIds: ["openclaw", "codex"],
+  });
   return {
     provider: "openai",
     status: "ready",

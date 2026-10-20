@@ -16,7 +16,11 @@ async function runCatalog(
     profileId?: string;
   } = {},
 ) {
-  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (url.startsWith("https://chatgpt.com/backend-api/codex/models?")) {
+      return Response.json({ models: [] });
+    }
     if (!response) {
       throw new Error("unexpected OpenAI live discovery request");
     }
@@ -142,7 +146,7 @@ describe("OpenAI API-key catalog", () => {
     if (apiKey === "secretref-managed") {
       expect(requests).toEqual([]);
     } else {
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(status === "ready" ? 2 : 1);
       expect(requests[0]?.[0]).toBe("https://api.openai.com/v1/models");
       expect(new Headers(requests[0]?.[1]?.headers).get("Authorization")).toBe(`Bearer ${apiKey}`);
     }

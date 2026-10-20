@@ -130,9 +130,24 @@ submitting a Daybreak turn. A stale saved selection fails visibly before submiss
 Entitlement comes only from authenticated `available_access_programs.cyber`
 metadata (or native Codex's `availableAccessPrograms.cyber`), scoped to the selected
 account, model, route, and runtime. Model listing membership or subscription type
-alone is not entitlement. The Platform catalog integration currently has no
-supported entitlement discovery, so its chat Access control stays hidden. Explicit model
-parameters remain available; the provider enforces entitlement on those requests.
+alone is not entitlement. For Platform API keys, OpenClaw reads explicit program
+metadata from the same authenticated Codex model endpoint used by the official
+Codex client. The public `/v1/models` response remains the model-availability
+authority: a capability row cannot add an unlisted model. The same API key scopes
+both reads to its organization and project; custom endpoints and request-header
+overrides do not inherit these grants.
+
+This discovery uses read-only requests, not billable Responses probes. Successful
+Platform and ChatGPT HTTP observations are cached for up to 60 seconds by
+credential and endpoint; explicit catalog refresh bypasses that cache. This HTTP
+TTL does not periodically refresh an already published account catalog; its
+normal refresh and credential-change lifecycle still applies. A replaced
+credential, missing or empty program metadata, or a failed capability refresh
+never reuses another account's grants. Unknown or unavailable programs stay
+hidden, without removing ordinary model access. Provider-side access changes may
+also have their own propagation delay. Native Codex owns its separate model-list
+cache and account-change invalidation. Explicit model parameters remain available;
+the provider enforces entitlement on every actual request.
 
 ### Responses access program and speed
 

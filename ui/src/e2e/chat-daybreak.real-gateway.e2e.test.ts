@@ -27,6 +27,7 @@ let reasoningEfforts = ["medium"];
 const receipts: Array<{ model: string; access?: unknown; tier?: string }> = [];
 const held = new Map<number, ServerResponse>();
 let holdNext = false;
+let inferenceRequests = 0;
 const proof: Record<string, unknown> = {
   externalIO: "synthetic authenticated catalog and Responses fixture",
   productionEntitlement: false,
@@ -49,6 +50,11 @@ const suite = createControlUiE2eSuite({
         createServer((request, response) => {
           void (async () => {
             const url = new URL(request.url ?? "/", "http://fixture");
+            if (url.pathname === "/v1/models") {
+              response.setHeader("content-type", "application/json");
+              response.end(JSON.stringify({ data: [{ id: "gpt-6.1-sol", object: "model" }] }));
+              return;
+            }
             if (url.pathname.endsWith("/models")) {
               response.setHeader("content-type", "application/json");
               response.end(
@@ -73,6 +79,7 @@ const suite = createControlUiE2eSuite({
               return;
             }
             if (request.method === "POST" && url.pathname.endsWith("/responses")) {
+              inferenceRequests += 1;
               const wire = await buffer(request);
               const body = JSON.parse(
                 (request.headers["content-encoding"] === "zstd"
@@ -133,7 +140,10 @@ globalThis.__OPENCLAW_TEST_UNDICI_RUNTIME_DEPS__ = { ...undici, fetch: globalThi
       config: {
         update: { checkOnStart: false },
         auth: {
-          profiles: { "openai:daybreak-fixture": { provider: "openai", mode: "oauth" } },
+          profiles: {
+            "openai:daybreak-fixture": { provider: "openai", mode: "oauth" },
+            "openai:platform-fixture": { provider: "openai", mode: "api_key" },
+          },
           order: { openai: ["openai:daybreak-fixture"] },
         },
         gateway: { controlUi: { enabled: true } },
@@ -166,6 +176,11 @@ globalThis.__OPENCLAW_TEST_UNDICI_RUNTIME_DEPS__ = { ...undici, fetch: globalThi
     await owner.state.writeAuthProfiles({
       version: 1,
       profiles: {
+        "openai:platform-fixture": {
+          type: "api_key",
+          provider: "openai",
+          key: "sk-synthetic-platform-fixture",
+        },
         "openai:daybreak-fixture": {
           type: "oauth",
           provider: "openai",
@@ -205,6 +220,69 @@ globalThis.__OPENCLAW_TEST_UNDICI_RUNTIME_DEPS__ = { ...undici, fetch: globalThi
 });
 
 suite.define(() => {
+  it("discovers Platform programs in the UI without submitting an inference request", async () => {
+    const runCli = async (args: string[]) => {
+      const result = await owner.cli(args);
+      expect(result.code, result.stderr).toBe(0);
+      return result.stdout;
+    };
+    const call = async (method: string, params: Record<string, unknown>) =>
+      JSON.parse(
+        await runCli(["gateway", "call", method, "--json", "--params", JSON.stringify(params)]),
+      );
+    const key = "agent:main:platform-discovery";
+    await call("sessions.create", { key, agentId: "main", label: "Platform discovery" });
+    await call("sessions.patch", { key, model: "openai/gpt-6.1-sol@openai:platform-fixture" });
+    const inferenceCount = inferenceRequests;
+    await suite.withPage(
+      { viewport: { width: 1440, height: 900 }, colorScheme: "dark" },
+      async ({ page }) => {
+        await pairControlUiPage(page, runCli);
+        for (const advertised of [
+          undefined,
+          [],
+          ["standard", "daybreak_blue"],
+          ["standard", "daybreak_red"],
+        ]) {
+          programs = advertised;
+          const result = await call("models.list", {
+            agentId: "main",
+            sessionKey: key,
+            view: "configured",
+            refresh: true,
+          });
+          expect(
+            result.models.find((model: { id: string }) => model.id === "gpt-6.1-sol")
+              ?.availableAccessPrograms?.cyber,
+          ).toEqual(advertised);
+          if (advertised === undefined) {
+            await page.goto(controlUiSessionUrl(suite.server.baseUrl, key));
+            await waitForControlUiGatewayReady(page);
+          }
+          const picker = page.locator(".chat-controls__effort-picker").first();
+          await expect
+            .poll(() => picker.locator("summary").getAttribute("aria-disabled"))
+            .toBe("false");
+          if (!(await picker.locator(".chat-controls__effort-menu").isVisible())) {
+            await picker.locator("summary").click();
+          }
+          await picker.locator(".chat-controls__effort-menu").waitFor();
+          await expect
+            .poll(() =>
+              picker
+                .locator("[data-chat-access-option]")
+                .evaluateAll((nodes) =>
+                  nodes.map((node) => node.getAttribute("data-chat-access-option")),
+                ),
+            )
+            .toEqual(advertised ?? []);
+        }
+      },
+    );
+    expect(inferenceRequests).toBe(inferenceCount);
+    proof.platformDiscovery = { complete: true, inferenceRequests: 0 };
+  }, 90_000);
+
   it("persists visible selections and refreshes queued requests on desktop and mobile", async () => {
     const runCli = async (args: string[]) => {
       const result = await owner.cli(args);
