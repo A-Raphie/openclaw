@@ -553,6 +553,11 @@ export function createModelCatalogDecisions(params: ModelCatalogDecisionParams) 
       );
       await withCurrentReadAuthority(authority, () => {
         accountObservations.push(acquired.isCurrent);
+        // A cold account cache is not a new observation. Retain the current
+        // authenticated shared outcome until the account publishes a result.
+        if (!acquired.hasPublishedCatalog) {
+          return;
+        }
         providerOutcomes.splice(
           0,
           providerOutcomes.length,

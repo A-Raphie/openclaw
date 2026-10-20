@@ -105,7 +105,7 @@ describe("embedded attempt harness pinning", () => {
   }
 
   it("rejects a saved Access override before starting an unsupported CLI runtime", async () => {
-    const sessionKey = "agent:main:access-cli";
+    const sessionKey = "agent:main:main";
     const sessionEntry = makeSessionEntry("access-cli", { cyberAccessProgram: "standard" });
     const storePath = path.join(tmpDir, "sessions.json");
     await replaceSessionEntry({ sessionKey, storePath }, sessionEntry);
@@ -113,7 +113,6 @@ describe("embedded attempt harness pinning", () => {
       runHarnessAttempt({
         providerOverride: "claude-cli",
         modelOverride: "opus",
-        sessionKey,
         sessionEntry,
         storePath,
       }),
