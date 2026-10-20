@@ -1,11 +1,12 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { getAdmittedSqliteSchemaFacts } from "../../infra/sqlite-schema-facts.js";
+import { getAdmittedSqlSchemaFacts } from "../../infra/sqlite-schema-facts.js";
 import { freezeJsonSnapshot } from "../../shared/immutable-data.js";
 import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { readSessionActivitySummary } from "./activity-summary.js";
 import { isInternalSessionEffectsKey } from "./internal-session-key.js";
 import { hasPendingSessionTranscriptArchives } from "./session-accessor.sqlite-archive-store-kernel.js";
+import { readStagedConversationPublications } from "./session-accessor.sqlite-conversation-publication.js";
 import { assertSessionCreationLabelAvailable } from "./session-accessor.sqlite-creation-read.js";
 import {
   sessionSharingEntriesEqual,
@@ -133,7 +134,7 @@ export function prepareSessionEntryReplacementPublication(
       }),
     );
   }
-  const source = getAdmittedSqliteSchemaFacts(database.db)
+  const source = getAdmittedSqlSchemaFacts(database.db)
     ? captureSessionEntryPublicationSource(database.db, {
         ...readOpenClawAgentDatabaseIdentity(database),
         // Actor receipts carry the complete postimage at the native writer revision.
@@ -147,6 +148,7 @@ export function prepareSessionEntryReplacementPublication(
   ];
   const publication: SessionEntryReplacementPublication = {
     kind: "session-entry-replacements",
+    conversationPublication: readStagedConversationPublications(database),
     transcriptPublication: readStagedSessionTranscriptAuthority(database),
     pendingArchiveRecovery: result.pendingArchiveRecovery,
     membershipInvalidatedKeys: result.membershipInvalidatedKeys,
@@ -306,6 +308,7 @@ export function commitSessionEntryReplacementsInDatabase(
             : canonicalFacts?.window,
         canonicalPreviousSideTables: canonicalFacts?.sideTables,
         postimages: writtenPostimages,
+        publishConversationBinding: (replacement.previousSessionKeys?.length ?? 0) > 0,
       },
     );
     deleteLegacySessionEntryRows(

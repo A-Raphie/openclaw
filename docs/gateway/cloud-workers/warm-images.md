@@ -20,13 +20,15 @@ For an eligible repository with committed content, OpenClaw:
 3. Removes worker identity and session state, then fixes the snapshot capture point before node enrollment.
 4. Enrolls the node, binds the session workspace, runs post-create/start commands, and starts the first turn.
 
-With Crabbox 0.78.0 or newer on AWS, the first session continues to enrollment once Crabbox confirms the capture point is fixed. The snapshot upload finishes in the background; later sessions start cold until it is available. Older Crabbox, refresh captures, reserves, and other backends still wait for completion. Daytona may stop and restore the source machine during capture.
+With Crabbox 0.79.0 or newer on AWS, the first session continues to enrollment once Crabbox confirms the capture point is fixed. The snapshot upload finishes in the background; later sessions start cold until it is available. Older Crabbox, refresh captures, reserves, and other backends still wait for completion. Daytona may stop and restore the source machine during capture.
 
 This works for both Gateway checkouts and repository-only GitHub sessions. Only committed repository content enters preparation. Session edits and enrollment credentials arrive after the capture point is fixed. Private repository preparation transfers Git content without putting GitHub credentials in worker files or snapshots; it needs temporary Gateway disk space, and the outgoing pack is limited to 4 GiB.
 
 Setup-generated dependencies and build output survive into the session. Session changes are applied over that prepared content, with session edits taking precedence. Explicit checkpoint restores and accepted reconciliation snapshots retain their exact contents, including deletions.
 
 An empty committed workspace uses the profile's shared runtime image instead of a repository snapshot. With no prepared project, capture happens at eligible worker teardown. A failed detected dependency install skips capture and lets the session start cold; a failed declared recipe stops dispatch. Explicitly skipped setup has a separate snapshot identity.
+
+Environment status reports `stopping` while teardown is pending. A warm-image capture may finish after the lease reports `destroyed`; if the Gateway exits mid-capture, Crabbox's idle timeout or TTL reaps the lease.
 
 ### Later sessions and refresh
 
@@ -38,7 +40,7 @@ The OpenClaw runtime is separate from snapshot compatibility. Gateway updates, r
 
 A foreground fork can refresh a changed commit or top up its runtime without capturing a replacement just for that change. Background reserves and explicit builds can publish refreshed snapshots. Initial capture, interrupted capture recovery, required setup repair, and age refresh still use the capture boundary. Unpinned images become eligible for refresh after `refreshAfter` (24 hours by default); runtime-only images refresh at eligible teardown. Disabling reserves also disables automatic background refresh.
 
-Retries and Gateway restarts keep the originally selected cold allocation or checkpoint. A failed fork reports an error rather than silently allocating another machine. Missing, retiring, or incompatible snapshots cause new allocations to start cold.
+Retries and Gateway restarts keep the originally selected cold allocation or checkpoint. A failed fork reports an error rather than silently allocating another machine. Missing, retiring, or incompatible snapshots cause new allocations to start cold. A failed fork that finds its snapshot missing retires it, so later allocations start cold.
 
 If the backend definitively refuses native capture, OpenClaw records the reason and continues enrollment on the prepared machine. Existing compatible snapshots remain usable. Capture is retried after `refreshAfter`; a successful capture clears the refusal. An uncertain capture instead pauses further capture and blocks enrollment on its source until [recovery](/gateway/cloud-workers/warm-images#recover-a-paused-capture).
 

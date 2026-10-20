@@ -123,7 +123,9 @@ export type PreparedModelRuntimeSnapshot = Omit<PublishedModelCatalogOwnerCandid
     }>[];
     /** Inline provider projection prepared once for all resolutions owned by this snapshot. */
     inlineProviderModels: readonly InlineModelEntry[];
-    createStores: () => PreparedModelRuntimeStores;
+    createStores: (
+      publishedModels?: ReadonlyMap<string, readonly Model[]>,
+    ) => PreparedModelRuntimeStores;
     /** Bounded metadata shared by runs; replacing the model/auth generation drops the memo. */
     routeModelResolutionMemo?: Map<string, Promise<Model>>;
   }>;
@@ -236,7 +238,9 @@ export type PreparedModelCatalogProviderFacts = {
   expiresAt?: number;
   /** Consecutive failed discoveries; their backed-off retry deadline is `expiresAt`. */
   discoveryFailures?: number;
-  legacyRows?: ReadonlySet<string>;
+  /** Rows carried from another plugin generation; visible until this generation reacquires them. */
+  provisional?: true;
+  legacyAcquired?: boolean;
 };
 
 export type PreparedModelCatalogInventory = {

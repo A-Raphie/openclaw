@@ -7,6 +7,8 @@ import { boundedJsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import type { PluginRuntimeApplication } from "../../plugins/lifecycle.js";
 import type { listManagedPlugins } from "../../plugins/management-service.js";
 import { formatSelectedEntry } from "../../plugins/reload-entry-guidance.js";
+import { resolveReplyRunForCurrentSessionId } from "../../sessions/session-controller.identity.js";
+import { findSessionControllerOperationByRunId } from "../../sessions/session-controller.queries.js";
 import { captureAgentPluginRuntimeRefresh } from "../plugin-runtime-refresh.js";
 import { stringEnum } from "../schema/typebox.js";
 import { bindToolInvocationResolver } from "../tool-invocation-metadata.js";
@@ -118,6 +120,12 @@ export function createPluginsTool(options?: {
   onYield?: SessionsYieldCallback;
 }): AnyAgentTool {
   const runtimeRefresh = captureAgentPluginRuntimeRefresh();
+  let operation = options?.runId ? findSessionControllerOperationByRunId(options.runId) : undefined;
+  // Callers without a run ID capture only a unique current owner, never a later replacement.
+  if (options?.runId === undefined && options?.sessionId) {
+    const current = resolveReplyRunForCurrentSessionId(options.sessionId);
+    operation = current.kind === "one" ? current.operation : undefined;
+  }
   const requestOwners = captureExecRequestOwners({
     runId: options?.runId,
     sessionId: options?.sessionId,
@@ -147,6 +155,7 @@ export function createPluginsTool(options?: {
           const { handoffPluginReload } = await import("./plugins-reload-handoff.js");
           return await handoffPluginReload({
             ...options,
+            operation,
             requestOwners,
             signal,
             request: { plugins: [{ pluginId: required("pluginId") }], ...consent },

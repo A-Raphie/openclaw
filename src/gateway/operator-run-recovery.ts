@@ -4,16 +4,26 @@ import {
   type AdmittedRunOperatorAuthority,
 } from "../agents/admitted-run-context.js";
 import { restoreOperatorModelPolicySnapshot } from "../agents/operator-model-policy.js";
+import type { RequesterOrigin } from "../agents/requester-origin.js";
+import { readRestartRecoveryRequesterSource } from "../agents/requester-run-recovery-source.js";
+import { prepareCommandOwnerAuthority } from "../auto-reply/command-auth.js";
 import { readSessionEntryReadOnlyInWorker } from "../config/sessions/session-entry-read-runtime.js";
 import { readSessionQuestionCustody } from "../config/sessions/session-questions.js";
 import type { DurableQuestion } from "../config/sessions/session-questions.types.js";
+import type { SessionSourceAssertion } from "../config/sessions/session-source-authority.js";
 import type { InternalSessionEntry } from "../config/sessions/types.js";
 import { getAgentEventLifecycleGeneration } from "../infra/agent-events.js";
 import { isPairedDeviceTokenIdentityCurrent } from "../infra/device-pairing-identity.js";
 import { loadPairedDevicePairingStoreRecordReadOnly } from "../infra/device-pairing-store-readonly.js";
 import { onSessionIdentityMutation } from "../sessions/session-lifecycle-events.js";
+import { intersectOperatorScopes } from "../shared/operator-scope-compat.js";
 import { onUserProfilesChanged } from "../state/user-profile-events.js";
-import { prepareUserProfileIdentity } from "../state/user-profile-list.js";
+import { profileCatalogPath } from "../state/user-profile-identity.read.js";
+import {
+  prepareUserProfileIdentity,
+  projectUserProfileDisplay,
+  readResidentUserProfileRevision,
+} from "../state/user-profile-list.js";
 import { isGatewayAuthGrantCurrent } from "./auth-policy.js";
 import {
   captureGatewayDeviceRevocation,
@@ -24,13 +34,22 @@ import {
   onOperatorRolePolicyChanged,
   resolveOperatorRolePolicyForAssignment,
 } from "./operator-role-policy.js";
-import { sourceRolePolicy } from "./operator-role-source-policy.js";
 import {
+  isOperatorRoleSourcePolicyCurrent,
+  sourceRolePolicy,
+} from "./operator-role-source-policy.js";
+import {
+  bindGatewayOperatorContinuationAuthority,
   captureChannelOperatorRunAuthority,
   intersectOperatorRunModelPolicy,
 } from "./operator-run-authority.js";
-import { decodeGatewayOperatorRecoverySource } from "./operator-run-recovery-source.js";
+import {
+  decodeGatewayOperatorRecoverySource,
+  decodeQueuedOperatorRecoverySource,
+  type OperatorRunRecoverySnapshot,
+} from "./operator-run-recovery-source.codec.js";
 import type { GatewayRequestContext } from "./server-methods/shared-types.js";
+import type { GatewayAuthenticatedUserProfile } from "./server/client-identity-types.js";
 
 export type OperatorRecoveryTarget = {
   agentId: string;
@@ -42,6 +61,7 @@ export type OperatorRecoveryTarget = {
 };
 
 type RecoverySource = Readonly<{ controlUiAdmin: boolean; localOperator: boolean }>;
+
 const recoverySources = new WeakMap<
   AdmittedRunOperatorAuthority,
   {
@@ -69,18 +89,28 @@ export function readGatewayOperatorRecoverySource(
   return restored.source;
 }
 
-/** Re-admit the exact durable source under current policy; never revive an old run capability. */
-async function restoreGatewayDurableOperatorRecovery(params: {
-  target: OperatorRecoveryTarget;
-  questionId?: string;
-  expectedQuestion?: DurableQuestion;
+export type RestoredGatewayOperatorAuthority = {
+  authority: AdmittedRunOperatorAuthority;
+  /** Original caller policy remains authoritative when its recovered execution is canceled. */
+  assertPolicyCurrent: () => void;
+  authenticatedUserProfile: GatewayAuthenticatedUserProfile;
+  controlUiAdmin: boolean;
+  release: () => void;
+};
+
+type PreparedOperatorRecoverySource = {
+  snapshot: OperatorRunRecoverySnapshot;
+  revalidate: () => Promise<void>;
+  onSessionCompactionCommitted?: SessionSourceAssertion["onSessionCompactionCommitted"];
+};
+
+/** Authentication restoration is shared; each input owner supplies its exact live claim. */
+async function restoreGatewayOperatorSnapshot(params: {
   context: GatewayRequestContext;
   assertCurrent: () => void;
-}): Promise<
-  | { authority: AdmittedRunOperatorAuthority; controlUiAdmin: boolean; release: () => void }
-  | undefined
-> {
-  const target = { ...params.target };
+  subscribeToClaim?: (revoke: () => void) => () => void;
+  prepareSource: () => Promise<PreparedOperatorRecoverySource | undefined>;
+}): Promise<RestoredGatewayOperatorAuthority | undefined> {
   const { context, assertCurrent } = params;
   const getConfig = context.getCommittedRuntimeConfig ?? context.getRuntimeConfig;
   const gatewayOwner = context.resolveGatewayContext?.() ?? context;
@@ -90,24 +120,16 @@ async function restoreGatewayDurableOperatorRecovery(params: {
     signal.abort(
       new Error("Restart recovery operator authority changed; start a new user turn.", { cause }),
     );
-  const assertOwner = () => {
+  const assertLifetime = () => {
     if (references === 0) {
       throw new Error("Restart recovery operator authority is no longer active.");
     }
     signal.signal.throwIfAborted();
-    assertCurrent();
   };
-  const subscriptions: Array<() => void> = [
-    onSessionIdentityMutation((mutation) => {
-      if (
-        mutation.agentId === target.agentId &&
-        (mutation.previous.sessionId === target.sessionId ||
-          mutation.previous.sessionKeys.includes(target.sessionKey))
-      ) {
-        revoke();
-      }
-    }),
-  ];
+  const subscriptions: Array<() => void> = [];
+  if (params.subscribeToClaim) {
+    subscriptions.push(params.subscribeToClaim(revoke));
+  }
   let identity: Awaited<ReturnType<typeof prepareUserProfileIdentity>> | undefined;
   const releaseHold = () => {
     let released = false;
@@ -124,77 +146,14 @@ async function restoreGatewayDurableOperatorRecovery(params: {
   };
   const release = releaseHold();
   try {
-    const read = () => readSessionEntryReadOnlyInWorker(target, assertOwner);
-    if (params.questionId && !params.expectedQuestion) {
-      throw new Error("Durable question recovery requires captured custody.");
-    }
-    const entry = params.questionId ? undefined : await read();
-    const questionResult =
-      params.questionId && params.expectedQuestion
-        ? await readSessionQuestionCustody(
-            params.expectedQuestion.sessionBinding,
-            params.questionId,
-            assertOwner,
-          )
-        : undefined;
-    const question = Array.isArray(questionResult) ? undefined : questionResult;
-    const savedSource = params.questionId
-      ? question?.provenance.recoverySource
-      : entry?.restartRecoveryOperatorSource;
-    if (!savedSource) {
+    const prepared = await params.prepareSource();
+    assertLifetime();
+    assertCurrent();
+    if (!prepared) {
       release();
       return undefined;
     }
-    const source = decodeGatewayOperatorRecoverySource(savedSource);
-    const assertQuestionClaim = (current: DurableQuestion | undefined) => {
-      if (
-        !current ||
-        !params.expectedQuestion ||
-        !isDeepStrictEqual(current.record, params.expectedQuestion.record) ||
-        !isDeepStrictEqual(current.sessionBinding, params.expectedQuestion.sessionBinding) ||
-        !isDeepStrictEqual(current.provenance, params.expectedQuestion.provenance) ||
-        current.resolutionId !== params.expectedQuestion.resolutionId ||
-        current.sessionId !== target.sessionId ||
-        current.lifecycleRevision !== source.lifecycleRevision ||
-        current.sessionKey !== target.sessionKey ||
-        current.provenance.issuer !== "operator" ||
-        current.provenance.sourceRunId !== target.sourceRunId ||
-        current.continuation.status !== "owed" ||
-        source.agentId !== target.agentId ||
-        source.sessionKey !== target.sessionKey ||
-        source.sessionId !== target.sessionId ||
-        source.sourceRunId !== target.sourceRunId ||
-        !isDeepStrictEqual(current.provenance.recoverySource, source)
-      ) {
-        throw new Error("Durable question operator source no longer owns this input.");
-      }
-    };
-    const assertClaim = (current: InternalSessionEntry | undefined) => {
-      const reservation = current?.mainRestartRecovery?.reservation;
-      if (
-        !current ||
-        current.sessionId !== target.sessionId ||
-        current.lifecycleRevision !== source.lifecycleRevision ||
-        current.restartRecoveryDeliveryRunId !== target.recoveryRunId ||
-        current.restartRecoveryDeliverySourceRunId !== target.sourceRunId ||
-        (reservation &&
-          (reservation.runId !== target.recoveryRunId ||
-            reservation.lifecycleGeneration !== getAgentEventLifecycleGeneration())) ||
-        source.agentId !== target.agentId ||
-        source.sessionKey !== target.sessionKey ||
-        source.sessionId !== target.sessionId ||
-        source.sourceRunId !== target.sourceRunId ||
-        !isDeepStrictEqual(current.restartRecoveryOperatorSource, source)
-      ) {
-        throw new Error("Restart recovery operator source no longer owns this input.");
-      }
-    };
-    if (params.questionId) {
-      assertQuestionClaim(question);
-    } else {
-      assertClaim(entry);
-    }
-    const snapshot = source.snapshot;
+    const snapshot = prepared.snapshot;
     const generationOwner = context.sharedGatewaySessionGenerationState;
     if (snapshot.sharedGeneration !== undefined) {
       if (!generationOwner || generationOwner.requiredGeneration !== snapshot.sharedGeneration) {
@@ -215,7 +174,7 @@ async function restoreGatewayDurableOperatorRecovery(params: {
       subscriptions.push(releaseDeviceNotification);
     }
     const assertSourcePolicy = () => {
-      assertOwner();
+      assertLifetime();
       const cfg = getConfig();
       const role = resolveOperatorRolePolicyForAssignment(
         snapshot.profileId,
@@ -225,7 +184,11 @@ async function restoreGatewayDurableOperatorRecovery(params: {
       );
       if (
         !device.isCurrent() ||
-        !isDeepStrictEqual(sourceRolePolicy(role), snapshot.rolePolicy) ||
+        !isOperatorRoleSourcePolicyCurrent(
+          snapshot.rolePolicy,
+          sourceRolePolicy(role),
+          snapshot.scopes,
+        ) ||
         !isGatewayAuthGrantCurrent(snapshot.authPolicy, cfg) ||
         (snapshot.sharedGeneration !== undefined &&
           context.sharedGatewaySessionGenerationState !== generationOwner)
@@ -235,6 +198,10 @@ async function restoreGatewayDurableOperatorRecovery(params: {
       return cfg;
     };
     let assertPolicy = assertSourcePolicy;
+    const assertRecoveryCurrent = () => {
+      assertCurrent();
+      return assertPolicy();
+    };
     const recheck = () => {
       if (references > 0 && !signal.signal.aborted) {
         try {
@@ -255,7 +222,7 @@ async function restoreGatewayDurableOperatorRecovery(params: {
         }
       }),
     );
-    assertSourcePolicy();
+    assertRecoveryCurrent();
     identity = await prepareUserProfileIdentity(snapshot.profileId);
     const profileIdentity = identity;
     let githubAccountIds: readonly number[] | undefined;
@@ -299,7 +266,7 @@ async function restoreGatewayDurableOperatorRecovery(params: {
       }
     };
     subscriptions.push(onUserProfilesChanged(recheck));
-    assertPolicy();
+    assertRecoveryCurrent();
     if (snapshot.device) {
       const paired = await loadPairedDevicePairingStoreRecordReadOnly(snapshot.device.deviceId);
       if (
@@ -307,20 +274,29 @@ async function restoreGatewayDurableOperatorRecovery(params: {
       ) {
         revoke();
       }
-      assertPolicy();
     }
-    assertPolicy();
-    if (params.questionId && params.expectedQuestion) {
-      const fresh = await readSessionQuestionCustody(
-        params.expectedQuestion.sessionBinding,
-        params.questionId,
-        assertOwner,
-      );
-      assertQuestionClaim(fresh);
-    } else {
-      assertClaim(await read());
-    }
-    assertPolicy();
+    assertRecoveryCurrent();
+    await prepared.revalidate();
+    assertRecoveryCurrent();
+    const assertRestoredPolicy = Object.assign(assertRecoveryCurrent, {
+      onSessionCompactionCommitted: prepared.onSessionCompactionCommitted
+        ? (
+            ...args: Parameters<NonNullable<SessionSourceAssertion["onSessionCompactionCommitted"]>>
+          ) => {
+            // The commit already checked authority. Its identity publication follows this callback.
+            if (references === 0) {
+              throw new Error("Restart recovery operator authority is no longer active.");
+            }
+            signal.signal.throwIfAborted();
+            try {
+              prepared.onSessionCompactionCommitted?.(...args);
+            } catch (error) {
+              revoke(error);
+              throw error;
+            }
+          }
+        : undefined,
+    });
     const live = captureChannelOperatorRunAuthority({
       profileId: snapshot.profileId,
       assignedRole: snapshot.assignedRole,
@@ -334,50 +310,363 @@ async function restoreGatewayDurableOperatorRecovery(params: {
     const originalModels = snapshot.modelPolicy
       ? restoreOperatorModelPolicySnapshot(snapshot.modelPolicy)
       : undefined;
-    const authority = createAdmittedRunOperatorAuthority({
+    const retainPolicy = () => {
+      assertPolicy();
+      references += 1;
+      return releaseHold();
+    };
+    const policyAuthority = createAdmittedRunOperatorAuthority({
       ...live,
       signal: signal.signal,
       recoverySnapshot: snapshot,
-      retain: () => {
-        assertPolicy();
-        references += 1;
-        return releaseHold();
-      },
+      retain: retainPolicy,
       get modelPolicy() {
         return intersectOperatorRunModelPolicy(originalModels, live.modelPolicy);
       },
     });
-    authority.assertCurrent();
-    recoverySources.set(authority, {
-      target,
-      source: Object.freeze({
-        controlUiAdmin: snapshot.controlUiAdmin,
-        localOperator: snapshot.localOperator,
-      }),
+    const authority = createAdmittedRunOperatorAuthority({
+      ...policyAuthority,
+      assertCurrent: assertRestoredPolicy,
+      retain: () => {
+        assertCurrent();
+        return retainPolicy();
+      },
+      get modelPolicy() {
+        return policyAuthority.modelPolicy;
+      },
     });
-    return { authority, controlUiAdmin: snapshot.controlUiAdmin, release };
+    bindGatewayOperatorContinuationAuthority(authority, policyAuthority);
+    authority.assertCurrent();
+    const profile = readResidentUserProfileRevision(snapshot.profileId, profileCatalogPath({}));
+    if (!profile) {
+      throw new Error("Restart recovery operator profile is unavailable.");
+    }
+    const { id, ...display } = projectUserProfileDisplay(profile);
+    return {
+      authority,
+      assertPolicyCurrent: () => {
+        assertPolicy();
+      },
+      authenticatedUserProfile: { profileId: id, ...display, updatedAt: profile.updated_at },
+      controlUiAdmin: snapshot.controlUiAdmin,
+      release,
+    };
   } catch (error) {
     release();
     throw error;
   }
 }
 
-/** Restart custody remains owned by the exact private session recovery claim. */
-export function restoreGatewayOperatorRecovery(params: {
+/** Restore owner-held continuation evidence through the shared authentication owner. */
+export async function restoreGatewayOperatorSource(params: {
+  snapshot: OperatorRunRecoverySnapshot;
+  target: Pick<OperatorRecoveryTarget, "agentId" | "sessionKey" | "sessionId">;
+  context: GatewayRequestContext;
+  assertCurrent: () => void;
+  prepareCurrent?: () => Promise<void>;
+}): Promise<RestoredGatewayOperatorAuthority> {
+  const target = { ...params.target };
+  const restored = await restoreGatewayOperatorSnapshot({
+    context: params.context,
+    assertCurrent: params.assertCurrent,
+    subscribeToClaim: (revoke) =>
+      onSessionIdentityMutation((mutation) => {
+        if (
+          mutation.agentId === target.agentId &&
+          (mutation.previous.sessionId === target.sessionId ||
+            mutation.previous.sessionKeys.includes(target.sessionKey))
+        ) {
+          revoke();
+        }
+      }),
+    prepareSource: async () => ({
+      snapshot: params.snapshot,
+      revalidate: async () => {
+        await params.prepareCurrent?.();
+      },
+    }),
+  });
+  if (!restored) {
+    throw new Error("Operator continuation recovery source is unavailable.");
+  }
+  return restored;
+}
+
+function assertRestartClaim(
+  entry: InternalSessionEntry | undefined,
+  target: OperatorRecoveryTarget,
+): asserts entry is InternalSessionEntry {
+  const reservation = entry?.mainRestartRecovery?.reservation;
+  if (
+    !entry ||
+    entry.sessionId !== target.sessionId ||
+    entry.restartRecoveryDeliveryRunId !== target.recoveryRunId ||
+    entry.restartRecoveryDeliverySourceRunId !== target.sourceRunId ||
+    (reservation &&
+      (reservation.runId !== target.recoveryRunId ||
+        reservation.lifecycleGeneration !== getAgentEventLifecycleGeneration()))
+  ) {
+    throw new Error("Restart recovery source no longer owns this input.");
+  }
+}
+
+/** Restore requested facts and authority from the same final revalidated private row. */
+export async function restoreGatewayRunRecovery(params: {
   target: OperatorRecoveryTarget;
   context: GatewayRequestContext;
   assertCurrent: () => void;
-}) {
-  return restoreGatewayDurableOperatorRecovery(params);
+  restoreOperator: boolean;
+  restoreRequester: boolean;
+}): Promise<{
+  operator?: RestoredGatewayOperatorAuthority;
+  requesterOrigin?: RequesterOrigin;
+}> {
+  const target = { ...params.target };
+  let entry: InternalSessionEntry | undefined;
+  const read = async () => {
+    params.assertCurrent();
+    const current = await readSessionEntryReadOnlyInWorker(target, params.assertCurrent);
+    params.assertCurrent();
+    assertRestartClaim(current, target);
+    entry = current;
+    return current;
+  };
+  let operator: RestoredGatewayOperatorAuthority | undefined;
+  let expectedCompaction: { previousSessionId: string; sessionId: string } | undefined;
+  if (params.restoreOperator) {
+    operator = await restoreGatewayOperatorSnapshot({
+      context: params.context,
+      assertCurrent: params.assertCurrent,
+      subscribeToClaim: (revoke) =>
+        onSessionIdentityMutation((mutation) => {
+          if (
+            expectedCompaction &&
+            mutation.kind === "replace" &&
+            mutation.agentId === target.agentId &&
+            mutation.previous.sessionId === expectedCompaction.previousSessionId &&
+            mutation.current.sessionId === expectedCompaction.sessionId &&
+            mutation.previous.sessionKeys.length === 1 &&
+            mutation.previous.sessionKeys[0] === target.sessionKey &&
+            mutation.current.sessionKeys.length === 1 &&
+            mutation.current.sessionKeys[0] === target.sessionKey
+          ) {
+            expectedCompaction = undefined;
+            return;
+          }
+          if (
+            mutation.agentId === target.agentId &&
+            (mutation.previous.sessionId === target.sessionId ||
+              mutation.previous.sessionKeys.includes(target.sessionKey))
+          ) {
+            revoke();
+          }
+        }),
+      prepareSource: async () => {
+        const current = await read();
+        if (!current.restartRecoveryOperatorSource) {
+          return undefined;
+        }
+        let source = decodeGatewayOperatorRecoverySource(current.restartRecoveryOperatorSource);
+        const assertSource = (value: InternalSessionEntry) => {
+          if (
+            value.lifecycleRevision !== source.lifecycleRevision ||
+            source.agentId !== target.agentId ||
+            source.sessionKey !== target.sessionKey ||
+            source.sessionId !== target.sessionId ||
+            source.sourceRunId !== target.sourceRunId ||
+            !isDeepStrictEqual(value.restartRecoveryOperatorSource, source)
+          ) {
+            throw new Error("Restart recovery operator source no longer owns this input.");
+          }
+        };
+        assertSource(current);
+        return {
+          snapshot: source.snapshot,
+          revalidate: async () => assertSource(await read()),
+          onSessionCompactionCommitted: (transition, committed) => {
+            if (
+              target.sessionId === transition.current.sessionId &&
+              source.lifecycleRevision === transition.current.lifecycleRevision
+            ) {
+              // Composed source assertions can deliver the same committed fact more than once.
+              assertRestartClaim(committed, target);
+              assertSource(committed);
+              return;
+            }
+            const next = { ...source, sessionId: transition.current.sessionId };
+            const successor = { ...target, sessionId: transition.current.sessionId };
+            assertRestartClaim(committed, successor);
+            if (
+              !transition.previous ||
+              transition.previous.sessionId !== target.sessionId ||
+              transition.previous.lifecycleRevision !== source.lifecycleRevision ||
+              transition.current.lifecycleRevision !== source.lifecycleRevision ||
+              committed.lifecycleRevision !== source.lifecycleRevision ||
+              !isDeepStrictEqual(committed.restartRecoveryOperatorSource, next)
+            ) {
+              throw new Error("Restart recovery operator source no longer owns this input.");
+            }
+            expectedCompaction = {
+              previousSessionId: target.sessionId,
+              sessionId: successor.sessionId,
+            };
+            target.sessionId = successor.sessionId;
+            source = next;
+          },
+        };
+      },
+    });
+  } else {
+    await read();
+  }
+  try {
+    params.assertCurrent();
+    assertRestartClaim(entry, target);
+    const requesterOrigin = params.restoreRequester
+      ? readRestartRecoveryRequesterSource({ ...target, entry })
+      : undefined;
+    if (operator) {
+      recoverySources.set(operator.authority, {
+        target,
+        source: Object.freeze({
+          controlUiAdmin: operator.controlUiAdmin,
+          localOperator: operator.authority.recoverySnapshot?.localOperator === true,
+        }),
+      });
+    }
+    return { operator, requesterOrigin };
+  } catch (error) {
+    operator?.release();
+    throw error;
+  }
 }
 
-/** Question custody is loaded by its owner, never accepted as caller-supplied attribution. */
-export function restoreGatewayQuestionOperatorRecovery(params: {
+/** A queued native launch reuses its original authenticated source, never profile attribution. */
+export async function restoreGatewayQueuedOperatorRecovery(params: {
+  source: unknown;
+  context: GatewayRequestContext;
+  assertCurrent: () => void;
+}): Promise<Pick<RestoredGatewayOperatorAuthority, "authority" | "controlUiAdmin" | "release">> {
+  params.assertCurrent();
+  const source = decodeQueuedOperatorRecoverySource(params.source);
+  if (source.kind === "unavailable") {
+    throw new Error("Queued operator authority cannot be recovered; submit a new request.");
+  }
+  if (source.kind === "gateway") {
+    const restored = await restoreGatewayOperatorSnapshot({
+      context: params.context,
+      assertCurrent: params.assertCurrent,
+      prepareSource: async () => ({
+        snapshot: source.snapshot,
+        revalidate: async () => params.assertCurrent(),
+      }),
+    });
+    if (!restored) {
+      throw new Error("Queued operator recovery source is unavailable.");
+    }
+    return restored;
+  }
+  const snapshot = source.snapshot;
+  const getConfig = params.context.getCommittedRuntimeConfig ?? params.context.getRuntimeConfig;
+  const prepared = await prepareCommandOwnerAuthority(getConfig(), snapshot.reference);
+  params.assertCurrent();
+  const profile = prepared.operatorProfile;
+  if (!profile || profile.profileId !== snapshot.profileId || !prepared.isCurrent(getConfig())) {
+    throw new Error("Queued channel operator authority changed; submit a new request.");
+  }
+  let references = 1;
+  const assertCurrent = () => {
+    if (references === 0) {
+      throw new Error("Queued channel operator authority is no longer active.");
+    }
+    params.assertCurrent();
+    if (!prepared.isCurrent(getConfig())) {
+      throw new Error("Queued channel operator authority changed; submit a new request.");
+    }
+  };
+  const releaseHold = () => {
+    let released = false;
+    return () => {
+      if (!released) {
+        released = true;
+        references -= 1;
+      }
+    };
+  };
+  const live = captureChannelOperatorRunAuthority({
+    ...profile,
+    recoveryReference: snapshot.reference,
+    scopes: intersectOperatorScopes(snapshot.scopes, profile.scopes),
+    getRuntimeConfig: getConfig,
+    assertCurrent,
+    signal: prepared.signal,
+  });
+  const originalModels = snapshot.modelPolicy
+    ? restoreOperatorModelPolicySnapshot(snapshot.modelPolicy)
+    : undefined;
+  const authority = createAdmittedRunOperatorAuthority({
+    ...live,
+    channelRecoverySource: { reference: snapshot.reference, modelPolicy: originalModels },
+    signal: prepared.signal,
+    retain: () => {
+      assertCurrent();
+      references += 1;
+      return releaseHold();
+    },
+    get modelPolicy() {
+      return intersectOperatorRunModelPolicy(originalModels, live.modelPolicy);
+    },
+  });
+  authority.assertCurrent();
+  return { authority, controlUiAdmin: false, release: releaseHold() };
+}
+
+/** Restore only the exact canonical question custody under current operator policy. */
+export async function restoreGatewayQuestionOperatorRecovery(params: {
   target: OperatorRecoveryTarget;
   questionId: string;
   expectedQuestion: DurableQuestion;
   context: GatewayRequestContext;
   assertCurrent: () => void;
-}) {
-  return restoreGatewayDurableOperatorRecovery(params);
+}): Promise<RestoredGatewayOperatorAuthority> {
+  const { target, expectedQuestion } = params;
+  const source = decodeGatewayOperatorRecoverySource(expectedQuestion.provenance.recoverySource);
+  const prepareCurrent = async () => {
+    params.assertCurrent();
+    const current = await readSessionQuestionCustody(
+      expectedQuestion.sessionBinding,
+      params.questionId,
+      params.assertCurrent,
+    );
+    params.assertCurrent();
+    if (
+      !current ||
+      Array.isArray(current) ||
+      !isDeepStrictEqual(current.record, expectedQuestion.record) ||
+      !isDeepStrictEqual(current.sessionBinding, expectedQuestion.sessionBinding) ||
+      !isDeepStrictEqual(current.provenance, expectedQuestion.provenance) ||
+      current.resolutionId !== expectedQuestion.resolutionId ||
+      current.sessionId !== target.sessionId ||
+      current.lifecycleRevision !== source.lifecycleRevision ||
+      current.sessionKey !== target.sessionKey ||
+      current.provenance.issuer !== "operator" ||
+      current.provenance.sourceRunId !== target.sourceRunId ||
+      current.continuation.status !== "owed" ||
+      source.agentId !== target.agentId ||
+      source.sessionKey !== target.sessionKey ||
+      source.sessionId !== target.sessionId ||
+      source.sourceRunId !== target.sourceRunId ||
+      !isDeepStrictEqual(current.provenance.recoverySource, source)
+    ) {
+      throw new Error("Durable question operator source no longer owns this input.");
+    }
+  };
+  await prepareCurrent();
+  return restoreGatewayOperatorSource({
+    snapshot: source.snapshot,
+    target,
+    context: params.context,
+    assertCurrent: params.assertCurrent,
+    prepareCurrent,
+  });
 }

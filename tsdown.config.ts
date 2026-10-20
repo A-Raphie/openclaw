@@ -22,6 +22,7 @@ import {
   publicPluginSdkEntrypoints,
 } from "./scripts/lib/plugin-sdk-entries.mts";
 import { createPublicSessionCardAssetsPlugin } from "./scripts/lib/public-session-card-assets.mts";
+import { createPublicSessionLocalesPlugin } from "./scripts/lib/public-session-locales.mts";
 import { isRecord } from "./scripts/lib/record-shared.mjs";
 import { createRuntimeDependencyOwnershipBuildPlugin } from "./scripts/lib/runtime-dependency-ownership-build-plugin.mts";
 import { runtimeProcessBuildEntries } from "./scripts/lib/runtime-process-build-entries.mts";
@@ -31,6 +32,7 @@ import {
   shouldBundleRuntimeSqliteDependency,
   standaloneRuntimeProcessBuildEntries,
 } from "./scripts/lib/runtime-process-core-build-entries.mts";
+import { createSqliteSchemaAssetsPlugin } from "./scripts/lib/sqlite-schema-assets.mts";
 import {
   createStateSchemaInlinePlugin,
   STATE_SCHEMA_INLINE_PLUGIN_NAME,
@@ -83,6 +85,9 @@ const workerDeployVersion = (
 const OUTPUT_SOURCE_MAPS = process.env.OUTPUT_SOURCE_MAPS === "1";
 const RUN_NODE_SKIP_DTS_BUILD = process.env.OPENCLAW_RUN_NODE_SKIP_DTS_BUILD === "1";
 const TSDOWN_DECLARATIONS = !RUN_NODE_SKIP_DTS_BUILD;
+const TSDOWN_PACKAGE_DECLARATIONS = TSDOWN_DECLARATIONS
+  ? { tsconfig: "tsconfig.packages.json" }
+  : false;
 export { createStateSchemaInlinePlugin, STATE_SCHEMA_INLINE_PLUGIN_NAME };
 
 const SUPPRESSED_EVAL_WARNING_PATHS = [
@@ -242,6 +247,12 @@ function nodeBuildConfig(
       typeof declarations === "object" && declarations.emitDtsOnly
         ? undefined
         : createPublicSessionCardAssetsPlugin(),
+      typeof declarations === "object" && declarations.emitDtsOnly
+        ? undefined
+        : createPublicSessionLocalesPlugin(),
+      typeof declarations === "object" && declarations.emitDtsOnly
+        ? undefined
+        : createSqliteSchemaAssetsPlugin(),
       config.plugins,
     ],
     env,
@@ -289,7 +300,12 @@ function workerDeployBuildConfig(entry: Record<string, string>, split = false): 
       chunkFileNames: "worker/worker-chunk-[hash].mjs",
       assetFileNames: "worker/[name][extname]",
     },
-    plugins: [createStateSchemaInlinePlugin(), createWorkerDeployBuildPlugin()],
+    plugins: [
+      createStateSchemaInlinePlugin(),
+      createPublicSessionLocalesPlugin(),
+      createSqliteSchemaAssetsPlugin(undefined, undefined, { workerChunks: true }),
+      createWorkerDeployBuildPlugin(),
+    ],
     shims: true,
     sourcemap: OUTPUT_SOURCE_MAPS,
     inputOptions: (options) => ({
@@ -327,7 +343,7 @@ function workerHelperBuildConfig(
 function nodeWorkspacePackageBuildConfig(packageDir: string, config: UserConfig = {}): UserConfig {
   return {
     ...config,
-    dts: TSDOWN_DECLARATIONS,
+    dts: TSDOWN_PACKAGE_DECLARATIONS,
     hooks: createDeclarationBoundaryHooks(config.hooks),
     entry: config.entry ?? buildPackageDistEntriesFromExports(packageDir),
     env,
@@ -810,14 +826,17 @@ const unifiedDeclarationCompilerOptions: NonNullable<DtsOptions["compilerOptions
 } = { stableTypeOrdering: true };
 
 const configs: UserConfig[] = [
-  nodeBuildConfig({
-    name: TSDOWN_PACKAGE_CONFIG_GROUP,
-    entry: buildAgentCoreDistEntries(),
-    outDir: tsdownPackageOutputRoot("agent-core"),
-    deps: {
-      neverBundle: shouldExternalizeAgentCoreDependency,
+  nodeBuildConfig(
+    {
+      name: TSDOWN_PACKAGE_CONFIG_GROUP,
+      entry: buildAgentCoreDistEntries(),
+      outDir: tsdownPackageOutputRoot("agent-core"),
+      deps: {
+        neverBundle: shouldExternalizeAgentCoreDependency,
+      },
     },
-  }),
+    TSDOWN_PACKAGE_DECLARATIONS,
+  ),
   nodeWorkspacePackageBuildConfig("gateway-protocol", {
     deps: {
       neverBundle: shouldExternalizeGatewayProtocolDependency,
@@ -982,11 +1001,16 @@ const configs: UserConfig[] = [
     {
       "worker/worker": "src/worker/worker-deploy-entry.ts",
       "worker/worker-chunk-highlight": "node_modules/highlight.js/lib/index.js",
+      "worker/worker-chunk-fs-safe-watch-io":
+        "node_modules/@openclaw/fs-safe/dist/watch-io-worker.js",
     },
     true,
   ),
   workerDeployBuildConfig({
     "worker/code-mode-node.worker": "src/agents/code-mode-node.worker.ts",
+  }),
+  workerDeployBuildConfig({
+    "worker/client-credential.worker": "src/worker/worker-deploy-client-credentials.ts",
   }),
   workerDeployBuildConfig({
     "worker/file-tool-planning.worker": "src/worker/worker-deploy-file-tool-planning.ts",

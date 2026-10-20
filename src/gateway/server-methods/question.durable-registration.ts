@@ -15,6 +15,7 @@ import { hasSqliteWorkerOutcomeUnknown } from "../../infra/sqlite-worker-contrac
 import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import { installDurableQuestion } from "../durable-question-runtime.js";
 import { resolveGatewayOperatorRoleActor } from "../operator-role-policy.js";
+import { captureQueuedOperatorRecoverySource } from "../operator-run-recovery-source.js";
 import type { QuestionManager } from "../question-manager.js";
 import type { QuestionRegistrationReservation } from "../question-registration-reservations.js";
 import {
@@ -56,10 +57,10 @@ export async function registerDurableQuestion(params: {
   const authority = readGatewayRequestMutationAuthority(options);
   const requester = client?.internal?.agentRuntimeIdentity;
   const operatorAuthority = client?.internal?.operatorRunAuthority;
-  if (
-    !requester ||
-    (!operatorAuthority?.recoverySnapshot && !operatorAuthority?.channelRecoveryReference)
-  ) {
+  const channelSource = operatorAuthority?.channelRecoverySource
+    ? captureQueuedOperatorRecoverySource(operatorAuthority)
+    : undefined;
+  if (!requester || (!operatorAuthority?.recoverySnapshot && channelSource?.kind !== "channel")) {
     throw new QuestionRequestValidationError("Durable custody requires a trusted agent requester.");
   }
   const captured = await withQuestionSessionAccess(
@@ -153,8 +154,8 @@ export async function registerDurableQuestion(params: {
         issuer: recoverySource ? "operator" : "channel",
         sourceRunId: requester.operationalRunInstance.runId,
         ...(recoverySource ? { recoverySource } : {}),
-        ...(operatorAuthority?.channelRecoveryReference
-          ? { channelAuthorizationReference: operatorAuthority.channelRecoveryReference }
+        ...(channelSource?.kind === "channel"
+          ? { channelRecoverySource: channelSource.snapshot }
           : {}),
         ...(requester.turnSourceChannel && requester.turnSourceTo
           ? {
