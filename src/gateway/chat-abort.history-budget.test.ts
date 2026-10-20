@@ -136,6 +136,45 @@ describe("resolveInFlightRunSnapshot", async () => {
     return result;
   };
 
+  it("replays accepted preparation only in its visible physical session scope until cancellation", () => {
+    const runId = "preparing-repository";
+    const sessionKey = "agent:main:repository";
+    const storePath = "/synthetic/repository/sessions.db";
+    const source = createRpcSourceForTest(
+      {},
+      { runId, sessionKey, storeScope: storePath, accepted: true },
+    );
+    rpcSourceTesting.reset(new Map([[runId, source]]));
+    const chatRunState = createChatRunState();
+    chatRunState.recordProgressEvent(runId, {
+      runId,
+      sessionKey,
+      seq: 1,
+      ts: 1,
+      stream: "run_status",
+      data: { phase: "preparing_worktree_base" },
+    });
+    const resolve = (scope = storePath, key = sessionKey) =>
+      resolveInFlightRunSnapshot({
+        chatRunState,
+        storePath: scope,
+        requestedSessionKey: key,
+        canonicalSessionKey: key,
+      });
+    expect(resolve()).toMatchObject({
+      runId,
+      text: "",
+      events: [{ data: { phase: "preparing_worktree_base" } }],
+    });
+    expect(resolve("/synthetic/other/sessions.db")).toBeUndefined();
+    expect(resolve(storePath, "agent:main:other")).toBeUndefined();
+    source.adapter.controlUiVisible = false;
+    expect(resolve()).toBeUndefined();
+    source.adapter.controlUiVisible = true;
+    requestRpcSourceCancellation(source);
+    expect(resolve()).toBeUndefined();
+  });
+
   it("omits execution timing until a queued source actually starts", async () => {
     const source = createRpcSourceForTest(
       { projectSessionActive: true },

@@ -119,7 +119,7 @@ describe("ManagedWorktreeService repository code isolation", () => {
       await expectAbsent(setupOutput);
     }
     await expectAbsent(sentinel);
-    expect(progress).toEqual(runSetupScript ? ["checkout", "setup"] : ["checkout"]);
+    expect(progress).toEqual(runSetupScript ? ["base", "checkout", "setup"] : ["base", "checkout"]);
     if (runSetupScript) {
       expect(onPromptReady).not.toHaveBeenCalled();
     }

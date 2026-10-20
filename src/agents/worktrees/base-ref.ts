@@ -66,11 +66,12 @@ export async function resolveWorktreeCreationBase(
   repoRoot: string,
   params: Pick<
     CreateManagedWorktreeParams,
-    "baseRef" | "checkoutCommit" | "signal" | "commitGuard"
+    "baseRef" | "checkoutCommit" | "signal" | "commitGuard" | "onProgress"
   > & {
     prepareBase?: WorktreeBasePreparation;
   },
 ): Promise<ResolvedWorktreeBase> {
+  params.onProgress?.("base");
   if (params.checkoutCommit) {
     if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(params.checkoutCommit)) {
       throw new Error("Worktree checkout commit is invalid");
