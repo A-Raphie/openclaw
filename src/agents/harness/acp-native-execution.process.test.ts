@@ -25,6 +25,7 @@ import { createAgentEventTestHarness } from "../../gateway/server-chat.agent-eve
 import { subscribeAgentEvents } from "../../gateway/server-chat.agent-events.test-helpers.js";
 import type { AgentEventPayload } from "../../infra/agent-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { requireAcpRuntimeBackend } from "../../plugin-sdk/acp-runtime-backend.js";
 import { upsertSessionEntry } from "../../plugin-sdk/session-store-runtime.js";
 import {
   appendSessionTranscriptMessageByIdentityStrict,
@@ -307,7 +308,11 @@ it.for([
         let holdingControl: Promise<void> | undefined;
         let run: ReturnType<typeof runAgentHarnessAttempt> | undefined;
         try {
-          const runtime = await native.service.getRuntime(native.context);
+          await native.service.start(native.context);
+          const runtime = requireAcpRuntimeBackend("acpx").runtime;
+          const getStatus = runtime.getStatus?.bind(runtime);
+          const setMode = runtime.setMode?.bind(runtime);
+          assert(getStatus && setMode, "ACPX control methods missing");
           const nativeTarget = {
             agentId: "main",
             sessionKey: `agent:main:harness:acp-opencode:${attempt.input.sessionId}`,
@@ -323,10 +328,11 @@ it.for([
             modelExplicit: true,
           };
           const handle = await runtime.ensureSession(nativeTarget);
-          const getStatus = runtime.getStatus.bind(runtime);
-          expect((await getStatus({ handle })).models?.currentModelId).toBe(nativeTarget.model);
+          expect(await getStatus({ handle })).toMatchObject({
+            models: { currentModelId: nativeTarget.model },
+          });
           const before = await peerStates(native.peerDirectory);
-          holdingControl = runtime.setMode({ handle, mode: "review" });
+          holdingControl = setMode({ handle, mode: "review" });
           void holdingControl.catch(() => {});
           await fixtureEnteredBeforeSettlement(
             native.peerDirectory,
@@ -378,7 +384,7 @@ it.for([
           const active = kind === "active";
           const model = active ? "selected" : nativeTarget.model;
           expect.soft(outcome?.terminal.kind).toBe(active ? "ok" : "failed");
-          expect.soft(persisted.models?.currentModelId).toBe(model);
+          expect.soft(persisted).toMatchObject({ models: { currentModelId: model } });
           expect.soft(records[0]).toMatchObject({
             currentModelId: model,
             modelChanges: active ? ["selected"] : before[0]?.modelChanges,

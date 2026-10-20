@@ -22,7 +22,9 @@ import { runAgentAttempt as runAgentAttemptImpl } from "./attempt-execution.js";
 
 const runCliAgentMock = vi.hoisted(() => vi.fn());
 const runEmbeddedAgentMock = vi.hoisted(() => vi.fn());
+// mock-isolation: Observe CLI admission without launching an external process.
 vi.mock("../cli-runner.js", () => ({ runCliAgent: runCliAgentMock }));
+// mock-isolation: Capture forwarded harness parameters without starting model execution.
 vi.mock("../embedded-agent.js", () => ({ runEmbeddedAgent: runEmbeddedAgentMock }));
 
 const runAgentAttempt = (params: RunAgentAttemptOverrides) => {

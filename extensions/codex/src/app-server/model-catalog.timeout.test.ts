@@ -76,7 +76,7 @@ describe("Codex catalog refresh deadline", () => {
     expect(await settled).toEqual({
       value: {
         entries: [expect.objectContaining({ id: model.id, nativeRuntime: "codex" })],
-        outcomes: [{ provider: "openai", status: "ready" }],
+        outcomes: [{ provider: "openai", status: "ready", modelAccessPrograms: [] }],
       },
     });
     expect(owner.read({ ...params, provider: "openai", modelId: model.id }, pluginConfig)).toEqual({

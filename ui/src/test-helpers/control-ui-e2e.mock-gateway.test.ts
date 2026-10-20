@@ -5,6 +5,7 @@ import { expect, vi } from "vitest";
 import { ChannelsPairingListResultSchema } from "../../../packages/gateway-protocol/src/schema/channel-pairing.ts";
 import { ChannelsStatusResultSchema } from "../../../packages/gateway-protocol/src/schema/channels.ts";
 import { MigrationProtocolSchemas } from "../../../packages/gateway-protocol/src/schema/migrations.ts";
+import { SystemAgentChatHistoryResultSchema } from "../../../packages/gateway-protocol/src/schema/openclaw.ts";
 import {
   PluginsCatalogBrowseResultSchema,
   PluginsCatalogCategoriesResultSchema,
@@ -32,6 +33,18 @@ it("serves protocol-valid empty channel status and pairing defaults", async ({ g
   const pairing = await request("channel-pairing", "channels.pairing.list", {});
   expect(Compile(ChannelsPairingListResultSchema).Check(pairing)).toBe(true);
   expect([pairing.accounts, pairing.requests]).toEqual([[], []]);
+});
+
+it("serves protocol-valid empty custodian history before its first greeting", async ({
+  gatewayPage,
+}) => {
+  gatewayPage.execute(createControlUiMockGatewayInitScript());
+  const { request } = gatewayPage.connect();
+  await flushMockTimers();
+
+  const history = await request("custodian-history", "openclaw.chat.history", {});
+  expect(Compile(SystemAgentChatHistoryResultSchema).Check(history)).toBe(true);
+  expect(history.turns).toEqual([]);
 });
 
 it("serves protocol-valid empty plugin discovery defaults", async ({ gatewayPage }) => {

@@ -3,8 +3,6 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AcpRuntime } from "@openclaw/acp-core/runtime/types";
-import type { AcpxRuntime } from "acpx/runtime";
 import { afterEach, beforeEach, vi } from "vitest";
 import { createFixtureLifetime } from "../../../test/helpers/fixture-lifetime.js";
 import { fixtureReceiptClientSource } from "../../../test/helpers/fixture-receipts.js";
@@ -24,11 +22,7 @@ import {
   restoreActivePluginRegistrySnapshot,
   setActivePluginRegistry,
 } from "../../plugins/runtime.js";
-import type {
-  OpenClawPluginDefinition,
-  OpenClawPluginService,
-  OpenClawPluginServiceContext,
-} from "../../plugins/types.js";
+import type { OpenClawPluginDefinition, OpenClawPluginService } from "../../plugins/types.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { loadBundledPluginFacade } from "../../test-utils/bundled-plugin-public-surface.js";
 import type { OpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -42,17 +36,6 @@ import { makeProviderModelFixture } from "../test-helpers/provider-model-fixture
 import { registerAgentHarness } from "./registry.js";
 
 const agents = ["opencode", "qwen", "pi", "kilocode"] as const;
-type ServiceModule = {
-  createAcpxRuntimeService: () => OpenClawPluginService & {
-    getRuntime: (
-      ctx: OpenClawPluginServiceContext,
-    ) => Promise<
-      Pick<AcpRuntime, "ensureSession"> &
-        Required<Pick<AcpRuntime, "setMode">> &
-        Pick<AcpxRuntime, "getStatus" | "setModel">
-    >;
-  };
-};
 export function useNativeProcessFixture() {
   let snapshot: ReturnType<typeof captureActivePluginRegistrySnapshot>;
   let lifetime: ReturnType<typeof createFixtureLifetime>;
@@ -96,11 +79,7 @@ export async function registerNative(
       `${fixtureReceiptClientSource(peerOptions.receiptEndpoint)}\nexport { sendReceipt };\n`,
     );
   }
-  const module = await loadBundledPluginFacade<ServiceModule>({
-    pluginId: "acpx",
-    artifactBasename: "register.runtime.js",
-  });
-  const factory = vi.spyOn(module, "createAcpxRuntimeService");
+  const services: OpenClawPluginService[] = [];
   const { default: plugin } = await loadBundledPluginFacade<{ default: OpenClawPluginDefinition }>({
     pluginId: "acpx",
     artifactBasename: "index.js",
@@ -133,6 +112,10 @@ export async function registerNative(
         openKeyedStoreV2: createPluginStateRuntimeStores("acpx", () => {}).openKeyedStoreV2,
       },
     }),
+    registerService: (service) => {
+      assert(service.apiVersion !== 2, "ACPX fixture requires its V1 service contract");
+      services.push(service);
+    },
     registerAgentHarness: (harness) => registerAgentHarness(harness, { ownerPluginId: "acpx" }),
     registerReload: (registration) => {
       const registry = getActivePluginRegistry();
@@ -142,9 +125,8 @@ export async function registerNative(
   });
   assert(plugin.register, "ACPX registration missing");
   plugin.register(api);
-  const result = factory.mock.results.at(-1);
-  assert(result?.type === "return", "ACPX service missing");
-  const service = result.value;
+  const service = services.find((entry) => entry.id === "acpx-runtime");
+  assert(service, "ACPX service missing");
   const context = {
     config,
     workspaceDir: state.workspaceDir,
