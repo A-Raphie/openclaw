@@ -50,7 +50,9 @@ async function receivedSessions(page: Page): Promise<unknown[]> {
 }
 
 suite.define(() => {
-  it.each(["roster", "preview-off"] as const)(
+  // Default rows show observer headlines only with previews on; roster rows
+  // always do.
+  it.each(["roster", "preview-on", "preview-off"] as const)(
     "preserves the visible consumers in %s presentation",
     async (mode) => {
       await suite.withPage({ viewport: { width: 1440, height: 900 } }, async ({ page }) => {
@@ -62,7 +64,7 @@ suite.define(() => {
           [controlUiBundledSettingsStorageKey(suite.server.baseUrl)]: JSON.stringify({
             sidebarAgentsMode: mode === "roster" ? "roster" : "chip",
           }),
-          "openclaw:sidebar:sessions:show-preview": String(mode === "roster"),
+          "openclaw:sidebar:sessions:show-preview": String(mode !== "preview-off"),
         });
         const gateway = await installMockGateway(page, {
           sessionKey: first,
@@ -98,13 +100,15 @@ suite.define(() => {
           .locator(".chat-thread-inner")
           .getByText("Visible chat stays live", { exact: true })
           .waitFor();
-        if (mode === "preview-off") {
+        if (mode !== "roster") {
           const row = page.locator(`[data-session-key="${keys[1]}"]`);
-          expect(await row.locator(".sidebar-recent-session__subtitle").count()).toBe(0);
-          await page.locator(".sidebar-session-toolbar .sidebar-session-sort").click();
-          await openSidebarMenu(page);
-          await page.getByRole("switch", { name: "Show message preview", exact: true }).click();
-          await closeSidebarMenu(page);
+          if (mode === "preview-off") {
+            expect(await row.locator(".sidebar-recent-session__subtitle").count()).toBe(0);
+            await page.locator(".sidebar-session-toolbar .sidebar-session-sort").click();
+            await openSidebarMenu(page);
+            await page.getByRole("switch", { name: "Show message preview", exact: true }).click();
+            await closeSidebarMenu(page);
+          }
           await row.getByText("Waiting for the next instruction", { exact: true }).waitFor();
         }
       });
