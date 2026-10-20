@@ -527,6 +527,8 @@ it.each([
           );
           await closeOpenClawAgentDatabaseByPathAsync(replacement);
           const original = resolveOpenClawAgentSqlitePath({ agentId: "main", env: state.env });
+          // Offline replacement retires its canonical owner before changing the file.
+          await closeOpenClawAgentDatabaseByPathAsync(original);
           fs.renameSync(original, state.statePath("original.sqlite"));
           fs.copyFileSync(replacement, original);
         }
@@ -556,10 +558,24 @@ it.each([
         if (change === "unrelated") {
           expect(spy).toHaveBeenCalledOnce();
         }
-        if (change === "generation") {
+        if (["generation", "database replacement"].includes(change)) {
           expect(manager.get("ordinary-question")).toMatchObject({
             status: "answered",
             answers: answer,
+          });
+        }
+        if (change === "database replacement") {
+          // Retire the fixture's retained observation before admitting the successor.
+          manager.reset();
+          await expect(
+            sessionEntryReads.readSessionEntryReadOnlyInWorker({
+              agentId: "main",
+              storePath: resolveOpenClawAgentSqlitePath({ agentId: "main", env: state.env }),
+              sessionKey: requestParams.sessionKey,
+            }),
+          ).resolves.toMatchObject({
+            sessionId: f.entry.sessionId,
+            lifecycleRevision: f.entry.lifecycleRevision,
           });
         }
         if (change === "reused id") {
