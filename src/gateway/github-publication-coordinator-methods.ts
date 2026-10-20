@@ -51,6 +51,7 @@ export type GitHubPublicationClaimRequest = {
   idempotencyKey: string;
   title?: string;
   body?: string;
+  draft?: boolean;
   requester: GitHubPublicationRequester;
   expectedPublisher?: GitHubPublicationPublisher;
 };
@@ -108,6 +109,7 @@ export function createGitHubPublicationCoordinatorMethods(params: {
     assertInvocationCurrent?: () => void,
     invocationSignal?: AbortSignal,
   ) => Promise<SessionGitHubPublicationResult>;
+  recordRequestingRun: (requestId: string, runId: string) => void;
 }) {
   const { sameWorktree, processRow } = params;
   const requestForSession = async (
@@ -122,6 +124,19 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       throw new Error("GitHub publication requires an authoritative session.");
     }
     assertRequester();
+    // Inline processing completes during the requesting run's tool call; its
+    // transcript notice belongs to that run rather than splitting the turn.
+    const processDuringRun = (row: PublicationRow, validateExecution: () => boolean) => {
+      if (input.expectedRunId) {
+        params.recordRequestingRun(row.request_id, input.expectedRunId);
+      }
+      return processRow(
+        row,
+        validateExecution,
+        input.requester.assertInvocationCurrent,
+        input.requester.signal,
+      );
+    };
     using selectedSession = await prepareGitHubPublicationSession(input.sessionKey, {
       cfg: params.getCommittedRuntimeConfig(),
       agentId: input.agentId,
@@ -185,6 +200,7 @@ export function createGitHubPublicationCoordinatorMethods(params: {
         requester: input.requester,
         ...(input.title ? { title: input.title } : {}),
         ...(input.body ? { body: input.body } : {}),
+        ...(input.draft !== undefined ? { draft: input.draft } : {}),
       };
       const accepted = await params.requestForClaimV2(claimRequest);
       assertRequester();
@@ -195,12 +211,7 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       if (!row) {
         throw new Error("GitHub publication request disappeared.");
       }
-      return await processRow(
-        row,
-        () => params.placements.validateTurnClaim(claim),
-        input.requester.assertInvocationCurrent,
-        input.requester.signal,
-      );
+      return await processDuringRun(row, () => params.placements.validateTurnClaim(claim));
     }
     if (claim && placement?.state === "local") {
       throw new Error(
@@ -213,15 +224,19 @@ export function createGitHubPublicationCoordinatorMethods(params: {
     const worktreeOwner = initialAuthority;
     const { worktree } = worktreeOwner;
     assertRequester();
+    const existing = await readGitHubPublicationRequestAsync({
+      sessionId,
+      idempotencyKey: input.idempotencyKey,
+    });
     const requestDigest = digestRequest({
       sessionId,
       idempotencyKey: input.idempotencyKey,
       title: input.title,
       body: input.body,
-    });
-    const existing = await readGitHubPublicationRequestAsync({
-      sessionId,
-      idempotencyKey: input.idempotencyKey,
+      draft:
+        existing && existing.draft == null && input.draft === undefined
+          ? undefined
+          : (input.draft ?? false),
     });
     if (existing) {
       if (existing.request_digest !== requestDigest || !sameWorktree(existing, worktree)) {
@@ -243,12 +258,7 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       });
       input.requester.assertInvocationCurrent();
       if (!lifecycle || lifecycle.lifecycle_revision !== lifecycleRevision) {
-        return await processRow(
-          existing,
-          validateLocalExecution,
-          input.requester.assertInvocationCurrent,
-          input.requester.signal,
-        );
+        return await processDuringRun(existing, validateLocalExecution);
       }
     }
     assertRequester();
@@ -296,6 +306,7 @@ export function createGitHubPublicationCoordinatorMethods(params: {
                 idempotencyKey: input.idempotencyKey,
                 title: input.title,
                 body: input.body,
+                draft: input.draft ?? false,
               },
               requestId,
               requestDigest,
@@ -338,14 +349,8 @@ export function createGitHubPublicationCoordinatorMethods(params: {
             assertCurrent: assertCaptureAuthority,
           });
     assertCaptureAuthority();
-    worktreeOwner.assertCurrent();
     const row = await insertSessionRequest(snapshot);
-    return await processRow(
-      row,
-      validateLocalExecution,
-      input.requester.assertInvocationCurrent,
-      input.requester.signal,
-    );
+    return await processDuringRun(row, validateLocalExecution);
   };
 
   return {
@@ -357,9 +362,15 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       return requestForSession(input);
     },
 
-    async resumeSessionRequests(): Promise<void> {
+    async resumeSessionRequests(isStopping?: () => boolean): Promise<void> {
+      if (isStopping?.()) {
+        return;
+      }
       const rows = await listSharedGitHubPublicationsAsync({ claimNull: true, pending: true });
       params.assertCurrent();
+      if (isStopping?.()) {
+        return;
+      }
       const pending = new Set(
         (await params.placements.listPendingWorkspaceResultsAsync()).map(
           (result) => result.sessionId,
@@ -367,8 +378,14 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       );
       const failures: Error[] = [];
       const blockedWorktrees = new Set<string>();
+      if (isStopping?.()) {
+        return;
+      }
       const placements = await params.placements.getManyAsync(rows.map((row) => row.session_id));
       for (const row of rows) {
+        if (isStopping?.()) {
+          break;
+        }
         if (
           blockedWorktrees.has(row.worktree_id) ||
           pending.has(row.session_id) ||
@@ -377,6 +394,7 @@ export function createGitHubPublicationCoordinatorMethods(params: {
           continue;
         }
         try {
+          // An executing publication keeps its custody through durable settlement.
           await processRow(row, () => {
             const placement = params.placements.get(row.session_id);
             return !placement?.turnClaim && !pending.has(row.session_id);
@@ -455,6 +473,14 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       return row ? { result: publicationResult(row), confirmation: null } : undefined;
     },
 
+    async latestPublishedShared(
+      session: PublicationSessionIdentity,
+      preparedRead: Parameters<typeof readSharedGitHubPublication>[2],
+    ): Promise<SessionGitHubStatusResult | null> {
+      const row = await readSharedGitHubPublication(session, { status: "published" }, preparedRead);
+      return row ? { result: publicationResult(row), confirmation: null } : null;
+    },
+
     async latestShared(
       session: PublicationSessionIdentity,
       idempotencyKey?: string,
@@ -464,8 +490,9 @@ export function createGitHubPublicationCoordinatorMethods(params: {
           "repository" | "branch" | "source_head_commit" | "workspace_tree"
         >,
       ) => Promise<boolean>,
+      preparedRead?: Parameters<typeof readSharedGitHubPublication>[2],
     ): Promise<SessionGitHubStatusResult | null> {
-      const row = await readSharedGitHubPublication(session, { idempotencyKey });
+      const row = await readSharedGitHubPublication(session, { idempotencyKey }, preparedRead);
       // Discovery offers recovery for current work, not a failure whose accepted
       // snapshot has since been published. Exact-key and by-id history stay intact.
       if (
