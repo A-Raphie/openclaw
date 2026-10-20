@@ -182,6 +182,8 @@ describe("prepareEmbeddedAttemptTransport", () => {
     async (source) => {
       const { input } = createTransportFixture();
       const route = {
+        provider: "openai",
+        modelId: "synthetic-model",
         api: "openai-chatgpt-responses",
         baseUrl: "https://chatgpt.com/backend-api",
         authRequirement: "subscription",
@@ -195,7 +197,6 @@ describe("prepareEmbeddedAttemptTransport", () => {
         status: "ready" as const,
         modelAccessPrograms: [
           {
-            modelId: "synthetic-model",
             runtimeId: "openclaw",
             ...route,
             cyber: ["daybreak_blue"] as const,

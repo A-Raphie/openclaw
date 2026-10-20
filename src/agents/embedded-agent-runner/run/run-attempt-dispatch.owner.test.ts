@@ -154,6 +154,7 @@ it.each(["settled", "failed", "revoked", "unsandboxed"] as const)(
 );
 
 type DispatchCase = {
+  cyberAccessProgram?: AgentHarnessAttemptParamsV2["cyberAccessProgram"];
   agentId?: string;
   sandboxSessionKey?: string;
   remoteSkills?: boolean;
@@ -175,6 +176,8 @@ type DispatchCase = {
 };
 
 const dispatchCases: DispatchCase[] = [
+  { agentId: "main", cyberAccessProgram: "standard" },
+  { agentId: "main", cyberAccessProgram: "daybreak_blue" },
   ...(["explicit-header", "no-auth"] as const).map((preparedAuth) => ({
     agentId: "main",
     preparedAuth,
@@ -248,8 +251,9 @@ const dispatchCases: DispatchCase[] = [
 ];
 
 it.each(dispatchCases)(
-  "dispatches the generic harness for $agentId/global with policy $sandboxSessionKey, $skillCatalog skills, remote skills $remoteSkills, one-shot $oneShotCliRun, real managed workspace $realManagedWorkspace, explicit cwd $explicitCwd, host media $hostMedia, retired placement $retirePlacement, baseline $diffBaseline, cancelled trajectory $cancelTrajectory, prepared auth $preparedAuth",
+  "dispatches the generic harness for $agentId/global with policy $sandboxSessionKey, $skillCatalog skills, remote skills $remoteSkills, one-shot $oneShotCliRun, real managed workspace $realManagedWorkspace, explicit cwd $explicitCwd, host media $hostMedia, retired placement $retirePlacement, baseline $diffBaseline, cancelled trajectory $cancelTrajectory, prepared auth $preparedAuth, access $cyberAccessProgram",
   async ({
+    cyberAccessProgram,
     agentId = "work",
     sandboxSessionKey,
     remoteSkills = false,
@@ -412,6 +416,7 @@ it.each(dispatchCases)(
           >["prepareContinuationRetryCount"]
         | undefined;
       const runAttempt = vi.fn<AgentHarness["runAttempt"]>(async (params) => {
+        expect(params.cyberAccessProgram).toBe(cyberAccessProgram);
         retainedRetryPreparer = params.hostCapabilities?.prepareContinuationRetryCount;
         expect(params).not.toHaveProperty("prepareContinuationRetryCount");
         if (!remoteSkills && retryPreparation !== "omit") {
@@ -488,6 +493,7 @@ it.each(dispatchCases)(
             }
           : undefined,
         admittedRunContext,
+        cyberAccessProgram,
         ...(cancelTrajectory ? { abortSignal: cancellation.signal } : {}),
         agentId,
         config,

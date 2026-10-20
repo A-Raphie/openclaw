@@ -10,18 +10,17 @@ const route = {
   requestTransportOverrides: "none",
 } as const;
 const entry = { provider: "openai", id: "synthetic-model" };
+const observation = {
+  modelId: entry.id,
+  runtimeId: "openclaw",
+  ...route,
+  cyber: ["standard", "daybreak_blue"] as const,
+};
 const outcome = {
   provider: "openai",
   profileId: "openai:a",
   status: "ready" as const,
-  modelAccessPrograms: [
-    {
-      modelId: entry.id,
-      runtimeId: "openclaw",
-      ...route,
-      cyber: ["standard", "daybreak_blue"] as const,
-    },
-  ],
+  modelAccessPrograms: [observation],
 };
 const snapshot: ModelCatalogSnapshot = {
   entries: [],
@@ -79,9 +78,7 @@ it("never reuses program entitlement across accounts, models, runtimes, routes o
     resolve({
       snapshot: {
         ...snapshot,
-        providerOutcomes: [
-          { ...outcome, modelAccessPrograms: [{ ...outcome.modelAccessPrograms[0], cyber: [] }] },
-        ],
+        providerOutcomes: [{ ...outcome, modelAccessPrograms: [{ ...observation, cyber: [] }] }],
       },
     }),
   ).toEqual([]);
