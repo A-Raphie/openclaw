@@ -6,7 +6,7 @@ import {
   captureOpenClawMigrationWitness,
 } from "./openclaw-migration-witness.js";
 
-function fixture(version: 25 | 26 | 27 | 28) {
+function fixture(version: 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32) {
   const db = new DatabaseSync(":memory:");
   db.exec(getOpenClawAgentMigrationSchema(version));
   db.exec(`PRAGMA user_version = ${version};
@@ -22,10 +22,10 @@ function addQuestion(db: DatabaseSync) {
     VALUES ('question', 'agent:main:question', 'session', 'revision', '{}', '{}', '{}', 'pending')`);
 }
 
-describe("schema 28 migration witnesses", () => {
-  it("accepts only the empty additive question contract while retaining schema 27 content", () => {
-    const original = fixture(27);
-    const upgraded = fixture(28);
+describe("schema 32 migration witnesses", () => {
+  it("accepts only the empty additive question contract while retaining schema 31 content", () => {
+    const original = fixture(31);
+    const upgraded = fixture(32);
     try {
       const before = captureOpenClawMigrationWitness(original, { role: "agent", agentId: "main" });
       const capture = () =>
@@ -45,9 +45,24 @@ describe("schema 28 migration witnesses", () => {
       upgraded.close();
     }
   });
-  it("preserves existing FIFO row identity across 27→28 witnesses", () => {
-    using original = fixture(27);
-    using upgraded = fixture(28);
+  it.each([24, 25, 26, 27, 28, 29, 30] as const)(
+    "retains the existing full migration normalization from schema %s through 32",
+    (version) => {
+      using original = fixture(version);
+      using upgraded = fixture(32);
+      const before = captureOpenClawMigrationWitness(original, { role: "agent", agentId: "main" });
+      const capture = () =>
+        captureOpenClawMigrationWitness(upgraded, { role: "agent", agentId: "main" });
+      expect(assertOpenClawMigrationWitnessPreserved(before, capture()).warnings).toEqual([]);
+      upgraded.exec("UPDATE retained_plugin_data SET payload = 'lost across full chain'");
+      expect(() => assertOpenClawMigrationWitnessPreserved(before, capture())).toThrow(
+        /changed or lost/u,
+      );
+    },
+  );
+  it("preserves existing FIFO row identity across 31→32 witnesses", () => {
+    using original = fixture(31);
+    using upgraded = fixture(32);
     for (const db of [original, upgraded]) {
       db.exec(`INSERT INTO context_engine_turn_outbox(enqueue_sequence, advancement_key, engine_id, session_id, payload_json, created_at)
         VALUES (7, 'z-first', 'test', 'session', '{}', 90), (40, 'a-last', 'test', 'session', '{}', 1)`);
@@ -69,6 +84,10 @@ describe("schema 28 migration witnesses", () => {
       retainedTable: "session_nodes",
     },
     {
+      mutation: "UPDATE session_windows SET row_transcript_json = '{}'",
+      retainedTable: "session_windows",
+    },
+    {
       mutation: "DELETE FROM session_canonical_validation_pending",
       retainedTable: "session_canonical_validation_pending",
     },
@@ -77,10 +96,10 @@ describe("schema 28 migration witnesses", () => {
       retainedTable: "session_key_contract",
     },
   ])(
-    "preserves existing schema 27 $retainedTable content during 27→28 migration",
+    "preserves existing schema 31 $retainedTable content during 31→32 migration",
     ({ mutation, retainedTable }) => {
-      const original = fixture(27);
-      const upgraded = fixture(28);
+      const original = fixture(31);
+      const upgraded = fixture(32);
       try {
         for (const db of [original, upgraded]) {
           db.exec(`INSERT INTO session_nodes(session_key, current_session_id, entry_json, updated_at, session_started_at)
@@ -121,9 +140,9 @@ describe("schema 28 migration witnesses", () => {
       sql: "CREATE TRIGGER extra_question_trigger AFTER INSERT ON session_questions BEGIN SELECT 1; END",
       refusal: /unexpected trigger extra_question_trigger/u,
     },
-  ])("rejects an unclassified question schema object during 27→28 preservation: $sql", (extra) => {
-    const original = fixture(27);
-    const upgraded = fixture(28);
+  ])("rejects an unclassified question schema object during 31→32 preservation: $sql", (extra) => {
+    const original = fixture(31);
+    const upgraded = fixture(32);
     try {
       const before = captureOpenClawMigrationWitness(original, { role: "agent", agentId: "main" });
       upgraded.exec(extra.sql);
@@ -138,8 +157,8 @@ describe("schema 28 migration witnesses", () => {
       upgraded.close();
     }
   });
-  it("retains question content and schema for same-version schema 28 evidence", () => {
-    const db = fixture(28);
+  it("retains question content and schema for same-version schema 32 evidence", () => {
+    const db = fixture(32);
     try {
       addQuestion(db);
       const capture = () => captureOpenClawMigrationWitness(db, { role: "agent", agentId: "main" });

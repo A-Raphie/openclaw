@@ -22,6 +22,12 @@ native builds use these assembled scripts. The npm package keeps both source
 files together for installed updater compatibility. Installing from the website
 never downloads a separate policy helper.
 
+Git installs retry transient remote-ref lookup failures up to three times. Failed
+lookups print Git's diagnostic with URLs, authorization headers, and GitHub tokens
+redacted. Missing refs and authentication failures stop without retrying.
+Release-tag fetches stay depth-limited when the existing checkout is shallow;
+full-history checkouts retain their history.
+
 | Script                             | Platform                      | What it does                                                                                                                   |
 | ---------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | [`install.sh`](#installsh)         | macOS / Linux / WSL           | Installs Node if needed, installs OpenClaw via npm (default) or git, can run onboarding.                                       |
@@ -249,6 +255,15 @@ If run inside an OpenClaw checkout (`package.json` + `pnpm-workspace.yaml`), the
 If no TTY is available and no install method is set, it defaults to `npm` and warns.
 
 The script exits with code `2` for invalid method selection or invalid `--install-method` values.
+
+Existing checkout roots may use a `.git` directory or a `.git` file, including
+linked Git worktrees. All three installers validate the checkout's own commit before
+updating it and refuse incomplete checkouts or nonempty non-repository paths.
+When another worktree owns a requested branch, `install.sh` and `install-cli.sh`
+check out its selected commit detached. For `main`, they begin at the local branch
+and rebase onto `origin/main` only when Git updates are enabled; other branch
+selectors use the fetched `origin` branch.
+These remain moving-branch installs even when `HEAD` is detached.
 
 With `--install-method git`, `install.sh` and `install-cli.sh` accept a full
 40-character commit SHA through `--version`. The installer uses the existing

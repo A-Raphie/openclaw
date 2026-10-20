@@ -13,9 +13,10 @@ import type { DurableQuestion } from "../config/sessions/session-questions.types
 import { getAgentEventLifecycleGeneration } from "../infra/agent-events.js";
 import { hasSqliteWorkerErrorCode } from "../infra/sqlite-worker-contract.js";
 import { CommandLane } from "../process/lanes.js";
-import { prepareChannelOperatorAdmin } from "./channel-operator-authority.js";
-import { captureChannelOperatorRunAuthority } from "./operator-run-authority.js";
-import { restoreGatewayQuestionOperatorRecovery } from "./operator-run-recovery.js";
+import {
+  restoreGatewayQuestionOperatorRecovery,
+  restoreGatewayQueuedOperatorRecovery,
+} from "./operator-run-recovery.js";
 import type { QuestionAdmissionRetry } from "./question-continuation-work.js";
 import type { GatewayInstanceRuntime } from "./server-instance-runtime.types.js";
 import type { GatewayRequestContext } from "./server-methods/shared-types.js";
@@ -84,7 +85,7 @@ export async function dispatchQuestionContinuation(params: {
   let executionCompleted = false;
   let claimed = false;
   let claimAttempted = false;
-  let restored: Awaited<ReturnType<typeof restoreGatewayQuestionOperatorRecovery>> = undefined;
+  let restored: Awaited<ReturnType<typeof restoreGatewayQueuedOperatorRecovery>> | undefined;
   const isOwnReceipt = (
     current: DurableQuestion | DurableQuestion[] | undefined,
   ): current is DurableQuestion =>
@@ -155,32 +156,15 @@ export async function dispatchQuestionContinuation(params: {
       });
       authority = restored?.authority;
       agentId = source.agentId;
-    } else if (
-      fresh.provenance.issuer === "channel" &&
-      fresh.provenance.channelAuthorizationReference
-    ) {
-      const getConfig = context.getCommittedRuntimeConfig ?? context.getRuntimeConfig;
-      const channelOwner = await prepareChannelOperatorAdmin(
-        getConfig(),
-        fresh.provenance.channelAuthorizationReference,
-      );
-      assertCurrent();
-      if (channelOwner) {
-        const assertChannelCurrent = () => {
-          assertCurrent();
-          if (!channelOwner.isCurrent(getConfig())) {
-            throw new Error("Durable question channel caller authority changed.");
-          }
-        };
-        authority = captureChannelOperatorRunAuthority({
-          ...channelOwner.operatorProfile,
-          getRuntimeConfig: getConfig,
-          assertCurrent: assertChannelCurrent,
-          signal: channelOwner.signal,
-          channelRecoveryReference: channelOwner.recoveryReference,
-        });
-      }
+    } else if (fresh.provenance.issuer === "channel" && fresh.provenance.channelRecoverySource) {
+      restored = await restoreGatewayQueuedOperatorRecovery({
+        source: { kind: "channel", snapshot: fresh.provenance.channelRecoverySource },
+        context,
+        assertCurrent,
+      });
+      authority = restored.authority;
     }
+
     if (!authority) {
       throw new Error("Durable question original caller authority is unavailable.");
     }

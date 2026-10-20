@@ -22,10 +22,6 @@ function entry(): InternalSessionEntry {
 }
 
 describe("native question recovery ownership", () => {
-  it("retains exclusion after transcript and presentation receipt retention have elapsed", () => {
-    expect(isDurableQuestionRecoveryOwned(entry())).toBe(true);
-  });
-
   it("excludes the deliberately yielded asking run before the answer is admitted", () => {
     const asking = entry();
     asking.restartRecoveryDeliveryRunId = "asking-run";

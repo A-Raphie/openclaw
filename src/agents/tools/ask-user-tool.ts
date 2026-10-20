@@ -604,8 +604,7 @@ export function createAskUserTool(params: {
             requestResult.status === "answered" ||
             requestResult.status === "cancelled" ||
             requestResult.status === "expired";
-          const consumed = terminal || (await state.claim.waitForResolution());
-          if (!consumed) {
+          if (!terminal) {
             delivery.markReady();
             if (delivery.hasSubscriber) {
               const delivered = await delivery.waitForDelivery(signal);
@@ -643,19 +642,8 @@ export function createAskUserTool(params: {
           signal ? { signal } : undefined,
         ).finally(prompt.close) as Promise<QuestionWaitAnswerResult>;
         state.claim.setAnswer(answerPromise);
-        // A refused registration-time claim releases prompt delivery, not the question.
-        let consumed: boolean;
-        do {
-          consumed = await Promise.race([
-            state.claim.waitForResolution(),
-            answerPromise.then(() => true),
-          ]);
-        } while (!consumed && state.claim.isResolving());
-        if (!consumed) {
-          // Registration-time answer claims must settle before a prompt can become visible.
-          delivery.markReady();
-        }
-        if (delivery.hasSubscriber && !consumed) {
+        delivery.markReady();
+        if (delivery.hasSubscriber) {
           const promptDeliveryPromise = delivery.waitForDelivery(signal);
           const first = await Promise.race([
             promptDeliveryPromise.then((result) => ({

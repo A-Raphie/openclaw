@@ -12,18 +12,31 @@ import { isPerAgentSessionStoreConfig } from "../../config/sessions/session-stor
 import { prepareSessionStoreTargetInventory } from "../../config/sessions/session-store-target-inventory.js";
 import { prepareSessionStoreTargetInventoryRead } from "../../config/sessions/session-store-target-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { GatewayRecoveryRuntime } from "../../gateway/server-instance-runtime.types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import type { CommandLane } from "../../process/lanes.js";
 import { LEGACY_IMPLICIT_AGENT_ID } from "../../routing/session-key.js";
+import type { SessionControllerInput } from "../../sessions/session-controller.mailbox.js";
 import {
   AgentDatabaseAdmissionError,
   readAgentDatabaseAdmissionRefusal,
 } from "../../state/agent-database-admission.js";
 import { resolveAgentSessionDirs } from "../session-dirs.js";
+import type { MainSessionRecoverySkipReason } from "./main-session-restart-recovery-diagnostics.js";
 
 export const mainSessionRecoveryLog = createSubsystemLogger("main-session-restart-recovery");
 export const DEFAULT_RECOVERY_DELAY_MS = 5_000;
 export const MAX_RECOVERY_RETRIES = 3;
 export const RETRY_BACKOFF_MULTIPLIER = 2;
+/** Mailbox identity of one resend attempt; its dispatcher and foreground admission both derive it. */
+export function resolveRestartResendReservationId(attempt: {
+  sessionId: string;
+  cycleId: string;
+  attempt: number;
+}): string {
+  return `main-session-recovery:${attempt.sessionId}:${attempt.cycleId}:${attempt.attempt}`;
+}
+
 export function readInterruptedRunId(entry: SessionEntry): string | undefined {
   const runs = entry.restartRecoveryRuns;
   if (!runs?.length) {
@@ -42,6 +55,27 @@ export type ExpectedRestartRecoveryTarget = {
 
 export type ExhaustedRestartRecoveryTarget = ExpectedRestartRecoveryTarget & {
   storePath: string;
+};
+
+export type RecoverMainSessionStoreParams = {
+  storeAgentId?: string;
+  preparedEntries?: readonly { sessionKey: string; entry: SessionEntry }[];
+  cfg?: OpenClawConfig;
+  controllerInput?: SessionControllerInput;
+  lane?: CommandLane.Main | CommandLane.RestartRecovery;
+  observationOnly?: boolean;
+  onExhaustedTarget?: (target: ExhaustedRestartRecoveryTarget) => void;
+  onSkipped?: (reason: MainSessionRecoverySkipReason) => void;
+  onPreparationPending?: (target: ExhaustedRestartRecoveryTarget) => void;
+  passId?: string;
+  storePath: string;
+  stateDir?: string;
+  handledSessionKeys: Set<string>;
+  expectedTarget?: ExpectedRestartRecoveryTarget;
+  lifecycleGeneration?: string;
+  shouldContinue?: () => boolean;
+  signal?: AbortSignal;
+  gatewayRuntime: GatewayRecoveryRuntime;
 };
 
 export function resolveRestartRecoveryTerminalClientRunId(

@@ -12,13 +12,11 @@ import { loadDeliveryQueueEntry } from "../../infra/delivery-queue-sqlite.test-s
 import { OUTBOUND_DELIVERY_QUEUE_NAME } from "../../infra/outbound/delivery-queue-media-staging.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import {
-  beginSessionWorkAdmission,
-  isSessionWorkAdmissionActive,
-} from "../../sessions/session-lifecycle-admission.js";
+  beginSessionEffect,
+  isSessionControllerWorkActive,
+} from "../../sessions/session-controller.lifecycle.js";
 import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
-import { COMMAND_ADMISSION_OWNER } from "../agent-command-admission-owner.js";
 import type { SessionEntryFixture } from "../subagent-test-fixtures.test-helpers.js";
-import { runWithMainSessionRecoveryAdmission } from "./main-session-recovery-admission.js";
 import {
   claimMainSessionRecoveryOwner,
   refreshMainSessionRecoveryOwner,
@@ -129,7 +127,7 @@ export function registerDurableQuestionRecoveryCases(getFixture: () => QuestionR
     };
     return { ...fixture, makeMainSessionFixture };
   };
-  it.each(["same store", "another store", "recovery admission"] as const)(
+  it.each(["same store", "another store", "own recovery effect"] as const)(
     "preserves question preparation only for a live admission in the %s",
     async (admissionStore) => {
       const fixture = prepareFixture();
@@ -163,20 +161,16 @@ export function registerDurableQuestionRecoveryCases(getFixture: () => QuestionR
           },
         );
       }
-      const admission =
-        admissionStore === "recovery admission"
-          ? undefined
-          : await beginSessionWorkAdmission({
-              scope: heldStore,
-              identities: [sessionKey, marker.sessionId],
-              owner: COMMAND_ADMISSION_OWNER,
-              run: {
-                runId: marker.continuationRunId,
-                sessionId: marker.sessionId,
-                sessionKey,
-                agentId: "main",
-              },
-            });
+      const admission = await beginSessionEffect({
+        scope: heldStore,
+        identities: [sessionKey, marker.sessionId],
+        run: {
+          runId: marker.continuationRunId,
+          sessionId: marker.sessionId,
+          sessionKey,
+          agentId: "main",
+        },
+      });
       let claim: Awaited<ReturnType<typeof claimMainSessionRecoveryOwner>> | undefined;
       try {
         claim = await claimMainSessionRecoveryOwner({
@@ -191,37 +185,22 @@ export function registerDurableQuestionRecoveryCases(getFixture: () => QuestionR
         expect(
           await refreshMainSessionRecoveryOwner(claim.lease, marker.continuationRunId),
         ).toBeDefined();
-        expect(isSessionWorkAdmissionActive(heldStore, [sessionKey, marker.sessionId])).toBe(
-          admissionStore !== "recovery admission",
-        );
-        const recover = (
-          recoveryAdmission?: Parameters<typeof recoverStore>[0]["recoveryAdmission"],
-        ) =>
+        expect(isSessionControllerWorkActive(heldStore, [sessionKey, marker.sessionId])).toBe(true);
+        const recover = () =>
           recoverStore({
             gatewayRuntime: fixture.gatewayRuntime,
             storePath,
             storeAgentId: "main",
             stateDir: fixture.tmpDir,
             handledSessionKeys: new Set(),
-            recoveryAdmission,
           });
         const recovery =
-          admissionStore === "recovery admission"
-            ? await runWithMainSessionRecoveryAdmission({
-                storePath,
-                sessionKey,
-                sessionId: marker.sessionId,
-                isCurrent: () => true,
-                run: recover,
-              })
-            : await recover();
+          admissionStore === "own recovery effect" ? await admission.run(recover) : await recover();
         const refreshed = await refreshMainSessionRecoveryOwner(
           claim.lease,
           marker.continuationRunId,
         );
-        expect(isSessionWorkAdmissionActive(heldStore, [marker.sessionId])).toBe(
-          admissionStore !== "recovery admission",
-        );
+        expect(isSessionControllerWorkActive(heldStore, [marker.sessionId])).toBe(true);
         expect(Boolean(refreshed)).toBe(admissionStore === "same store");
         expect(callGateway).not.toHaveBeenCalled();
         expect(recovery).toEqual(
@@ -230,7 +209,8 @@ export function registerDurableQuestionRecoveryCases(getFixture: () => QuestionR
             : { started: 0, settled: 1, failed: 0, skipped: 0 },
         );
       } finally {
-        admission?.release();
+        admission.release();
+        await admission.released;
         if (claim?.kind === "claimed") {
           await releaseMainSessionRecoveryOwner(claim.lease);
         }

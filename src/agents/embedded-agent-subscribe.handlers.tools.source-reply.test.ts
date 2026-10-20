@@ -209,9 +209,14 @@ describe("native question prompt source progress", () => {
         } else {
           expect(result).toMatchObject({ result: { details: { status: "waiting" } } });
         }
-        expect(hasSuccessfulSourceReplyDelivery({ blockReplyPipeline: null, ...ctx.state })).toBe(
-          outcome === "delivered",
-        );
+        expect(
+          hasSuccessfulSourceReplyDelivery({
+            blockReplyPipeline: null,
+            messagingToolSentTexts: ctx.state.messagingToolSentTexts,
+            messagingToolSentMediaUrls: ctx.state.messagingToolSentMediaUrls,
+            messagingToolSentTargets: ctx.state.messagingToolSentTargets,
+          }),
+        ).toBe(outcome === "delivered");
         expect(
           buildSourceReplyPayloadState({
             payloads: ctx.state.messagingToolSourceReplyPayloads,

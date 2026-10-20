@@ -106,7 +106,7 @@ export async function inspectDoctorMigrationPreservation(params: {
         agentId: string;
         path: string;
         requireRegistration: boolean;
-        expectedSchemaVersion: 25 | 26 | 27 | 28;
+        expectedSchemaVersion: 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32;
       }[] = [];
       for (const entry of original.entries) {
         const owner = originalOwners.get(entry.sourcePath);
@@ -126,7 +126,11 @@ export async function inspectDoctorMigrationPreservation(params: {
           expectedSchemaVersion === 25 ||
           expectedSchemaVersion === 26 ||
           expectedSchemaVersion === 27 ||
-          expectedSchemaVersion === 28
+          expectedSchemaVersion === 28 ||
+          expectedSchemaVersion === 29 ||
+          expectedSchemaVersion === 30 ||
+          expectedSchemaVersion === 31 ||
+          expectedSchemaVersion === 32
         ) {
           migratingAgents.push({
             agentId: owner.agentId,

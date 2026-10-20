@@ -25,14 +25,6 @@ export function completeAgentRunPreRegistration(params: PrepareAgentRunDispatchP
     });
     return true;
   }
-  if (
-    params.abortForLifecycleRotation({
-      sessionKey: params.resolvedSessionKey,
-      agentId: params.activeSessionAgentId,
-    })
-  ) {
-    return true;
-  }
   if (params.restoredCronContinuationIdentity && !params.restoredCronContinuation) {
     params.io.emitAcceptance([
       false,

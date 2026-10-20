@@ -8,7 +8,10 @@ import {
   sqliteSessionIdWriteScope,
   withSqliteDatabaseWriteScope,
 } from "../../infra/sqlite-database-admission.js";
+import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
+import { isInternalSessionEffectsKey } from "./internal-session-key.js";
+import { conversationPublication } from "./session-accessor.sqlite-conversation-publication.js";
 import { commitSqliteSessionDeletion } from "./session-accessor.sqlite-deletion.js";
 import { publishSessionEntryCacheInvalidation } from "./session-accessor.sqlite-entry-cache.js";
 import { clearSqliteSessionEntryPreservingWindows } from "./session-accessor.sqlite-entry-clear.js";
@@ -34,8 +37,8 @@ export function deleteSessionEntryRows(
     validatedEntry?: SessionEntry;
     postimages?: SessionEntryWritePostimages;
   } = {},
-): void {
-  // Doctor supplies the exact row it validated; the runtime parser deliberately rejects that shape.
+): boolean {
+  // Lifecycle deletion reuses its transaction snapshot; Doctor also supplies validated legacy rows.
   const previousEntry =
     options.validatedEntry ?? readExactSessionEntryRow(database, sessionKey)?.entry;
   assertQuestionLifecycleWorker(previousEntry);
@@ -55,12 +58,19 @@ export function deleteSessionEntryRows(
           database.db,
           db
             .selectFrom("session_nodes")
-            .select(["current_session_id", "entry_json", "session_key"])
+            .select([
+              "current_session_id",
+              "entry_json",
+              "session_key",
+              "entry_valid",
+              "updated_at",
+            ])
             .where("session_key", "!=", sessionKey)
             .orderBy("session_key", "asc"),
         ).rows
       : [];
   const ownedSessionIds: string[] = [];
+  let transcriptInventoryUnchanged = options.deleteOwnedWindows !== true;
   for (const window of windows) {
     const survivingNode = survivingNodes.find((node) => {
       if (node.current_session_id === window.session_id) {
@@ -70,6 +80,11 @@ export function deleteSessionEntryRows(
       return entry ? collectSessionStateIdsForEntry(entry).includes(window.session_id) : false;
     });
     if (survivingNode) {
+      transcriptInventoryUnchanged &&=
+        resolveAgentIdFromSessionKey(sessionKey, database.agentId) ===
+          resolveAgentIdFromSessionKey(survivingNode.session_key, database.agentId) &&
+        isInternalSessionEffectsKey(sessionKey) ===
+          isInternalSessionEffectsKey(survivingNode.session_key);
       withSqliteDatabaseWriteScope(
         database.db,
         [sessionKey, survivingNode.session_key, sqliteSessionIdWriteScope(window.session_id)],
@@ -82,6 +97,17 @@ export function deleteSessionEntryRows(
               .where("session_id", "=", window.session_id),
           ),
       );
+      conversationPublication.stageRows(database, {
+        nodes: [
+          {
+            ...survivingNode,
+            entry_session_id: parseSessionEntryRow(survivingNode)?.sessionId ?? null,
+          },
+        ],
+        rehomes: [
+          { kind: "rehome", sessionId: window.session_id, sessionKey: survivingNode.session_key },
+        ],
+      });
       for (const postimage of options.postimages?.values() ?? []) {
         if (postimage.window.session_id === window.session_id) {
           postimage.window = { ...postimage.window, session_key: survivingNode.session_key };
@@ -114,6 +140,17 @@ export function deleteSessionEntryRows(
         deleteSessionNodeArtifacts(database, sessionKey);
       }
       if (remainingWindow) {
+        if (!isMainThread && previousEntry) {
+          retireSessionQuestionsInDatabase(
+            database,
+            {
+              sessionKey,
+              sessionId: previousEntry.sessionId,
+              lifecycleRevision: previousEntry.lifecycleRevision,
+            },
+            `retired:${previousEntry.sessionId}`,
+          );
+        }
         clearSqliteSessionEntryPreservingWindows(database, {
           sessionId: remainingWindow.session_id,
           sessionKey,
@@ -124,24 +161,29 @@ export function deleteSessionEntryRows(
           database.db,
           db.deleteFrom("session_nodes").where("session_key", "=", sessionKey),
         );
+        conversationPublication.stageRows(database, {
+          removedNodes: [sessionKey],
+          removedWindows: ownedSessionIds,
+        });
+        if (!isMainThread && previousEntry) {
+          retireSessionQuestionsInDatabase(
+            database,
+            {
+              sessionKey,
+              sessionId: previousEntry.sessionId,
+              lifecycleRevision: previousEntry.lifecycleRevision,
+            },
+            `retired:${previousEntry.sessionId}`,
+          );
+        }
         retireSqliteDatabaseWriteScopes(database.db, [
           sessionKey,
           ...ownedSessionIds.map(sqliteSessionIdWriteScope),
         ]);
       }
-      if (previousEntry && !isMainThread) {
-        retireSessionQuestionsInDatabase(
-          database,
-          {
-            sessionKey,
-            sessionId: previousEntry.sessionId,
-            lifecycleRevision: previousEntry.lifecycleRevision,
-          },
-          `retired:${previousEntry.sessionId}`,
-        );
-      }
     },
   );
   options.postimages?.delete(sessionKey);
   publishSessionEntryCacheInvalidation(database, { sessionKey, facts: { kind: "removed" } });
+  return transcriptInventoryUnchanged;
 }
