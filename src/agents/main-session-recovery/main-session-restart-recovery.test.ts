@@ -179,6 +179,7 @@ import { dispatchRestartRecoveryUntilStarted } from "./main-session-restart-disp
 import { readStartupRecoveryWarning } from "./main-session-restart-recovery-diagnostics.js";
 import {
   createRestartRecoveryStoreFixture,
+  loadTestTranscript,
   mainSessionEntry,
   makePendingFinalDelivery,
   readStore,
@@ -441,17 +442,6 @@ async function writePreparedMainSessionTranscript(
   await writeMainSession({ sessionsDir, ...entry });
   await writeTranscript(sessionsDir, "main-session", messages);
   return sessionsDir;
-}
-
-async function loadTestTranscript(
-  sessionKey: string,
-  storePath: string,
-): Promise<Array<{ message?: Record<string, unknown> }>> {
-  return (await loadTranscriptEvents({
-    sessionId: "main-session",
-    sessionKey,
-    storePath,
-  })) as Array<{ message?: Record<string, unknown> }>;
 }
 
 function observeRecoveryRoots(
