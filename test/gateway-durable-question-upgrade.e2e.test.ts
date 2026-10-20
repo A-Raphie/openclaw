@@ -39,7 +39,9 @@ it.skipIf(!stableRoot)(
         : stableVersion === "2026.10.1" || stableVersion === "2026.10.3"
           ? { agent: 24, state: 20 }
           : undefined;
-    if (!stableSchemas) throw new Error("Unsupported installed stable upgrade fixture version");
+    if (!stableSchemas) {
+      throw new Error("Unsupported installed stable upgrade fixture version");
+    }
     expect(stableManifest.version).toBe(stableVersion);
     expect(stableManifest.openclaw.schemaVersions).toEqual(stableSchemas);
     const fixture = await createQuestionUpgradeFixture(stableRoot, signal);
