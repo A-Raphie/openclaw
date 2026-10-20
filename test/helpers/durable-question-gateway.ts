@@ -274,7 +274,7 @@ export async function createDurableQuestionGateway(
     },
   });
   const identity = loadOrCreateDeviceIdentity({
-    path: instance.state.path("durable-device.sqlite"),
+    env: { OPENCLAW_STATE_DIR: instance.state.path("durable-client") },
   });
   return {
     instance,
