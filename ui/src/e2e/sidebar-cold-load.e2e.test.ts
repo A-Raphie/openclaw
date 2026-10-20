@@ -26,6 +26,8 @@ const suite = createSessionManagementE2eSuite();
 const baselineMode = process.env.OPENCLAW_SIDEBAR_BASELINE === "1";
 const selectedKey = "agent:main:dashboard:00000000-0000-4000-8000-000000000006";
 const railPins = ["route:agents-home", `session:${selectedKey}`, "plugin:reports/overview"];
+// The saved session pin renders in the Sessions list's Pinned section, not the rail.
+const railEntries = railPins.filter((entry) => !entry.startsWith("session:"));
 const pluginPath = "/__openclaw__/plugins/control-ui/reports/one/index.js";
 const avatarUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAIElEQVR4nGN4nhWCFTEQkPj64w8ag5AEPqPgiDgdmAgA9YRzYZfFh50AAAAASUVORK5CYII=";
@@ -46,7 +48,9 @@ async function observeShape(sidebar: Locator) {
       selectedBounds: { x: number; y: number; width: number; height: number } | null;
     }> = [];
     const sample = () => {
-      const selected = element.querySelector(`.sidebar-rail [data-sidebar-entry="session:${key}"]`);
+      const selected = element.querySelector(
+        `[data-session-section="pinned"] [data-session-key="${key}"]`,
+      );
       const bounds = selected?.getBoundingClientRect();
       const next = {
         navigation: [...element.querySelectorAll("[data-sidebar-entry]")].map((row) =>
@@ -369,7 +373,7 @@ suite.define(() => {
                 .locator(".sidebar-rail [data-sidebar-entry]")
                 .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-sidebar-entry"))),
             )
-            .toEqual(railPins);
+            .toEqual(railEntries);
           if (!baselineMode) {
             await waitForSavedSidebar(page, view);
           }
@@ -384,10 +388,10 @@ suite.define(() => {
           await reference.evaluate((observer) => observer.stop());
           await reference.dispose();
           expect(settled.navigation.filter((key) => key?.startsWith("session:"))).toHaveLength(
-            view === "pages" ? 12 : 1,
+            view === "pages" ? 11 : 0,
           );
-          expect(settled.sessions).toEqual([]);
-          expect(settled.rail).toEqual(railPins);
+          expect(settled.sessions).toEqual(view === "pages" ? [] : [selectedKey]);
+          expect(settled.rail).toEqual(railEntries);
           expect(settled.view).toBe(view);
           expect(settled.agents).toEqual(view === "pages" ? [] : ["main", "forge", "scout"]);
           expect(settled.agentNames).toEqual(view === "pages" ? [] : ["Harbor", "Forge", "Scout"]);
@@ -395,7 +399,8 @@ suite.define(() => {
           expect(settled.brand).toBe("OpenClaw");
           expect(settled.footer).toBe("Riley");
           expect(settled.online).toEqual([]);
-          expect(settled.selectedBounds).not.toBeNull();
+          // Only Sessions renders the Pinned section that holds the selected pin.
+          expect(settled.selectedBounds !== null).toBe(view === "sessions");
 
           if (baselineMode) {
             await page.reload();
@@ -422,10 +427,10 @@ suite.define(() => {
             const baselineSamples = await baseline.evaluate((observer) => observer.stop());
             await baseline.dispose();
             expect(reloaded.navigation.filter((key) => key?.startsWith("session:"))).toHaveLength(
-              1,
+              0,
             );
             expect(reloaded.sessions).toEqual(settled.sessions);
-            expect(reloaded.rail).toEqual(railPins);
+            expect(reloaded.rail).toEqual(railEntries);
             expect(reloaded.avatarText).toEqual(["⚓", "🔧", "🔭"]);
             await capture(page, sidebar, "sidebar-old-settled.png");
             await writeFile(

@@ -122,7 +122,9 @@ suite.define(() => {
         sessionRow: { ...row("expanded"), boardFace: undefined },
         personalPin: true,
       });
-      const sidebarLink = page.locator(`.sidebar-rail [data-sidebar-entry="session:${key}"] a`);
+      const sidebarLink = page.locator(
+        `[data-session-section="pinned"] [data-session-key="${key}"] a.sidebar-recent-session__link`,
+      );
       await sidebarLink.waitFor();
       expect(await sidebarLink.getAttribute("href")).toContain("/chat/main/");
       await page.keyboard.press("Control+Shift+Alt+G");
@@ -159,6 +161,7 @@ suite.define(() => {
         .click();
       await page.waitForURL((url) => url.pathname === "/sessions");
       await page.locator("openclaw-board-view").waitFor({ state: "hidden" });
+      await page.locator('[data-navigation-view="sessions"]').click();
       await sidebarLink.click();
       await page.waitForURL((url) => url.pathname.includes("/dashboard/main/"));
       await page.locator("openclaw-board-view").waitFor({ state: "visible" });
@@ -176,7 +179,7 @@ suite.define(() => {
             personalPin: true,
           });
           const readerLink = reader.locator(
-            `.sidebar-rail [data-sidebar-entry="session:${key}"] a`,
+            `[data-session-section="pinned"] [data-session-key="${key}"] a.sidebar-recent-session__link`,
           );
           await readerLink.waitFor();
           expect(await readerLink.getAttribute("href")).toContain("/dashboard/main/");

@@ -78,7 +78,7 @@ suite.define(() => {
     },
   );
 
-  it("ignores stable browser sidebar order and pins, then retains a dragged shortcut after reload", async () => {
+  it("ignores stable browser sidebar order and pins, then retains a personal session pin after reload", async () => {
     await suite.withPage({ viewport: { width: 1440, height: 900 } }, async ({ context, page }) => {
       const key = controlUiBundledSettingsStorageKey(suite.server.baseUrl);
       await seedStorage(
@@ -99,17 +99,16 @@ suite.define(() => {
       await source.waitFor();
       expect(await rail.locator(".sidebar-rail__pin").count()).toBe(0);
       const sibling = await context.newPage();
-      const siblingShortcut = sibling
-        .locator(".sidebar-rail")
-        .getByRole("link", { name: "Planning", exact: true });
+      const pinnedRow = (target: typeof page) =>
+        target.locator('[data-session-section="pinned"] [data-session-key="agent:main:planning"]');
       await installMockGateway(sibling, { sessions });
       await sibling.goto(suite.server.baseUrl + "chat");
       await sibling.locator('[data-session-key="agent:main:planning"]').first().waitFor();
       expect(await sibling.locator(".sidebar-rail__pin").count()).toBe(0);
-      await source.dragTo(rail, { targetPosition: { x: 20, y: 80 } });
-      const shortcut = rail.getByRole("link", { name: "Planning", exact: true });
-      await shortcut.waitFor();
-      await siblingShortcut.waitFor();
+      await source.hover();
+      await source.getByRole("button", { name: "Pin session", exact: true }).click();
+      await pinnedRow(page).waitFor();
+      await pinnedRow(sibling).waitFor();
       await expect
         .poll(() =>
           page.evaluate(
@@ -120,10 +119,10 @@ suite.define(() => {
         .toEqual(["session:agent:main:planning"]);
       expect(await gateway.getRequests("users.prefs.set")).toEqual([]);
       await page.reload();
-      await shortcut.waitFor();
-      expect(await rail.locator(".sidebar-rail__pin").count()).toBe(1);
+      await pinnedRow(page).waitFor();
+      expect(await rail.locator(".sidebar-rail__pin").count()).toBe(0);
       await sibling.reload();
-      await siblingShortcut.waitFor();
+      await pinnedRow(sibling).waitFor();
     });
   });
 

@@ -12,6 +12,7 @@ import {
   renderPersonalSessionEmpty,
   renderSessionMutationError,
 } from "./app-sidebar-session-filter-summary.tsx";
+import { sidebarPinnedSessionRows } from "./app-sidebar-session-projection.ts";
 import type {
   RenderableSessionSection,
   SidebarSessionListHost,
@@ -182,6 +183,39 @@ export function renderSessionList(params: {
     </div>,
   );
 }
+/** Personal pins keep their saved order in one section above every list section. */
+function PinnedSessionSection(params: { host: SidebarSessionListHost }) {
+  const section = createMemo((): RenderableSessionSection | undefined => {
+    const host = params.host;
+    const zone = host.reconciledSidebarZone();
+    const sessions = host.sessionDataContext?.sessions;
+    const rows = sidebarPinnedSessionRows(zone, (key) => sessions?.archiveVisibility(key));
+    if (rows.length === 0) {
+      return undefined;
+    }
+    const collapsed = host.collapsedSessionSections.has("pinned");
+    return {
+      id: "pinned",
+      rows,
+      totalRowCount: rows.length,
+      visibleRowCount: collapsed ? 0 : rows.length,
+      visibleLimit: rows.length,
+      collapsedVisibleRowCount: rows.length,
+      renderHeader: true,
+    };
+  });
+  return (
+    <Show when={section()}>
+      {(pinned) => (
+        // The list container owns row insets; chip and roster bodies share this section.
+        <div class="sidebar-recent-sessions sidebar-recent-sessions--pinned">
+          <SessionSection host={params.host} section={pinned()} personHeaders={undefined} />
+        </div>
+      )}
+    </Show>
+  );
+}
+
 export function renderSessionListFrame(host: () => SidebarSessionListHost, body: JSX.Element) {
   const home = createMemo(() =>
     host().sidebarAgentsMode === "roster" ? null : host().mainSessionRow(),
@@ -222,7 +256,8 @@ export function renderSessionListFrame(host: () => SidebarSessionListHost, body:
           {t("sessionsView.moveToTopLevel")}
         </div>
       ) : undefined}
-      {renderSessionMutationError(host())} {body}
+      {renderSessionMutationError(host())} <PinnedSessionSection host={host()} />
+      {body}
     </section>
   );
 }

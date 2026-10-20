@@ -496,7 +496,11 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
   protected visibleSessionRowsInOrder(): SidebarRecentSession[] {
     const rows = this.selectedAgentSessionRows(this.getSessionNavigationState());
     const { visibleRows } = this.zonedVisibleSections(rows);
-    return this.sessionProjection.visibleRowsInOrder(this.reconciledSidebarZone(rows), visibleRows);
+    return this.sessionProjection.visibleRowsInOrder(
+      this.reconciledSidebarZone(rows),
+      visibleRows,
+      this,
+    );
   }
 
   protected visibleSessionTreeInOrder(): SidebarRecentSession[] {

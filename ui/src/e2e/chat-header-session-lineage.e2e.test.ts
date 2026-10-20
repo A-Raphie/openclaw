@@ -116,7 +116,9 @@ suite.define(() => {
       }
 
       await menu.getByText("Pin session", { exact: true }).click();
-      const pin = page.locator(`.sidebar-rail [data-sidebar-entry="session:${sessionKey}"]`);
+      const pin = page.locator(
+        `[data-session-section="pinned"] .sidebar-recent-session[data-session-key="${sessionKey}"]`,
+      );
       expect((await gateway.waitForRequest("users.prefs.set")).params).toEqual({
         entries: { "ui.railShortcuts": [`session:${sessionKey}`] },
         expectedEntries: { "ui.railShortcuts": [] },

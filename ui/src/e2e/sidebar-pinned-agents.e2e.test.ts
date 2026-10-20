@@ -57,7 +57,10 @@ suite.define(() => {
         await waitForControlUiRoute(page, { routeId: "chat" });
         const sidebar = page.locator("openclaw-app-sidebar");
         await sidebar.locator('[data-pinned-agent="main"]').waitFor();
-        await sidebar.getByRole("link", { name: "Legacy notes", exact: true }).waitFor();
+        await sidebar
+          .locator(`[data-session-section="pinned"] [data-session-key="${legacyKey}"]`)
+          .getByText("Legacy notes", { exact: true })
+          .waitFor();
         expect(await sidebar.locator('[data-agent-group="research"]').count()).toBe(1);
 
         await page.goto(`${suite.server.baseUrl}sessions`);

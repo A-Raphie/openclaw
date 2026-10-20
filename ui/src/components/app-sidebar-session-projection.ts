@@ -47,6 +47,8 @@ type SidebarSubtitleValue = ReturnType<typeof resolveSidebarSessionSubtitle>;
 type SidebarProjectionInput = {
   rows: SidebarRecentSession[];
   sections?: SidebarSessionSection<SidebarRecentSession>[];
+  /** Personal pins render in the Pinned section above these sections, never twice. */
+  pinnedKeys?: ReadonlySet<string>;
   grouping: SidebarSessionsGrouping;
   knownGroups: string[] | undefined;
   selfOwnerId?: string | null;
@@ -70,6 +72,31 @@ type SidebarProjectionInput = {
     observerDigests: ReadonlyMap<string, SessionObserverDigest>;
   };
 };
+
+/** Archived pins leave Pinned so the archived view can still list them in place. */
+export function isListedInPinnedSection(
+  row: Pick<SidebarRecentSession, "key" | "archived">,
+  pinnedKeys: ReadonlySet<string>,
+): boolean {
+  return pinnedKeys.has(row.key) && row.archived !== true;
+}
+
+type SidebarPinZone = {
+  entries: readonly SidebarZoneEntry[];
+  sessionRows: ReadonlyMap<string, SidebarRecentSession>;
+};
+
+/** Rendering and selection share archive visibility; saved pins survive restoration. */
+export function sidebarPinnedSessionRows(
+  zone: SidebarPinZone,
+  archiveVisibility?: ApplicationContext["sessions"]["archiveVisibility"],
+): SidebarRecentSession[] {
+  return zone.entries.flatMap((entry) => {
+    const row =
+      entry.type === "session" && !entry.rail ? zone.sessionRows.get(entry.key) : undefined;
+    return row && row.archived !== true && !archiveVisibility?.(row.key) ? [row] : [];
+  });
+}
 
 export type SidebarVisibleSections = {
   sections: (SidebarSessionSection<SidebarRecentSession> & {
@@ -105,6 +132,10 @@ type SidebarPresentationHost = Pick<
     identities: ReadonlyMap<string, ReturnType<ApplicationContext["agentIdentity"]["get"]>>;
   };
   pluginNavigation(): readonly ControlUiRegistration<ControlUiNavigationItem>[];
+  reconciledSidebarZone(): {
+    entries: readonly SidebarZoneEntry[];
+    sessionRows: ReadonlyMap<string, SidebarRecentSession>;
+  };
   getSessionNavigationState(): { toSidebarSession(row: GatewaySessionRow): SidebarRecentSession };
   mainSessionRow(agentId: string): GatewaySessionRow | null;
   projectHomeSession(row: GatewaySessionRow, agentId: string): SidebarRecentSession;
@@ -145,6 +176,13 @@ export class SidebarSessionProjection {
       return true;
     }
     const data = host.sessionData;
+    const zone = host.reconciledSidebarZone();
+    // Rail-only sessions are not list-selection rows, but their descriptors must still repaint.
+    const railRows = zone.entries.flatMap((entry) => {
+      const row =
+        entry.type === "session" && entry.rail ? zone.sessionRows.get(entry.key) : undefined;
+      return row ? [row] : [];
+    });
     const sessionsVisible = host.navigationView === "sessions" && !host.contextualSidebar;
     const chip = host.activeChipAgent();
     const replacement =
@@ -161,6 +199,7 @@ export class SidebarSessionProjection {
     const catalogRowsByKey = catalogSessionRowsByKey(catalogs?.length ? readers.catalogRows() : []);
     const presentation = JSON.stringify([
       host.navigationView,
+      railRows.map(({ children: _children, ...row }) => row),
       host.connected,
       host.sessionDataContext?.gateway.snapshot.hello,
       host.sessionDataContext?.agents.state.agentsList,
@@ -292,17 +331,23 @@ export class SidebarSessionProjection {
   }
 
   visibleRowsInOrder(
-    zone: {
-      entries: readonly SidebarZoneEntry[];
-      sessionRows: ReadonlyMap<string, SidebarRecentSession>;
-    },
+    zone: SidebarPinZone,
     visibleRows: SidebarRecentSession[],
+    host: {
+      readonly collapsedSessionSections: ReadonlySet<string>;
+      readonly sessionDataContext?: {
+        sessions: Pick<ApplicationContext["sessions"], "archiveVisibility">;
+      };
+    },
   ): SidebarRecentSession[] {
-    const pinnedRows = zone.entries.flatMap((entry) => {
-      const row = entry.type === "session" ? zone.sessionRows.get(entry.key) : undefined;
-      return row ? [row] : [];
-    });
-    return [...pinnedRows, ...visibleRows];
+    return host.collapsedSessionSections.has("pinned")
+      ? visibleRows
+      : [
+          ...sidebarPinnedSessionRows(zone, (key) =>
+            host.sessionDataContext?.sessions.archiveVisibility(key),
+          ),
+          ...visibleRows,
+        ];
   }
 
   childSessionParents(rows: SidebarRecentSession[], host: SidebarPresentationHost): Set<string> {
@@ -506,15 +551,21 @@ export class SidebarSessionProjection {
     const hideEmptyGroups =
       input.emptyGroupsMode === "always" ||
       (input.emptyGroupsMode === "filtering" && input.ownerFiltered);
+    const pinnedKeys = input.pinnedKeys ?? new Set<string>();
     const sections =
       input.sections ??
-      groupSidebarSessionRows(input.rows, {
-        grouping,
-        knownGroups,
-        selfOwnerId,
-        sectionOrder,
-        catalogIds,
-      }).filter(
+      groupSidebarSessionRows(
+        pinnedKeys.size > 0
+          ? input.rows.filter((row) => !isListedInPinnedSection(row, pinnedKeys))
+          : input.rows,
+        {
+          grouping,
+          knownGroups,
+          selfOwnerId,
+          sectionOrder,
+          catalogIds,
+        },
+      ).filter(
         (section) =>
           section.id !== "pinned" &&
           // Catalog rows have their own projection; these sections are placeholders.
@@ -531,13 +582,15 @@ export class SidebarSessionProjection {
     // Headerless means no collapse control, so a stored ungrouped-collapsed
     // preference is deliberately inert here; it re-applies once a peer returns.
     // Flat mode ("none") holds every native row, so its "Other" label would
-    // lie; it stays headerless even beside catalog sections.
+    // lie; it stays headerless even beside catalog sections. A Pinned section
+    // above makes "Other" true again and keeps unpinned rows from reading as pins.
     const ungroupedHasPeerHeader =
-      input.grouping !== "none" &&
-      sections.some(
-        (section) =>
-          section.id !== "ungrouped" && (section.id !== "work" || section.rows.length > 0),
-      );
+      pinnedKeys.size > 0 ||
+      (input.grouping !== "none" &&
+        sections.some(
+          (section) =>
+            section.id !== "ungrouped" && (section.id !== "work" || section.rows.length > 0),
+        ));
     const visibleRows: SidebarRecentSession[] = [];
     const limitedSections: SidebarVisibleSections["sections"] = [];
     for (const section of sections) {
