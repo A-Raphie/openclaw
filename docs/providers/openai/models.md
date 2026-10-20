@@ -118,11 +118,12 @@ and is inherited by a fork unless replaced. Changing the selection affects the n
 admitted turn, not an already-running model call.
 
 The OpenClaw runtime sends the program to its official Responses endpoint. Native
-Codex uses its supported turn-scoped access-program parameter and requires ChatGPT
-subscription authentication for explicit programs. Its API-key runtime currently
-ignores that upstream parameter, so OpenClaw rejects the explicit selection with an
-actionable error instead of silently claiming success. Reset Access to the model
-default or use an explicit model parameter for Platform API-key requests.
+Codex uses its supported turn-scoped access-program parameter. This OpenClaw
+integration currently supports explicit native programs only with ChatGPT
+subscription authentication and rejects API-key selections before submission.
+Upstream Codex can forward programs when its separate API-key feature is enabled;
+this integration does not support that mode. Reset Access to the model default or
+use the OpenClaw runtime with an explicit model parameter for Platform API-key requests.
 Native Codex checks its authenticated `model/list` access-program metadata before
 submitting a Daybreak turn. A stale saved selection fails visibly before submission.
 

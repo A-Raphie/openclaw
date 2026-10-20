@@ -196,8 +196,8 @@ export async function prepareCodexAttemptTurnRequest(
       ),
     });
     if (turnStartParams.cyberAccessProgram !== undefined) {
-      // Codex core/cyber_access_program.rs forwards this only for ChatGPT auth.
-      // Reject an ignored selection rather than claiming API-key Daybreak is active.
+      // This integration supports explicit programs only with ChatGPT auth.
+      // Upstream API-key forwarding uses a separate mode we do not support.
       const account = await turnClient.request<CodexGetAccountResponse>(
         "account/read",
         { refreshToken: false },

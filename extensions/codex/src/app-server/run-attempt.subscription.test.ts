@@ -41,7 +41,7 @@ import * as threadOwnership from "./thread-ownership.js";
 setupRunAttemptTestHooks();
 
 describe("Codex attempt subscription recovery", () => {
-  it("rejects an explicit access program when native auth would discard it", async () => {
+  it("rejects an explicit access program with unsupported native API-key auth", async () => {
     const harness = createStartedThreadHarness(async (method) =>
       method === "account/read" ? { account: { type: "apiKey" } } : undefined,
     );
