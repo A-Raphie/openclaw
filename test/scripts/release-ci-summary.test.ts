@@ -2450,7 +2450,7 @@ describe("release CI summary child correlation", () => {
     },
   );
 
-  it("recomputes mixed-attempt evidence for the same release version", async () => {
+  it.each([true, false])("recomputes attempts (recorded version=%s)", async (recordVersion) => {
     const version = "2026.9.1";
 
     const fixture = trustedMainPackageFixture({
@@ -2538,6 +2538,10 @@ describe("release CI summary child correlation", () => {
         sha: fixture.workflowSha,
       },
     });
+    if (!recordVersion) {
+      delete executionPlan.targetVersion;
+      executionPlan.sha256 = releaseExecutionPlanSha256(executionPlan);
+    }
     expect(executionPlan.candidate).toBeNull();
     fixture.childRun.run_attempt = 2;
     fixture.childRun.triggering_actor = { login: "release-operator" };
@@ -2632,6 +2636,11 @@ describe("release CI summary child correlation", () => {
         runAttempt: 2,
       }),
     ]);
+    if (recordVersion) {
+      manifest.validationInputs.targetVersion = "2026.9.2";
+      await expect(validate()).rejects.toThrow("target version differs");
+      manifest.validationInputs.targetVersion = version;
+    }
 
     for (const [expectedRunAttempts, message] of [
       [{ [fixture.runId]: 1, [String(fixture.childRun.id)]: 2 }, "parent run attempt changed"],

@@ -742,7 +742,7 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       return false;
     }
     if (params.reaction.isRemove) {
-      return true; // Ignore reaction removals
+      return true;
     }
     const emojiLabel = normalizeOptionalString(params.reaction.emoji) ?? "emoji";
     const senderName = params.envelope.sourceName ?? params.senderDisplay;
@@ -1224,7 +1224,6 @@ export function createSignalEventHandler(deps: SignalEventHandlerDeps) {
       media: mediaFacts,
       commandAuthorized,
       canDetectMention,
-      requireMention,
       wasMentioned: effectiveWasMentioned,
       replyToBody: visibleQuoteText || undefined,
       replyToSender: visibleQuoteSender,

@@ -996,8 +996,8 @@ function releaseExecutionPlanShape(payload) {
       ...(Object.hasOwn(payload, "qualificationCoverage")
         ? ["qualificationCoverage", "qualificationInputs"]
         : []),
-      "targetVersion",
-      ...(Object.hasOwn(payload, "coveragePolicy") ? ["coveragePolicy"] : []),
+      ...(Object.hasOwn(payload, "targetVersion") ? ["targetVersion"] : []),
+      ...(Object.hasOwn(payload, "coveragePolicy") ? ["targetVersion", "coveragePolicy"] : []),
       ...(Object.hasOwn(payload, "sourceAdmissionContract")
         ? ["sourceAdmissionContract", "sourceAdmission"]
         : []),
@@ -1301,7 +1301,8 @@ function validateCandidatePlanBinding(plan, expectedCandidateRequest) {
     const candidate = validateFullReleaseCandidateBinding(plan.candidate);
     if (
       JSON.stringify(candidate.request) !== JSON.stringify(request) ||
-      plan.targetVersion !== candidate.package.version
+      // Historical strict plans omitted targetVersion; absence grants no waiver.
+      (Object.hasOwn(plan, "targetVersion") && plan.targetVersion !== candidate.package.version)
     ) {
       throw new Error("release candidate binding request differs from the execution plan");
     }

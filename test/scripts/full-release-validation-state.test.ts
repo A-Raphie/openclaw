@@ -273,11 +273,19 @@ describe("full release execution plan", () => {
     expect(affectedActiveRunIds([reused], [{ runId: "101" }])).toEqual([]);
   });
 
-  it("binds empty retry metadata into the execution-plan digest without allowing retries", () => {
+  it.each([false, true])("reads strict retained plans with targetVersion=%s", (includeVersion) => {
     const current = executionPlan(
       { childPhaseVersion: 3, rerunGroup: "ci" },
-      { attemptEvidenceVersion: 3, candidateRequest: canonicalCandidateRequest() },
+      {
+        attemptEvidenceVersion: 3,
+        candidateRequest: canonicalCandidateRequest(),
+        candidate: candidateBinding(),
+      },
     );
+    const recorded = { ...current };
+    if (!includeVersion) {
+      delete recorded.targetVersion;
+    }
     // Empty retired retry metadata is part of the recorded wire shape, not a grant.
     const digestPayload = {
       knownFlakyJobs: [],
@@ -298,22 +306,33 @@ describe("full release execution plan", () => {
           "repository",
           "rerunGroup",
           "targetSha",
-          "targetVersion",
+          ...(includeVersion ? ["targetVersion"] : []),
           "trustedWorkflow",
           "version",
           "workflowRef",
           "workflowSha",
-        ].map((key) => [key, current[key]]),
+        ].map((key) => [key, recorded[key]]),
       ),
     };
     const retained = {
-      ...current,
+      ...recorded,
       knownFlakyJobs: [],
       sha256: createHash("sha256").update(JSON.stringify(digestPayload)).digest("hex"),
     };
-    const before = JSON.stringify(retained);
+    const before = serializeReleaseArtifact(retained);
+    const root = tempDirs.make("frv-retained-plan-");
+    const output = join(root, "plan.json");
+    writeFileSync(output, before);
+    const restored = runCollector("plan", {
+      FULL_RELEASE_EXECUTION_PLAN_PATH: output,
+      FULL_RELEASE_RESTORE_PLAN: "true",
+      FULL_RELEASE_PLAN_INPUTS_JSON: "must-not-be-read",
+      CANDIDATE_REQUEST_JSON: JSON.stringify(current.candidateRequest),
+    });
+    expect(restored.status, restored.stderr).toBe(0);
+    expect(readFileSync(output, "utf8")).toBe(before);
     expect(validateReleaseExecutionPlanArtifact(retained)).toEqual(retained);
-    expect(JSON.stringify(retained)).toBe(before);
+    expect(serializeReleaseArtifact(retained)).toBe(before);
     expect(retained.sha256).not.toBe(current.sha256);
     expect(() =>
       validateReleaseExecutionPlanArtifact({ ...retained, knownFlakyJobs: ["normalCi:test"] }),
@@ -321,6 +340,11 @@ describe("full release execution plan", () => {
     expect(() =>
       validateReleaseExecutionPlanArtifact({ ...retained, knownFlakyJobs: undefined }),
     ).toThrow("knownFlakyJobs must be empty");
+    const wrongVersion = { ...retained, targetVersion: "2026.8.2" };
+    wrongVersion.sha256 = releaseExecutionPlanSha256(wrongVersion);
+    expect(() => validateReleaseExecutionPlanArtifact(wrongVersion)).toThrow(
+      "release candidate binding request differs from the execution plan",
+    );
   });
 
   it("retains B observations and post-upload binding through completed plan sealing", () => {
@@ -2369,17 +2393,21 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
     }
   });
 
-  it.each([
-    { rerunGroup: "ci", childKey: "normalCi", jobName: "test", conclusion: "success" },
-    {
-      rerunGroup: "ci",
-      childKey: "normalCi",
-      jobName: "install-smoke (linux)",
-      conclusion: "failure",
-    },
-  ])(
-    "binds the $rerunGroup manifest to the candidate ($conclusion proof jobs)",
-    ({ rerunGroup, childKey, jobName, conclusion }) => {
+  it.each(
+    [
+      { rerunGroup: "ci", childKey: "normalCi", jobName: "test", conclusion: "success" },
+      {
+        rerunGroup: "ci",
+        childKey: "normalCi",
+        jobName: "install-smoke (linux)",
+        conclusion: "failure",
+      },
+    ].flatMap((entry) =>
+      [true, false].map((recordVersion) => Object.assign({}, entry, { recordVersion })),
+    ),
+  )(
+    "binds the $rerunGroup manifest to the candidate ($conclusion proof jobs, recorded version=$recordVersion)",
+    ({ rerunGroup, childKey, jobName, conclusion, recordVersion }) => {
       const root = tempDirs.make("frv-generated-candidate-manifest-");
       const decisionPath = join(root, "decision.json");
       const drainPath = join(root, "drain.json");
@@ -2390,6 +2418,10 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
         { rerunGroup },
         { attemptEvidenceVersion: 2, candidate, candidateRequest: candidate.request },
       );
+      if (!recordVersion) {
+        delete sealedPlan.targetVersion;
+        sealedPlan.sha256 = releaseExecutionPlanSha256(sealedPlan);
+      }
       const plannedChild = sealedPlan.children.find(
         (entry: Record<string, any>) => entry.key === childKey,
       );
@@ -2431,7 +2463,11 @@ printf '%s\\n' '{"id":101,"event":"workflow_dispatch","path":".github/workflows/
         runAttempt: 1,
       });
       const childEvidence = { [childKey]: { ...attempt, effectiveRunAttempt: 1 } };
-      const manifest = { ...generatedManifest(sealedPlan), childEvidence };
+      const manifest = {
+        ...generatedManifest(sealedPlan),
+        validationInputs: { targetVersion: candidate.package.version },
+        childEvidence,
+      };
       writeFileSync(executionPlanPath, JSON.stringify(sealedPlan));
       writeFileSync(decisionPath, JSON.stringify(decisionArtifact));
       writeFileSync(drainPath, JSON.stringify(drainArtifact));

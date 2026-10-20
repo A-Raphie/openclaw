@@ -2851,6 +2851,7 @@ export async function validateReleaseRunEvidence(
   validateReleaseCoveragePolicyBinding(executionPlan, rootEvidence.manifest.validationInputs);
   if (
     executionPlan &&
+    Object.hasOwn(executionPlan, "targetVersion") &&
     executionPlan.targetVersion !== (rootEvidence.manifest.validationInputs?.targetVersion ?? "")
   ) {
     throw new Error("release manifest target version differs from its immutable plan");

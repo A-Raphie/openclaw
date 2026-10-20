@@ -1489,7 +1489,10 @@ async function validateManifestMode() {
     throw new Error("release manifest publication admission differs from its immutable plan");
   }
   validateReleaseCoveragePolicyBinding(executionPlan, manifest.validationInputs);
-  if ((manifest.validationInputs?.targetVersion ?? "") !== executionPlan.targetVersion) {
+  if (
+    Object.hasOwn(executionPlan, "targetVersion") &&
+    (manifest.validationInputs?.targetVersion ?? "") !== executionPlan.targetVersion
+  ) {
     throw new Error("release manifest target version differs from its immutable plan");
   }
   const expectedChildRunIds = Object.fromEntries(

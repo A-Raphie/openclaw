@@ -83,6 +83,22 @@ function templateFragment(fragment: SqliteMemorySearchFragment): SqliteMemorySea
       };
 }
 
+/** Include deployed explicit-unicode spellings as well as current lazy FTS schemas. */
+export function getSqliteMemorySearchFtsSchemas(): string[] {
+  return (["body-fts", "path-fts"] as const).flatMap((kind) => {
+    const fragment = templateFragment({ kind, tableName: "", tokenizer: "unicode61" });
+    if (fragment.kind === "vector") {
+      return [];
+    }
+    return [
+      buildTextSchema(fragment, ""),
+      buildTextSchema(fragment, ", tokenize='unicode61'"),
+      buildTextSchema(fragment, ', tokenize="unicode61"'),
+      buildTextSchema(fragment, tokenizerClause("trigram")),
+    ];
+  });
+}
+
 /** One generated hash per fragment; dimensions and custom names belong to the owner's receipt. */
 export function getSqliteMemorySearchFragmentFingerprint(
   fragment: SqliteMemorySearchFragment,
@@ -137,12 +153,14 @@ export function matchesSqliteMemorySearchFragment(
     views: catalog.views,
     tables: catalog.tables
       .filter((table) => ownsName(table.name))
-      // eslint-disable-next-line oxc/no-map-spread -- Canonicalizing identifiers must not mutate the supplied catalog.
       .map((table) => {
         const name = rename(table.name);
         return {
-          ...table,
           name,
+          strict: table.strict,
+          withoutRowid: table.withoutRowid,
+          foreignKeys: table.foreignKeys,
+          triggers: table.triggers,
           // Native extension declarations quote only the shadow-table identifier; preserve all other text.
           sql:
             table === parent

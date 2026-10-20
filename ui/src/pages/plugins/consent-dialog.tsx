@@ -73,7 +73,7 @@ type ArtTileProps = {
 };
 
 export function PluginArtTile(props: ArtTileProps): JSX.Element {
-  const slug = createMemo(() => props.slug);
+  const slug = () => props.slug;
   onSettled(() => props.registerIcon?.(slug));
   type ImageState = { source: string | undefined; status: "loading" | "ready" | "failed" };
   const [packageImage, setPackageImage] = createSignal<ImageState>((previous) => {
@@ -92,7 +92,7 @@ export function PluginArtTile(props: ArtTileProps): JSX.Element {
     packageImage().source && packageImage().status !== "failed"
       ? { state: packageImage(), update: setPackageImage, package: true }
       : { state: authorImage(), update: setAuthorImage, package: false };
-  const gradient = createMemo(() => pluginFallbackGradient(slug()));
+  const gradient = () => pluginFallbackGradient(slug());
   const monogram = createMemo(() => pluginMonogram(props.name));
   const source = () =>
     currentImage().state.status === "failed" ? undefined : currentImage().state.source;
@@ -157,7 +157,7 @@ function renderPluginMetaRow(label: string, value: JSX.Element | string, warning
   return (
     <SettingsRow
       title={label}
-      control={<span class={warning ? "plugins-consent__row--warning" : ""}> {value}</span>}
+      control={<span class={{ "plugins-consent__row--warning": warning }}> {value}</span>}
       stackedOnNarrow
       carapace
     />
