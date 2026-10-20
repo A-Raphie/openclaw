@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
+import {
+  prepareOperatorModelPolicy,
+  restoreOperatorModelPolicySnapshot,
+} from "../../agents/operator-model-policy.js";
 import * as questionStorage from "../../config/sessions/session-questions.js";
 import * as questionChannel from "../../infra/question-channel-runtime.js";
 import * as workerAdmission from "../../infra/sqlite-worker-operation-admission.js";
@@ -19,6 +24,61 @@ const answers = { answers: { destination: ["Library"] } };
 const sessionScope = { agentId: "main", sessionKey: requestParams.sessionKey };
 
 describe("durable RPC mutation admission", () => {
+  it("retains the original channel model ceiling in worker-owned question custody", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      const f = await createOwnRunFixture(true);
+      const originalModels = prepareOperatorModelPolicy({
+        cfg: f.cfg,
+        policy: { allow: ["fixture/original"] },
+        manifestPlugins: [],
+      });
+      const currentModels = prepareOperatorModelPolicy({
+        cfg: f.cfg,
+        policy: { allow: ["fixture/*"] },
+        manifestPlugins: [],
+      });
+      const authority = createAdmittedRunOperatorAuthority({
+        ...f.source.authority,
+        recoverySnapshot: undefined,
+        channelRecoverySource: {
+          reference: { version: 1, id: "11111111-1111-4111-8111-111111111111" },
+          modelPolicy: originalModels,
+        },
+        modelPolicy: currentModels,
+      });
+      const runtime = {
+        ...f.runtime,
+        internal: { ...f.runtime.internal, operatorRunAuthority: authority },
+      };
+      const id = "channel-model-ceiling";
+      try {
+        const response = await f.call(
+          "question.request",
+          { ...requestParams, id, timeoutMs: 900_000, durable: true },
+          runtime,
+        );
+        expect(response[0], JSON.stringify(response[2])).toBe(true);
+        expect(response[1]).toMatchObject({ durable: true });
+        const saved = await questionStorage.executeSessionQuestionOperation(
+          { ...sessionScope, assertCurrent() {} },
+          { kind: "get", id },
+        );
+        if (!saved || Array.isArray(saved) || !saved.provenance.channelRecoverySource) {
+          throw new Error("Expected committed channel question custody");
+        }
+        const modelPolicy = saved.provenance.channelRecoverySource.modelPolicy;
+        if (!modelPolicy) {
+          throw new Error("Expected the original channel model policy");
+        }
+        const restored = restoreOperatorModelPolicySnapshot(modelPolicy);
+        expect(restored?.allows({ provider: "fixture", model: "original" })).toBe(true);
+        expect(restored?.allows({ provider: "fixture", model: "broadened" })).toBe(false);
+      } finally {
+        await f.close();
+      }
+    });
+  });
+
   it("refuses durable registration in a foreign principal's conversation without effects", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       const foreign = ensureProfileForEmail("foreign-durable@example.test");

@@ -30,7 +30,11 @@ function question(): DurableQuestion {
     provenance: {
       issuer: "channel",
       sourceRunId: "source",
-      channelAuthorizationReference: { version: 1, id: "linked" },
+      channelRecoverySource: {
+        reference: { version: 1, id: "11111111-1111-4111-8111-111111111111" },
+        profileId: "original-principal",
+        scopes: ["operator.sessions.write"],
+      },
     },
     continuation: { status: "pending" },
   };

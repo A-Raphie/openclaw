@@ -1,6 +1,7 @@
-import { createMemo, createSignal, For, Show, untrack } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type { SessionMoveTarget } from "../../../packages/gateway-protocol/src/index.js";
 import { registerNewSessionSetupEnglish } from "../i18n/locales/en-new-session-setup.ts";
+import { registerSessionOrganizationEnglish } from "../i18n/locales/en-session-organization.ts";
 import { formatUiError } from "../lib/format-error.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import {
@@ -15,6 +16,8 @@ import "../styles/new-session.css";
 import { withPromiseModalHost } from "./promise-modal-host.ts";
 import { compareCloudProfiles } from "./provider-icon-data.ts";
 import { Icon } from "./solid/icon.tsx";
+
+registerSessionOrganizationEnglish();
 
 registerNewSessionSetupEnglish();
 
@@ -53,18 +56,14 @@ export function showSessionPlacementTargetDialog(
     return Promise.resolve(null);
   }
   active = true;
-  return withPromiseModalHost<SessionMoveTarget | null>(undefined, (modal) => {
-    const finish = (result: SessionMoveTarget | null) => {
-      modal.finish(result);
-      active = false;
-    };
+  return withPromiseModalHost<SessionMoveTarget | null>(undefined, ({ finish, render }) => {
     function Dialog() {
       const loaded = createMemo<Catalog | string | null>(
         () =>
           options
             .loadCatalog()
             .catch((error: unknown) =>
-              untrack(() => formatUiError(error, t("sessionsView.moveSessionCatalogFailed"))),
+              formatUiError(error, t("sessionsView.moveSessionCatalogFailed")),
             ),
         { loadingValue: null },
       );
@@ -256,18 +255,20 @@ export function showSessionPlacementTargetDialog(
                 </For>
               </div>
             )}
-            <div class="exec-approval-actions">
+            <openclaw-modal-actions class="exec-approval-actions">
               <button type="submit" class="btn primary" disabled={!selectable()}>
                 {t(`sessionsView.${options.mode}SessionAction`)}
               </button>
               <button type="button" class="btn" onClick={() => finish(null)}>
                 {t("common.cancel")}
               </button>
-            </div>
+            </openclaw-modal-actions>
           </form>
         </openclaw-modal-dialog>
       );
     }
-    modal.render(() => <Dialog />);
+    render(() => <Dialog />);
+  }).finally(() => {
+    active = false;
   });
 }
