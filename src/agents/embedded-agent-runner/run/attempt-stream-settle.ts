@@ -407,6 +407,26 @@ export async function prepareEmbeddedAttemptTransport(input: {
     attempt.admittedRunContext,
     input.abortSignal,
   );
+  const runtime = attempt.preparedModelRuntime;
+  const profileId = attempt.authProfileId;
+  const credential = profileId ? attempt.authProfileStore?.profiles[profileId] : undefined;
+  const selectedCredential =
+    runtime &&
+    resolveSelectedModelCredential({
+      provider: attempt.model.provider,
+      profileId,
+      mode: credential?.type ?? attempt.runtimePlan?.auth.selectedAuthMode,
+    });
+  // Observation initializes the account entry; capture Access authority only after it exists.
+  const recordServiceTier =
+    runtime?.accountCatalog &&
+    selectedCredential &&
+    selectedCredential.source !== "harness" &&
+    selectedCredential.requirement === "api-key" &&
+    attempt.model.provider === "openai" &&
+    attempt.model.api === "openai-responses"
+      ? runtime.accountCatalog.prepareServiceTierObserver({ selectedCredential, credential })
+      : undefined;
   const assertAccessCurrent = await prepareEmbeddedAccessProgramGuard(attempt);
   const assertRunCurrent = () => {
     assertAdmittedCurrent?.();
@@ -673,33 +693,12 @@ export async function prepareEmbeddedAttemptTransport(input: {
         : messages,
     );
   }
-  const runtime = attempt.preparedModelRuntime;
-  const profileId = attempt.authProfileId;
-  const credential = profileId ? attempt.authProfileStore?.profiles[profileId] : undefined;
-  const selectedCredential =
-    runtime &&
-    resolveSelectedModelCredential({
-      provider: attempt.model.provider,
-      profileId,
-      mode: credential?.type ?? attempt.runtimePlan?.auth.selectedAuthMode,
-    });
-  if (
-    runtime?.accountCatalog &&
-    selectedCredential &&
-    selectedCredential.source !== "harness" &&
-    selectedCredential.requirement === "api-key" &&
-    attempt.model.provider === "openai" &&
-    attempt.model.api === "openai-responses"
-  ) {
-    const record = runtime.accountCatalog.prepareServiceTierObserver({
-      selectedCredential,
-      credential,
-    });
+  if (recordServiceTier && selectedCredential && selectedCredential.source !== "harness") {
     session.agent.streamFn = createOpenAIServiceTierObservationWrapper(
       session.agent.streamFn,
       (model, observation) =>
         !input.abortSignal.aborted &&
-        record({
+        recordServiceTier({
           modelId: model.id,
           runtimeId: "openclaw",
           api: model.api,

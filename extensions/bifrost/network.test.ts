@@ -160,6 +160,42 @@ describe("Bifrost setup over HTTP", () => {
     expect(config.models?.providers?.bifrost?.auth).not.toBe("none");
   });
 
+  it("uses the non-interactive profile key and URL for model discovery", async () => {
+    const provider = requireRegisteredProvider(
+      capturePluginRegistration(plugin).providers,
+      "bifrost",
+    );
+    const resolveApiKey = vi.fn(async () => ({
+      key: "synthetic-bifrost-key",
+      source: "profile" as const,
+    }));
+    const result = await provider.auth[0]?.runNonInteractive?.({
+      authChoice: "bifrost-api-key",
+      config: {},
+      baseConfig: {},
+      opts: { customBaseUrl: baseUrl },
+      runtime: createRuntimeSpies(),
+      resolveApiKey,
+      toApiKeyCredential: () => ({
+        type: "api_key",
+        provider: "bifrost",
+        key: "synthetic-bifrost-key",
+      }),
+    });
+    expect(resolveApiKey).toHaveBeenCalledWith(
+      expect.objectContaining({
+        flagName: "--bifrost-api-key",
+        envVar: "BIFROST_VIRTUAL_KEY",
+      }),
+    );
+    expect(requests.map(({ path }) => path)).toEqual(["/v1/models"]);
+    expect(requests[0]?.headers.authorization).toBe("Bearer synthetic-bifrost-key");
+    expect(result?.models?.providers?.bifrost).toMatchObject({
+      baseUrl,
+      models: [expect.objectContaining({ id: MODEL_ID })],
+    });
+  });
+
   it("selects the discovered nested model ID with its reported context", async () => {
     const { result, config, prompter } = await configure();
     expect(requests.map(({ path }) => path)).toEqual(["/v1/models"]);

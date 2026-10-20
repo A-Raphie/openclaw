@@ -84,9 +84,9 @@ async function probeRuntimeAuthLiterals(params: {
   optionKey: string;
   agentDir: string;
 }): Promise<ProviderResolveNonInteractiveApiKeyParams | undefined> {
-  // Only the expected key gets the sentinel; preflight options get distinct placeholders.
+  // Keep URL preflight valid; only the expected key gets the sentinel.
   const opts = new Proxy<Record<string, unknown>>(
-    { [params.optionKey]: SENTINEL_API_KEY },
+    { customBaseUrl: "https://gateway.example.test/v1", [params.optionKey]: SENTINEL_API_KEY },
     {
       get: (target, key) =>
         typeof key === "string" ? (target[key] ?? `parity-extra-${key}`) : undefined,

@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { configureAiTransportHost, getAiTransportHost } from "@openclaw/ai";
 import { isAnthropicOAuthApiKey } from "@openclaw/ai/internal/anthropic";
+import { createOpenAIResponsesTransportStreamFn } from "@openclaw/ai/transports";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -33,7 +34,6 @@ import {
   type WrapProviderStreamFnParams,
 } from "../extra-params.test-support.js";
 import { createModelGenerationFixture } from "../model.generation-scope.test-support.js";
-import { prepareEmbeddedAccessProgramGuard } from "./access-program.js";
 import { prepareEmbeddedAttemptTransport } from "./attempt-stream-settle.js";
 
 const registerProviderStreamForModel = vi.hoisted(() => vi.fn());
@@ -177,19 +177,23 @@ describe("prepareEmbeddedAttemptTransport", () => {
     registerProviderStreamForModel.mockReset();
   });
 
-  it.each(["private", "shared"])(
-    "accepts current %s account evidence without reviving an empty private publication",
-    async (source) => {
-      const { input } = createTransportFixture();
+  it.each(
+    (["private", "shared"] as const).flatMap((source) =>
+      (["daybreak_blue", "daybreak_red"] as const).map((program) => ({ source, program })),
+    ),
+  )(
+    "sends $program from a $source API-key catalog and rejects revoked grants",
+    async ({ source, program }) => {
+      const { input, session } = createTransportFixture({ apiKey: "synthetic-key" });
       const route = {
         provider: "openai",
         modelId: "synthetic-model",
-        api: "openai-chatgpt-responses",
-        baseUrl: "https://chatgpt.com/backend-api",
-        authRequirement: "subscription",
+        api: "openai-responses",
+        baseUrl: "https://api.openai.com/v1",
+        authRequirement: "api-key",
         requestTransportOverrides: "none",
       } as const;
-      const credential = { type: "token", provider: "openai", token: "synthetic-token" } as const;
+      const credential = { type: "api_key", provider: "openai", key: "synthetic-key" } as const;
       const accountCatalog = createPreparedAccountCatalogAccess(() => true);
       const outcome = {
         provider: "openai",
@@ -199,7 +203,7 @@ describe("prepareEmbeddedAttemptTransport", () => {
           {
             runtimeId: "openclaw",
             ...route,
-            cyber: ["daybreak_blue"] as const,
+            cyber: [program],
           },
         ],
       };
@@ -229,7 +233,8 @@ describe("prepareEmbeddedAttemptTransport", () => {
       Object.assign(input.attempt, {
         provider: "openai",
         modelId: "synthetic-model",
-        cyberAccessProgram: "daybreak_blue",
+        cyberAccessProgram: program,
+        model: { ...anthropicModel, ...route, id: route.modelId },
         authProfileId: "openai:a",
         authProfileStore: { version: 1, profiles: { "openai:a": credential } },
         preparedModelRuntime: {
@@ -239,36 +244,69 @@ describe("prepareEmbeddedAttemptTransport", () => {
         },
       });
       input.attempt.runtimePlan!.auth.modelRoute = route;
-      const guard = await prepareEmbeddedAccessProgramGuard(input.attempt);
-      expect(guard).toBeTypeOf("function");
-      expect(() => guard?.()).not.toThrow();
-      if (source === "shared") {
-        setPreparedModelFullCatalogAuth(snapshot, {
-          authModes: {},
-          providerAuthLabels: new Map(),
-          authStore: {
-            version: 1,
-            profiles: { "openai:a": { ...credential, token: "other-account" } },
-          },
-        });
-        expect(() => guard?.()).toThrow("not advertised");
-        setPreparedModelFullCatalogAuth(snapshot, {
-          authModes: {},
-          providerAuthLabels: new Map(),
-          authStore: { version: 1, profiles: { "openai:a": credential } },
-        });
-      }
-      await accountCatalog.acquire({
-        profileId: "openai:a",
-        credential,
-        allowDiscovery: true,
-        refresh: true,
-        load: async () => [],
+      const previousHost = getAiTransportHost();
+      const requests: Array<{ headers: Headers; payload: Record<string, unknown> }> = [];
+      configureAiTransportHost({
+        ...previousHost,
+        buildModelFetch: () => async (url, init) => {
+          const request = new Request(url, init);
+          requests.push({ headers: request.headers, payload: await request.json() });
+          const completed = {
+            type: "response.completed",
+            response: { id: "resp-cold", status: "completed", output: [] },
+          };
+          return new Response(`data: ${JSON.stringify(completed)}\n\n`, {
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
       });
-      expect(() => guard?.()).toThrow("not advertised");
-      await expect(prepareEmbeddedAccessProgramGuard(input.attempt)).rejects.toThrow(
-        "not advertised",
-      );
+      const { buildOpenAIProvider } = await import("../../../../extensions/openai/api.js");
+      const provider = buildOpenAIProvider();
+      extraParamsTesting.setProviderRuntimeDepsForTest({
+        wrapProviderStreamFn: ({ context }) => provider.wrapStreamFn?.(context),
+      });
+      registerProviderStreamForModel.mockReturnValue(createOpenAIResponsesTransportStreamFn());
+      const send = async () => session.agent.streamFn(input.attempt.model, { messages: [] }, {});
+      try {
+        await prepareEmbeddedAttemptTransport(input);
+        const result = await (await send()).result();
+        expect(result.errorMessage).toBeUndefined();
+        expect(result.stopReason).toBe("stop");
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.headers.get("authorization")).toBe("Bearer synthetic-key");
+        expect(requests[0]?.payload).toMatchObject({
+          model: "synthetic-model",
+          access_programs: { cyber: program },
+        });
+        if (source === "shared") {
+          setPreparedModelFullCatalogAuth(snapshot, {
+            authModes: {},
+            providerAuthLabels: new Map(),
+            authStore: {
+              version: 1,
+              profiles: { "openai:a": { ...credential, key: "other-account" } },
+            },
+          });
+          await expect(send()).rejects.toThrow("not advertised");
+          setPreparedModelFullCatalogAuth(snapshot, {
+            authModes: {},
+            providerAuthLabels: new Map(),
+            authStore: { version: 1, profiles: { "openai:a": credential } },
+          });
+        }
+        await accountCatalog.acquire({
+          profileId: "openai:a",
+          credential,
+          allowDiscovery: true,
+          refresh: true,
+          load: async () => [],
+        });
+        await expect(send()).rejects.toThrow("not advertised");
+        await expect(prepareEmbeddedAttemptTransport(input)).rejects.toThrow("not advertised");
+        expect(requests).toHaveLength(1);
+      } finally {
+        configureAiTransportHost(previousHost);
+      }
     },
   );
 
