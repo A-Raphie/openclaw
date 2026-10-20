@@ -40,7 +40,10 @@ import {
   hydrateConfiguredExternalCliAuth,
   publishConfiguredModelRuntimeSnapshots,
 } from "./server-startup-model-runtime.js";
-import { runGatewayStartupObservers } from "./server-startup-observers.js";
+import {
+  runGatewayStartupObservers,
+  startGatewayMainSessionRecovery,
+} from "./server-startup-observers.js";
 import {
   createGatewayStartupOutcomeRecorder,
   formatGatewayStartupOutcomes,
@@ -64,9 +67,6 @@ import type { ReadinessChecker } from "./server/readiness.js";
 import { beginMacOSSystemCaWarmupOnce } from "./system-ca-warmup.js";
 type Awaitable<T> = T | Promise<T>;
 
-const loadMainSessionRestartRecoveryModule = createLazyRuntimeModule(
-  () => import("../agents/main-session-recovery/main-session-restart-recovery.js"),
-);
 const loadAgentDefaultsModule = createLazyRuntimeModule(() => import("../agents/defaults.js"));
 
 const loadAgentModelSelectionModule = createLazyRuntimeModule(
@@ -751,36 +751,16 @@ export async function startGatewayPostAttachRuntime(params: {
                 loaderStatsBefore.sourceTransformFallbacks,
             ],
           ]);
-          if (!candidateCanary && params.isClosing?.() !== true) {
-            try {
-              await params.recoverDurableQuestionInteractions?.();
-            } catch (error) {
-              params.log.warn(`durable question restart recovery failed: ${String(error)}`);
-            }
-          }
-          let mainSessionRecoverySidecar: GatewayPostReadySidecarHandle | undefined;
-          await startupLog;
-          if (params.isClosing?.()) {
-            return pluginRegistry;
-          }
-          try {
-            const { scheduleRestartAbortedMainSessionRecovery } =
-              await loadMainSessionRestartRecoveryModule();
-            if (params.isClosing?.() !== true) {
-              mainSessionRecoverySidecar = scheduleRestartAbortedMainSessionRecovery({
-                delayMs: 0,
-                getConfig: params.getConfig,
-                shouldContinue: () => params.isClosing?.() !== true,
-                startupCheckedStorePaths: params.mainSessionRecoveryStartupCheckedStorePaths,
-                // Requester continuations need the restored cohort's Gateway binding
-                // and operator authority before their first recovery attempt.
-                waitForStart: () => subagentRecoverySettled.promise,
-                gatewayRuntime: params.recoveryRuntime,
-              });
-            }
-          } catch (err) {
-            params.log.warn(`main-session restart recovery failed to schedule: ${String(err)}`);
-          }
+          const mainSessionRecoverySidecar = await startGatewayMainSessionRecovery({
+            recoverDurableQuestionInteractions: params.recoverDurableQuestionInteractions,
+            startupLog,
+            isClosing: params.isClosing,
+            getConfig: params.getConfig,
+            startupCheckedStorePaths: params.mainSessionRecoveryStartupCheckedStorePaths,
+            waitForStart: () => subagentRecoverySettled.promise,
+            gatewayRuntime: params.recoveryRuntime,
+            log: params.log,
+          });
           if (params.isClosing?.()) {
             if (mainSessionRecoverySidecar) {
               params.onGatewayLifetimeSidecars(mainSessionRecoverySidecar);
