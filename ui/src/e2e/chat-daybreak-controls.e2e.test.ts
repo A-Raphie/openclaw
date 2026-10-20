@@ -1,6 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { expect, it } from "vitest";
+import type { CyberAccessProgram } from "../api/types.ts";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 import { takeControlUiScreenshotFrame } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import { installMockGateway, startControlUiE2eServer } from "../test-helpers/control-ui-e2e.ts";
@@ -10,30 +11,40 @@ const suite = createControlUiE2eSuite({
   name: "Daybreak chat controls",
   startServer: () => startControlUiE2eServer(),
 });
+
+// Synthetic account-scoped catalog responses, not evidence of production entitlement.
+const scenarios: { name: string; programs?: CyberAccessProgram[]; mobile?: boolean }[] = [
+  { name: "unknown" },
+  { name: "no-access", programs: [] },
+  { name: "blue-only", programs: ["standard", "daybreak_blue"] },
+  { name: "both", programs: ["standard", "daybreak_blue", "daybreak_red"] },
+  { name: "both-mobile", programs: ["standard", "daybreak_blue", "daybreak_red"], mobile: true },
+];
+
 suite.define(() => {
-  it.each([
-    { reported: undefined, width: 1440, height: 900 },
-    { reported: "standard", width: 1440, height: 900 },
-    { reported: undefined, width: 390, height: 844 },
-  ] as const)(
-    "keeps requested access separate from provider-reported $reported at $width",
-    async ({ reported, width, height }) => {
+  it.each(scenarios)(
+    "renders only account-entitled access: $name",
+    async ({ name, programs, mobile }) => {
+      const dir = createControlUiE2eArtifactDir("daybreak-" + name);
       await suite.withPage(
-        { viewport: { width, height }, colorScheme: "dark" },
+        {
+          viewport: mobile ? { width: 390, height: 844 } : { width: 1440, height: 900 },
+          colorScheme: "dark",
+        },
         async ({ page }) => {
+          const model = {
+            id: "gpt-6.1-sol",
+            name: "GPT-6.1 Sol",
+            provider: "openai",
+            reasoning: true,
+            available: true,
+            supportsFastMode: true,
+            serviceTiers: ["priority", "ultrafast"],
+            ...(programs ? { availableAccessPrograms: { cyber: programs } } : {}),
+          };
           const gateway = await installMockGateway(page, {
             agentModel: "openai/gpt-6.1-sol",
-            models: [
-              {
-                id: "gpt-6.1-sol",
-                name: "GPT-6.1 Sol",
-                provider: "openai",
-                reasoning: true,
-                available: true,
-                supportsFastMode: true,
-                serviceTiers: ["priority", "ultrafast"],
-              },
-            ],
+            models: [model],
             sessions: [
               {
                 key: "agent:main:main",
@@ -58,7 +69,7 @@ suite.define(() => {
                 role: "assistant",
                 model: "gpt-6.1-sol",
                 provider: "openai",
-                responseAccessProgram: reported,
+                responseAccessProgram: "daybreak_red",
                 content: [
                   {
                     type: "text",
@@ -80,56 +91,70 @@ suite.define(() => {
           await expect
             .poll(() => menu.evaluate((element) => element.scrollHeight <= element.clientHeight))
             .toBe(true);
-          await expect
-            .poll(() => picker.locator("[data-chat-speed-option=ultrafast]").count())
-            .toBe(1);
-          const access = picker.locator("[data-chat-access-program]");
-          const blue = access.locator('[data-chat-access-option="daybreak_blue"]');
-          const standard = access.locator('[data-chat-access-option="standard"]');
-          const red = access.locator('[data-chat-access-option="daybreak_red"]');
-          const reset = picker.locator("[data-chat-access-reset]");
-          await expect.poll(() => access.locator('[aria-checked="true"]').count()).toBe(0);
-          await expect.poll(() => red.isDisabled()).toBe(false);
-          await expect
-            .poll(() => picker.locator("[data-chat-access-reported]").textContent())
-            .toContain(reported ? "Last response: Standard" : "Not reported · unverified");
-          await blue.click();
-          await expect
-            .poll(async () =>
-              (await gateway.getRequests("sessions.patch")).some(
-                (request) =>
-                  asOptionalRecord(request.params)?.cyberAccessProgram === "daybreak_blue",
-              ),
-            )
-            .toBe(true);
-          await expect.poll(() => blue.getAttribute("aria-checked")).toBe("true");
-          await expect
-            .poll(() => picker.locator("[data-chat-access-reported]").textContent())
-            .toContain(reported ? "Last response: Standard" : "Not reported · unverified");
-          if (!reported) {
-            if (!(await menu.isVisible())) {
-              await picker.locator("summary").click();
-            }
-            const frame = await takeControlUiScreenshotFrame(
-              page,
-              menu,
-              [access, picker.locator("[data-chat-access-reported]")],
-              { animations: "disabled" },
-            );
-            const dir = createControlUiE2eArtifactDir("daybreak-after-" + width);
-            await writeFile(dir + "/after.png", frame.png);
+          expect(await menu.textContent()).toContain("Ultra");
+          const select = picker.locator("[data-chat-access-program]");
+          const entitled = programs?.some((program) => program !== "standard") === true;
+          await expect.poll(() => select.count()).toBe(entitled ? 1 : 0);
+          await expect.poll(() => menu.locator("p, [data-chat-access-reported]").count()).toBe(0);
+          let options: string[] = [];
+          if (entitled) {
+            options = await select
+              .locator("option")
+              .evaluateAll((elements) =>
+                elements.map((element) => element.getAttribute("value") ?? ""),
+              );
+            expect(options).toEqual(["", ...(programs ?? [])]);
+            expect(await select.locator("option:disabled").count()).toBe(0);
+            expect(await menu.locator(".chat-controls__effort-heading").allTextContents()).toEqual([
+              "Access",
+              "Effort",
+              "Speed",
+            ]);
+            const requested = programs?.includes("daybreak_red") ? "daybreak_red" : "daybreak_blue";
+            await select.selectOption(requested);
+            await expect
+              .poll(async () =>
+                (await gateway.getRequests("sessions.patch")).some(
+                  (request) => asOptionalRecord(request.params)?.cyberAccessProgram === requested,
+                ),
+              )
+              .toBe(true);
+            await expect.poll(() => select.inputValue()).toBe(requested);
+          } else {
+            expect(await menu.locator(".chat-controls__effort-heading").allTextContents()).toEqual([
+              "Effort",
+              "Speed",
+            ]);
           }
-          await standard.click();
-          await expect.poll(() => standard.getAttribute("aria-checked")).toBe("true");
-          await reset.click();
-          await expect
-            .poll(
-              async () =>
-                asOptionalRecord((await gateway.getRequests("sessions.patch")).at(-1)?.params)
-                  ?.cyberAccessProgram,
-            )
-            .toBeNull();
-          await expect.poll(() => access.locator('[aria-checked="true"]').count()).toBe(0);
+          const frame = await takeControlUiScreenshotFrame(page, menu, [], {
+            animations: "disabled",
+          });
+          await writeFile(dir + "/after.png", frame.png);
+          await writeFile(
+            dir + "/proof.json",
+            JSON.stringify(
+              {
+                scenario: name,
+                capabilitySource: "synthetic account/model/runtime-scoped Gateway catalog fixture",
+                productionEntitlementVerified: false,
+                programs: programs ?? null,
+                renderedOptions: options,
+              },
+              null,
+              2,
+            ),
+          );
+          if (entitled) {
+            await select.selectOption("");
+            await expect
+              .poll(
+                async () =>
+                  asOptionalRecord((await gateway.getRequests("sessions.patch")).at(-1)?.params)
+                    ?.cyberAccessProgram,
+              )
+              .toBeNull();
+            await expect.poll(() => select.inputValue()).toBe("");
+          }
         },
       );
     },

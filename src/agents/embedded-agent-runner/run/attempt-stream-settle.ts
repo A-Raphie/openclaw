@@ -51,6 +51,7 @@ import {
 } from "../stream-resolution.js";
 import type { ProviderThinkLevel } from "../utils.js";
 import { joinWithRunLivenessDeadline, RUN_LIVENESS_JOIN_TIMEOUT_MS } from "./abortable.js";
+import { prepareEmbeddedAccessProgramGuard } from "./access-program.js";
 import {
   shouldWaitForCompletionRequiredAsyncTasks,
   waitForCompletionRequiredAsyncTasks,
@@ -406,12 +407,12 @@ export async function prepareEmbeddedAttemptTransport(input: {
     attempt.admittedRunContext,
     input.abortSignal,
   );
-  const assertRunCurrent = input.assertCronRootCurrent
-    ? () => {
-        assertAdmittedCurrent?.();
-        input.assertCronRootCurrent?.();
-      }
-    : assertAdmittedCurrent;
+  const assertAccessCurrent = await prepareEmbeddedAccessProgramGuard(attempt);
+  const assertRunCurrent = () => {
+    assertAdmittedCurrent?.();
+    input.assertCronRootCurrent?.();
+    assertAccessCurrent?.();
+  };
   // Rebuild each turn from the session's original stream base so prior-turn
   // wrappers do not pin us to stale provider/API transport behavior.
   const defaultSessionStreamFn = resolveEmbeddedAgentBaseStreamFn({

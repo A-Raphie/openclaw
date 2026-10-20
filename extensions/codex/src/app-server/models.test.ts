@@ -142,6 +142,24 @@ describe("listCodexAppServerModels", () => {
     startSpy.mockRestore();
   });
 
+  it("preserves explicit account access programs without guessing missing metadata", () => {
+    const result = readModelListResult({
+      data: [
+        {
+          ...validModelListEntry,
+          availableAccessPrograms: { cyber: ["standard", "daybreakBlue"] },
+        },
+        { ...validModelListEntry, availableAccessPrograms: { cyber: [] } },
+        { ...validModelListEntry, availableAccessPrograms: null },
+      ],
+    });
+    expect(result.models.map((model) => Reflect.get(model, "availableAccessPrograms"))).toEqual([
+      { cyber: ["standard", "daybreak_blue"] },
+      { cyber: [] },
+      undefined,
+    ]);
+  });
+
   it("defaults omitted model modalities at model admission", () => {
     const result = readModelListResult({ data: [validModelListEntry] });
 

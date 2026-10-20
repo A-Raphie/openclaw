@@ -9,6 +9,7 @@ import { DEFAULT_PROVIDER } from "../../agents/defaults.js";
 import { resolveFastModeState } from "../../agents/fast-mode.js";
 import { resolveAgentHarnessPolicy } from "../../agents/harness/policy.js";
 import type { ModelAuthAvailabilityEvaluation } from "../../agents/model-auth-availability.js";
+import { resolveModelCatalogAccessPrograms } from "../../agents/model-catalog-access-programs.js";
 import {
   createModelCatalogDecisions,
   prepareModelCatalogDecisions,
@@ -438,6 +439,16 @@ async function prepareOwnedModelsListResult({
         modelServiceTiers: speedPolicy.serviceTiers,
         isCurrent: projectionIsCurrent,
       });
+      const accessPrograms =
+        view === "provider-config"
+          ? undefined
+          : resolveModelCatalogAccessPrograms({
+              snapshot: projectionSnapshot,
+              entry,
+              evaluation,
+              runtimeId: preparedEntry.agentRuntime?.id ?? "openclaw",
+              isCurrent: projectionIsCurrent,
+            });
       const credential = evaluation.selectedCredential;
       const route = evaluation.selectedRoute;
       const serviceTierObservation =
@@ -462,6 +473,9 @@ async function prepareOwnedModelsListResult({
           ? { supportsServiceTierRecovery: true }
           : {}),
         ...(serviceTiers === undefined ? {} : { serviceTiers }),
+        ...(accessPrograms === undefined
+          ? {}
+          : { availableAccessPrograms: { cyber: accessPrograms } }),
         ...(serviceTierObservation ? { serviceTierObservation } : {}),
         ...(projectedAvailability === undefined ? {} : { available: projectedAvailability }),
         ...(projectedAvailability === false && evaluation.unavailableReason

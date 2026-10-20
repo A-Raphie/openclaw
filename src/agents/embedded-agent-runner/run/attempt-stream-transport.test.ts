@@ -19,9 +19,11 @@ import { bindStreamLlmRuntime } from "../../../llm/model-runtime-binding.js";
 import { createCodexNativeWebSearchWrapper } from "../../../llm/providers/stream-wrappers/openai.js";
 import { createAssistantMessageEventStream } from "../../../llm/utils/event-stream.js";
 import { attachRuntimePromptMediaFacts } from "../../../media/media-facts.js";
-import "../../ai-transport-runtime-host.js";
 import { createOperationalRunInstanceRef } from "../../admitted-run-context.js";
+import { setPreparedModelFullCatalogAuth } from "../../prepared-model-runtime-auth.js";
+import { createPreparedAccountCatalogAccess } from "../../prepared-model-runtime.catalog-auth.js";
 import type { StreamFn } from "../../runtime/index.js";
+import "../../ai-transport-runtime-host.js";
 import {
   castAgentMessage,
   makeAgentAssistantMessage,
@@ -30,6 +32,8 @@ import {
   testing as extraParamsTesting,
   type WrapProviderStreamFnParams,
 } from "../extra-params.test-support.js";
+import { createModelGenerationFixture } from "../model.generation-scope.test-support.js";
+import { prepareEmbeddedAccessProgramGuard } from "./access-program.js";
 import { prepareEmbeddedAttemptTransport } from "./attempt-stream-settle.js";
 
 const registerProviderStreamForModel = vi.hoisted(() => vi.fn());
@@ -171,6 +175,117 @@ describe("prepareEmbeddedAttemptTransport", () => {
   afterEach(() => {
     extraParamsTesting.resetProviderRuntimeDepsForTest();
     registerProviderStreamForModel.mockReset();
+  });
+
+  it.each(["private", "shared"])(
+    "accepts current %s account evidence without reviving an empty private publication",
+    async (source) => {
+      const { input } = createTransportFixture();
+      const route = {
+        api: "openai-chatgpt-responses",
+        baseUrl: "https://chatgpt.com/backend-api",
+        authRequirement: "subscription",
+        requestTransportOverrides: "none",
+      } as const;
+      const credential = { type: "token", provider: "openai", token: "synthetic-token" } as const;
+      const accountCatalog = createPreparedAccountCatalogAccess(() => true);
+      const outcome = {
+        provider: "openai",
+        profileId: "openai:a",
+        status: "ready" as const,
+        modelAccessPrograms: [
+          {
+            modelId: "synthetic-model",
+            runtimeId: "openclaw",
+            ...route,
+            cyber: ["daybreak_blue"] as const,
+          },
+        ],
+      };
+      if (source === "private") {
+        await accountCatalog.acquire({
+          profileId: "openai:a",
+          credential,
+          allowDiscovery: true,
+          load: async () => [outcome],
+        });
+      }
+      const generation = createModelGenerationFixture({
+        label: "access",
+        agentDir: "/agent",
+        workspaceDir: "/workspace",
+        config: {},
+      });
+      const snapshot = {
+        ...generation.preparedModelRuntime.modelCatalog,
+        providerOutcomes: [outcome],
+      };
+      setPreparedModelFullCatalogAuth(snapshot, {
+        authModes: {},
+        providerAuthLabels: new Map(),
+        authStore: { version: 1, profiles: { "openai:a": credential } },
+      });
+      Object.assign(input.attempt, {
+        provider: "openai",
+        modelId: "synthetic-model",
+        cyberAccessProgram: "daybreak_blue",
+        authProfileId: "openai:a",
+        authProfileStore: { version: 1, profiles: { "openai:a": credential } },
+        preparedModelRuntime: {
+          ...generation.preparedModelRuntime,
+          modelCatalog: snapshot,
+          accountCatalog,
+        },
+      });
+      input.attempt.runtimePlan!.auth.modelRoute = route;
+      const guard = await prepareEmbeddedAccessProgramGuard(input.attempt);
+      expect(guard).toBeTypeOf("function");
+      expect(() => guard?.()).not.toThrow();
+      if (source === "shared") {
+        setPreparedModelFullCatalogAuth(snapshot, {
+          authModes: {},
+          providerAuthLabels: new Map(),
+          authStore: {
+            version: 1,
+            profiles: { "openai:a": { ...credential, token: "other-account" } },
+          },
+        });
+        expect(() => guard?.()).toThrow("not advertised");
+        setPreparedModelFullCatalogAuth(snapshot, {
+          authModes: {},
+          providerAuthLabels: new Map(),
+          authStore: { version: 1, profiles: { "openai:a": credential } },
+        });
+      }
+      await accountCatalog.acquire({
+        profileId: "openai:a",
+        credential,
+        allowDiscovery: true,
+        refresh: true,
+        load: async () => [],
+      });
+      expect(() => guard?.()).toThrow("not advertised");
+      await expect(prepareEmbeddedAccessProgramGuard(input.attempt)).rejects.toThrow(
+        "not advertised",
+      );
+    },
+  );
+
+  it("rejects a stale saved Daybreak override before preparing any provider stream", async () => {
+    const { input, streamFn } = createTransportFixture();
+    input.attempt.provider = "openai";
+    input.attempt.model = {
+      ...input.attempt.model,
+      provider: "openai",
+      api: "openai-responses",
+      baseUrl: "https://api.openai.com/v1",
+    };
+    input.attempt.cyberAccessProgram = "daybreak_blue";
+    await expect(prepareEmbeddedAttemptTransport(input)).rejects.toThrow(
+      "not advertised for the current account",
+    );
+    expect(registerProviderStreamForModel).not.toHaveBeenCalled();
+    expect(streamFn).not.toHaveBeenCalled();
   });
 
   it("lets the provider select transport from the prepared auth flow", async () => {

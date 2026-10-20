@@ -2,6 +2,7 @@ import { resolveThinkingDefault } from "openclaw/plugin-sdk/agent-runtime";
 import { afterEach, expect, it, vi } from "vitest";
 import {
   createAppServerOptions,
+  createCodexRuntimePlanFixture,
   createParams,
   resetThreadLifecycleTestFixtures,
 } from "./thread-lifecycle.test-fixtures.js";
@@ -285,5 +286,25 @@ it.each([
     );
     expect(turn.cyberAccessProgram).toBe(expected);
     expect(turn.serviceTier).toBe("ultrafast");
+  },
+);
+
+it.each([
+  { configured: { cyber: "daybreak_blue" }, expected: "daybreakBlue" },
+  { configured: {}, expected: undefined },
+  { configured: { cyber: "daybreak_red" }, session: "standard" as const, expected: "standard" },
+])(
+  "uses prepared model access configuration without overriding a session choice: %j",
+  async ({ configured, session, expected }) => {
+    const runtimePlan = createCodexRuntimePlanFixture();
+    runtimePlan.transport = {
+      ...runtimePlan.transport,
+      resolveExtraParams: () => ({ accessPrograms: configured }),
+    };
+    const turn = await buildTurnStartParams(
+      paramsForTurn(undefined, { runtimePlan, cyberAccessProgram: session }),
+      turnOptions(),
+    );
+    expect(turn.cyberAccessProgram).toBe(expected);
   },
 );

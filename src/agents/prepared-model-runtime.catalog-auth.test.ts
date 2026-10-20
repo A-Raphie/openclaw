@@ -48,9 +48,12 @@ describe("prepared account catalog observations", () => {
       load,
       allowDiscovery: true,
     };
-    expect((await owner.acquire({ ...request, allowDiscovery: false })).outcomes).toEqual([]);
+    const cold = await owner.acquire({ ...request, allowDiscovery: false });
+    expect(cold.outcomes).toEqual([]);
+    expect(cold.hasPublishedCatalog).toBe(false);
     expect(load).not.toHaveBeenCalled();
     const first = await owner.acquire(request);
+    expect(first.hasPublishedCatalog).toBe(true);
     await owner.acquire({ ...request, credential: { ...tokenCredential } });
     await owner.acquire({ ...request, allowDiscovery: false });
     expect(load).toHaveBeenCalledOnce();

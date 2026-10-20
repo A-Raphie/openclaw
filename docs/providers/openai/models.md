@@ -101,13 +101,14 @@ and [Codex runtime behavior](/plugins/codex-harness/runtime-behavior#automatic-d
 
 ### Chat Access control
 
-Open the chat effort/speed menu. **Access** appears above **Effort** and **Speed**:
+Open the chat effort/speed menu. **Access** appears above **Effort** and **Speed**
+only when the selected account advertises at least one Daybreak program for that
+model and runtime. Unavailable programs are hidden, not disabled. Missing or
+unverified entitlement metadata hides the control.
 
-- **Standard**, **Blue**, and **Red** explicitly select the requested access program.
+- **Standard** and the available **Blue** or **Red** options explicitly select the requested access program.
 - **Use model default** clears the session override. This is different from
   selecting Standard: the configured model or provider may choose a default program.
-- **Last response** shows only the program reported by the provider for the
-  selected model. **Not reported · unverified** is not proof of Standard or Daybreak.
 
 The session override is saved independently of speed, survives a session reset,
 and is inherited by a fork unless replaced. Changing the selection affects the next
@@ -118,8 +119,16 @@ Codex uses its supported turn-scoped access-program parameter and requires ChatG
 subscription authentication for explicit programs. Its API-key runtime currently
 ignores that upstream parameter, so OpenClaw rejects the explicit selection with an
 actionable error instead of silently claiming success. Reset Access to the model
-default or use the OpenClaw runtime for Platform API-key requests. Native Codex may
-not report the program back; the UI then remains unverified.
+default or use an explicit model parameter for Platform API-key requests.
+Native Codex checks its authenticated `model/list` access-program metadata before
+submitting a Daybreak turn. A stale saved selection fails visibly before submission.
+
+Entitlement comes only from authenticated `available_access_programs.cyber`
+metadata (or native Codex's `availableAccessPrograms.cyber`), scoped to the selected
+account, model, route, and runtime. Model listing membership or subscription type
+alone is not entitlement. The Platform catalog integration currently has no
+supported entitlement discovery, so its chat Access control stays hidden. Explicit model
+parameters remain available; the provider enforces entitlement on those requests.
 
 ### Responses access program and speed
 
@@ -128,8 +137,8 @@ Responses endpoint, set the selected
 model's `params.accessPrograms.cyber` to `standard`, `daybreak_blue`, or
 `daybreak_red`. Omit it or use `accessPrograms: {}` to retain OpenAI's
 model/account/project defaults. Neither `accessPrograms` nor `cyber` accepts
-`null`. This model-parameter setting does not grant access and does not apply to
-native Codex; use the session Access control for that runtime.
+`null`. Native Codex also accepts this model setting on ChatGPT authentication,
+with the session override taking precedence. This setting never grants access.
 An explicit incompatible program or missing entitlement returns the provider
 error; OpenClaw does not silently switch to standard safeguards.
 

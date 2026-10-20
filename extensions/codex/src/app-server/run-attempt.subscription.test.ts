@@ -53,9 +53,44 @@ describe("Codex attempt subscription recovery", () => {
     expect(harness.requests.some(({ method }) => method === "turn/start")).toBe(false);
   });
 
+  it("rejects a saved access program when the current account does not advertise it", async () => {
+    const harness = createStartedThreadHarness(async (method) =>
+      method === "account/read"
+        ? { account: { type: "chatgpt" } }
+        : method === "model/list"
+          ? { data: [], nextCursor: null }
+          : undefined,
+    );
+    const params = createParams(path.join(tempDir, "daybreak-unknown.jsonl"), tempDir);
+    params.cyberAccessProgram = "daybreak_blue";
+    await expect(runCodexAppServerAttempt(params)).rejects.toThrow(
+      "not advertised for the current account",
+    );
+    expect(harness.requests.some(({ method }) => method === "turn/start")).toBe(false);
+  });
+
   it("forwards explicit access to the admitted native subscription turn", async () => {
     const harness = createStartedThreadHarness(async (method) =>
-      method === "account/read" ? { account: { type: "chatgpt" } } : undefined,
+      method === "account/read"
+        ? { account: { type: "chatgpt" } }
+        : method === "model/list"
+          ? {
+              data: [
+                {
+                  id: "gpt-5.4-codex",
+                  model: "gpt-5.4-codex",
+                  displayName: "Fixture",
+                  description: "Fixture",
+                  hidden: false,
+                  isDefault: true,
+                  defaultReasoningEffort: "medium",
+                  supportedReasoningEfforts: [],
+                  availableAccessPrograms: { cyber: ["standard", "daybreakBlue"] },
+                },
+              ],
+              nextCursor: null,
+            }
+          : undefined,
     );
     const params = createParams(path.join(tempDir, "daybreak-subscription.jsonl"), tempDir);
     params.cyberAccessProgram = "daybreak_blue";

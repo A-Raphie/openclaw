@@ -19,7 +19,6 @@ import {
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { captureChatConnectionOwner } from "./chat-connection-owner.ts";
 import { projectChatFields } from "./chat-field-projection.ts";
-import { getAcceptedChatHistorySession } from "./chat-history-state.ts";
 import { ChatPaneModelControl } from "./chat-pane-model-control.tsx";
 import { readChatSessionActionAccess } from "./chat-session-action-access.ts";
 import { switchChatModel, switchChatSetting } from "./chat-session.ts";
@@ -295,11 +294,6 @@ export function renderChatPaneComposerControls(params: {
           ? undefined
           : accessProgramAccess.reason,
         requestedAccessProgram: settingsSession?.cyberAccessProgram,
-        responseMessages:
-          selectedSession?.sessionId &&
-          getAcceptedChatHistorySession(state)?.sessionId === selectedSession.sessionId
-            ? state.chatMessages
-            : undefined,
         contextWindowTarget: settingsPreview
           ? { ...(selectedSession ?? state.sessionsResult?.defaults), ...settingsPreview }
           : undefined,

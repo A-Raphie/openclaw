@@ -8,7 +8,6 @@ import type {
   SessionsListResult,
 } from "../../../api/types.ts";
 import { registerModelControlsEnglish } from "../../../i18n/locales/en-model-controls.ts";
-import { readResponseAccessProgram } from "../../../lib/chat/cyber-access-program.ts";
 import {
   normalizeChatModelProviderId,
   resolvePreferredServerChatModelValue,
@@ -76,7 +75,6 @@ export type ChatModelControlsProps = {
   fastModeTarget?: ChatFastModeTarget;
   accessProgramMutationDisabledReason?: string;
   requestedAccessProgram?: CyberAccessProgram;
-  responseMessages?: readonly unknown[];
   onAccessProgramSelect?: (value: CyberAccessProgram | null, sessionKey: string) => unknown;
   sending: boolean;
   sessionKey: string;
@@ -546,10 +544,19 @@ function createChatModelControls(props: ChatModelControlsProps): Accessor<{
     const selectedContextWindow =
       contextWindowOwner?.contextWindow ?? contextWindowOwner?.contextWindowDefault ?? "";
     const defaultContextWindow = contextWindowOwner?.contextWindowDefault;
+    const accessPrograms =
+      props.connected &&
+      catalogState.hasSnapshot &&
+      catalogState.status === "ready" &&
+      !retired &&
+      !uninitialized &&
+      !props.modelSwitching
+        ? (resolveModelRuntimeEntry(catalog.entry(currentOverride || defaultModel), triggerRuntime)
+            ?.availableAccessPrograms?.cyber ?? [])
+        : [];
     const showAccessProgram =
       Boolean(props.onAccessProgramSelect) &&
-      (catalog.provider(currentOverride || defaultModel) === "openai" ||
-        props.requestedAccessProgram !== undefined);
+      accessPrograms.some((program) => program !== "standard");
     const accessProgramDisabled =
       commonDisabled || Boolean(props.accessProgramMutationDisabledReason);
     const effortDisabled =
@@ -613,12 +620,7 @@ function createChatModelControls(props: ChatModelControlsProps): Accessor<{
           showAccessProgram && props.onAccessProgramSelect
             ? {
                 requested: props.requestedAccessProgram,
-                reported: props.modelSwitching
-                  ? undefined
-                  : readResponseAccessProgram(
-                      props.responseMessages ?? [],
-                      currentOverride || defaultModel,
-                    ),
+                programs: accessPrograms,
                 disabled: accessProgramDisabled,
                 sessionKey: props.sessionKey,
                 onSelect: props.onAccessProgramSelect,

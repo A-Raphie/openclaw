@@ -43,10 +43,36 @@ function readOpenAICodexServiceTiers(
  */
 export function buildOpenAICodexReadyOutcome(rows: readonly unknown[]): ProviderCatalogOutcome {
   const modelServiceTiers = readOpenAICodexServiceTiers(rows);
+  const modelAccessPrograms: NonNullable<ProviderCatalogOutcome["modelAccessPrograms"]>[number][] =
+    rows.flatMap((row) => {
+      const record = asOptionalRecord(row);
+      const modelId = normalizeOptionalString(record?.slug) ?? normalizeOptionalString(record?.id);
+      const cyber = asOptionalRecord(record?.available_access_programs)?.cyber;
+      if (
+        !modelId ||
+        !Array.isArray(cyber) ||
+        !cyber.every((program) => typeof program === "string")
+      ) {
+        return [];
+      }
+      const programs = cyber.filter(
+        (program): program is "standard" | "daybreak_blue" | "daybreak_red" =>
+          program === "standard" || program === "daybreak_blue" || program === "daybreak_red",
+      );
+      // The same authenticated Responses account supports both host and native transports.
+      return ["openclaw", "codex"].map((runtimeId) => ({
+        modelId,
+        runtimeId,
+        api: "openai-chatgpt-responses",
+        baseUrl: OPENAI_CODEX_RESPONSES_BASE_URL,
+        cyber: programs,
+      }));
+    });
   return {
     provider: "openai",
     status: "ready",
     ...(modelServiceTiers.length ? { modelServiceTiers } : {}),
+    ...(modelAccessPrograms.length ? { modelAccessPrograms } : {}),
     listedModelIds: rows.flatMap((row) => {
       const record = asOptionalRecord(row);
       return normalizeOptionalString(record?.slug) ?? normalizeOptionalString(record?.id) ?? [];

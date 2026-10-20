@@ -153,6 +153,7 @@ export function createFakeCodexAppServerClient(
   const notificationHandlerReady = createDeferred<void>();
   const requestHandlerReady = createDeferred<void>();
   let closeError: Error | undefined;
+  let modelCatalogRevision = 0;
   const request = vi.fn(requestImpl);
   const client = {
     ...mockClientRuntimeMethods(),
@@ -172,6 +173,7 @@ export function createFakeCodexAppServerClient(
       return () => closeHandlers.delete(handler);
     },
     getCloseError: () => closeError,
+    getModelCatalogRevision: () => modelCatalogRevision,
   } as unknown as CodexAppServerClient;
 
   return {
@@ -182,6 +184,9 @@ export function createFakeCodexAppServerClient(
     request,
     requests: requestHandlers,
     async notify(notification: CodexServerNotification) {
+      if (notification.method === "account/updated") {
+        modelCatalogRevision += 1;
+      }
       await Promise.all(
         [...notificationHandlers].map((handler) => Promise.resolve(handler(notification))),
       );

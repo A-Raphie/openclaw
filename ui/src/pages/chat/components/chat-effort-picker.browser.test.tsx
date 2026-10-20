@@ -355,27 +355,45 @@ describe("effort bar colour and flow", () => {
   });
 });
 
-it("keeps the requested program distinct from provider confirmation and respects disabled state", async () => {
+it("filters access options, hides unknown access, and respects disabled state", async () => {
   const onSelect = vi.fn();
   const accessProgram = {
     sessionKey: "effort-preview",
     disabled: false,
-    reported: "standard" as const,
+    programs: ["standard", "daybreak_blue", "daybreak_red"] as const,
     onSelect,
   };
   await fixture(["low", "high"], "low", false, undefined, true, accessProgram);
-  const red = host!.querySelector<HTMLButtonElement>('[data-chat-access-option="daybreak_red"]')!;
-  expect(red.getAttribute("aria-checked")).toBe("false");
-  await userEvent.click(red);
+  const select = host!.querySelector<HTMLSelectElement>("[data-chat-access-program]")!;
+  expect(select.value).toBe("");
+  await userEvent.selectOptions(select, "daybreak_red");
   expect(onSelect).toHaveBeenLastCalledWith("daybreak_red", "effort-preview");
   await fixture(["low", "high"], "low", false, undefined, true, {
     ...accessProgram,
     requested: "daybreak_red",
     disabled: true,
   });
-  expect(red.getAttribute("aria-checked")).toBe("true");
-  expect(red.disabled).toBe(true);
-  expect(host!.querySelector("[data-chat-access-reported]")!.textContent).toContain(
-    "Last response: Standard",
-  );
+  expect(select.value).toBe("daybreak_red");
+  expect(select.disabled).toBe(true);
+  await fixture(["low", "high"], "low", false, undefined, true, {
+    ...accessProgram,
+    requested: "daybreak_red",
+    programs: ["standard", "daybreak_blue"],
+  });
+  expect([...select.options].map((option) => option.value)).toEqual([
+    "",
+    "standard",
+    "daybreak_blue",
+  ]);
+  expect(select.value).toBe("");
+  expect(select.selectedIndex).toBe(-1);
+  await userEvent.selectOptions(select, "");
+  expect(onSelect).toHaveBeenLastCalledWith(null, "effort-preview");
+  expect(host!.querySelector("[data-chat-access-reported]")).toBeNull();
+  expect(host!.querySelectorAll(".chat-controls__access-panel p")).toHaveLength(0);
+  await fixture(["low", "high"], "low", false, undefined, true, {
+    ...accessProgram,
+    programs: [],
+  });
+  expect(host!.querySelector(".chat-controls__access-panel")).toBeNull();
 });
