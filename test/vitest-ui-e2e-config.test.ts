@@ -32,14 +32,15 @@ const qaLabFiles = [
   "extensions/qa-lab/src/session-host-command-state.real-gateway.e2e.test.ts",
   "extensions/qa-lab/src/control-ui-openclaw-delegation.real-gateway.e2e.test.ts",
 ] as const;
-const serialGatewayFiles = `background-work chat-collaborator-scroll chat-managed-media-order
+const serialGatewayFiles =
+  `background-work chat-collaborator-scroll chat-managed-media-order chat-repository-progress
   chat-session-diff-folding chat-steer-deferred-custody chat-stop-owned-exec chat-tts-supplement
   chat-wait-clock command-palette-search deepseek-search desktop-resize device-platform-family
   peer-followup-restart provider-browser-login session-pr-reader-lifetime session-roster-request-rate
   sidebar-running-counts task-pull-requests`
-  .split(/\s+/u)
-  .map((name) => `ui/src/e2e/${name}.real-gateway.e2e.test.ts`)
-  .concat("ui/src/e2e/mcp-app-conformance.e2e.test.ts", workboardFile);
+    .split(/\s+/u)
+    .map((name) => `ui/src/e2e/${name}.real-gateway.e2e.test.ts`)
+    .concat("ui/src/e2e/mcp-app-conformance.e2e.test.ts", workboardFile);
 const realGatewayFiles = `activity-run-inspector.real-gateway agent-file-lifecycle.real-gateway
   chat-agent-avatar.real-gateway chat-composer-websearch-kill-switch.real-gateway
   chat-flow.catalog-bootstrap chat-loading-performance.real-gateway chat-project-media.real-gateway
