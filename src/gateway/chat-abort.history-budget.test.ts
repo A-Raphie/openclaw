@@ -168,9 +168,13 @@ describe("resolveInFlightRunSnapshot", async () => {
     });
     expect(resolve("/synthetic/other/sessions.db")).toBeUndefined();
     expect(resolve(storePath, "agent:main:other")).toBeUndefined();
-    source.adapter.controlUiVisible = false;
+    const hiddenSource = createRpcSourceForTest(
+      { controlUiVisible: false },
+      { runId: "hidden-preparing-repository", sessionKey, storeScope: storePath, accepted: true },
+    );
+    rpcSourceTesting.reset(new Map([["hidden-preparing-repository", hiddenSource]]));
     expect(resolve()).toBeUndefined();
-    source.adapter.controlUiVisible = true;
+    rpcSourceTesting.reset(new Map([[runId, source]]));
     requestRpcSourceCancellation(source);
     expect(resolve()).toBeUndefined();
   });
