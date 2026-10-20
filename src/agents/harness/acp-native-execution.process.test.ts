@@ -15,6 +15,7 @@ import {
   createDeferred,
   withinTest,
 } from "../../../test/helpers/promise.js";
+import { requireAcpRuntimeBackend } from "../../acp/runtime/registry.js";
 import {
   buildExternalRunFailureReply,
   buildKnownAgentRunFailureReplyPayload,
@@ -25,7 +26,6 @@ import { createAgentEventTestHarness } from "../../gateway/server-chat.agent-eve
 import { subscribeAgentEvents } from "../../gateway/server-chat.agent-events.test-helpers.js";
 import type { AgentEventPayload } from "../../infra/agent-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import { requireAcpRuntimeBackend } from "../../plugin-sdk/acp-runtime-backend.js";
 import { upsertSessionEntry } from "../../plugin-sdk/session-store-runtime.js";
 import {
   appendSessionTranscriptMessageByIdentityStrict,
@@ -310,9 +310,8 @@ it.for([
         try {
           await native.service.start(native.context);
           const runtime = requireAcpRuntimeBackend("acpx").runtime;
-          const getStatus = runtime.getStatus?.bind(runtime);
-          const setMode = runtime.setMode?.bind(runtime);
-          assert(getStatus && setMode, "ACPX control methods missing");
+          assert(typeof runtime.getStatus === "function", "ACPX status control missing");
+          assert(typeof runtime.setMode === "function", "ACPX mode control missing");
           const nativeTarget = {
             agentId: "main",
             sessionKey: `agent:main:harness:acp-opencode:${attempt.input.sessionId}`,
@@ -328,11 +327,12 @@ it.for([
             modelExplicit: true,
           };
           const handle = await runtime.ensureSession(nativeTarget);
+          const getStatus = runtime.getStatus.bind(runtime);
           expect(await getStatus({ handle })).toMatchObject({
             models: { currentModelId: nativeTarget.model },
           });
           const before = await peerStates(native.peerDirectory);
-          holdingControl = setMode({ handle, mode: "review" });
+          holdingControl = runtime.setMode({ handle, mode: "review" });
           void holdingControl.catch(() => {});
           await fixtureEnteredBeforeSettlement(
             native.peerDirectory,

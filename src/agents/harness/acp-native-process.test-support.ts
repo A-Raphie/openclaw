@@ -79,7 +79,6 @@ export async function registerNative(
       `${fixtureReceiptClientSource(peerOptions.receiptEndpoint)}\nexport { sendReceipt };\n`,
     );
   }
-  const services: OpenClawPluginService[] = [];
   const { default: plugin } = await loadBundledPluginFacade<{ default: OpenClawPluginDefinition }>({
     pluginId: "acpx",
     artifactBasename: "index.js",
@@ -95,6 +94,7 @@ export async function registerNative(
     ...(peerOptions.allowAlwaysOnly ? ["--allow-always-only"] : []),
     ...(peerOptions.receiptEndpoint ? [`--receipt-module=${receiptModule}`] : []),
   ];
+  let service: OpenClawPluginService | undefined;
   const api = createTestPluginApi({
     id: "acpx",
     config,
@@ -112,11 +112,11 @@ export async function registerNative(
         openKeyedStoreV2: createPluginStateRuntimeStores("acpx", () => {}).openKeyedStoreV2,
       },
     }),
-    registerService: (service) => {
-      assert(service.apiVersion !== 2, "ACPX fixture requires its V1 service contract");
-      services.push(service);
-    },
     registerAgentHarness: (harness) => registerAgentHarness(harness, { ownerPluginId: "acpx" }),
+    registerService: (registered) => {
+      assert(registered.apiVersion !== 2, "Expected ACPX service API version 1");
+      service = registered;
+    },
     registerReload: (registration) => {
       const registry = getActivePluginRegistry();
       assert(registry, "Native process test registry missing");
@@ -125,7 +125,6 @@ export async function registerNative(
   });
   assert(plugin.register, "ACPX registration missing");
   plugin.register(api);
-  const service = services.find((entry) => entry.id === "acpx-runtime");
   assert(service, "ACPX service missing");
   const context = {
     config,
