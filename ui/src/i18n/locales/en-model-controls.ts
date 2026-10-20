@@ -59,6 +59,7 @@ const enModelControls = {
       daybreakRed: "Daybreak Red",
       access: "Access",
       accessDefault: "Use model default",
+      clearSavedAccess: "Clear saved Access",
       fast: "Fast",
       ultrafast: "Ultrafast",
       tierDowngrade: "{requested} requested, currently served as {served}",

@@ -17,6 +17,7 @@ const scenarios: { name: string; programs?: CyberAccessProgram[]; mobile?: boole
   { name: "unknown" },
   { name: "no-access", programs: [] },
   { name: "blue-only", programs: ["standard", "daybreak_blue"] },
+  { name: "blue-only-mobile", programs: ["standard", "daybreak_blue"], mobile: true },
   { name: "both", programs: ["standard", "daybreak_blue", "daybreak_red"] },
   { name: "both-mobile", programs: ["standard", "daybreak_blue", "daybreak_red"], mobile: true },
 ];
@@ -144,7 +145,42 @@ suite.define(() => {
               2,
             ),
           );
-          if (entitled) {
+          if (name.startsWith("blue-only")) {
+            await gateway.setMethodResponse("models.list", {
+              models: [{ ...model, availableAccessPrograms: { cyber: ["standard"] } }],
+            });
+            await gateway.emitGatewayEvent("chat.metadata.changed", {
+              agentId: "main",
+              modelCatalogChanged: true,
+            });
+            await expect.poll(() => select.count()).toBe(0);
+            expect((await gateway.getSessionRow("agent:main:main")).cyberAccessProgram).toBe(
+              "daybreak_blue",
+            );
+            await picker.locator("summary").click();
+            const modelPicker = page.locator(".chat-controls__model-picker").first();
+            await modelPicker.locator("summary").click();
+            const modelMenu = modelPicker.locator(".chat-controls__model-menu");
+            await expect.poll(() => modelMenu.isVisible()).toBe(true);
+            const recovery = modelMenu.getByRole("button", { name: "Clear saved Access" });
+            const staleFrame = await takeControlUiScreenshotFrame(page, modelMenu, [], {
+              animations: "disabled",
+            });
+            await writeFile(dir + "/stale-selection.png", staleFrame.png);
+            await expect.poll(() => recovery.count()).toBe(1);
+            await recovery.click();
+            await expect
+              .poll(
+                async () =>
+                  asOptionalRecord((await gateway.getRequests("sessions.patch")).at(-1)?.params)
+                    ?.cyberAccessProgram,
+              )
+              .toBeNull();
+            await expect.poll(() => recovery.count()).toBe(0);
+            await expect
+              .poll(async () => (await gateway.getSessionRow("agent:main:main")).cyberAccessProgram)
+              .toBeUndefined();
+          } else if (entitled) {
             await select.selectOption("");
             await expect
               .poll(

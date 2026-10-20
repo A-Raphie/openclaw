@@ -109,6 +109,9 @@ unverified entitlement metadata hides the control.
 - **Standard** and the available **Blue** or **Red** options explicitly select the requested access program.
 - **Use model default** clears the session override. This is different from
   selecting Standard: the configured model or provider may choose a default program.
+- If account capabilities no longer expose Access, open the model menu and choose
+  **Clear saved Access** to restore the model default. The saved choice is never
+  cleared automatically, and unavailable programs remain hidden.
 
 The session override is saved independently of speed, survives a session reset,
 and is inherited by a fork unless replaced. Changing the selection affects the next

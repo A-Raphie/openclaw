@@ -568,6 +568,15 @@ function createChatModelControls(props: ChatModelControlsProps): Accessor<{
     const reserveEffortPicker = !hasResolvableModel;
     return {
       model: {
+        accessProgramRecovery:
+          props.requestedAccessProgram !== undefined &&
+          !showAccessProgram &&
+          props.onAccessProgramSelect
+            ? {
+                disabled: accessProgramDisabled,
+                onClear: (sessionKey) => props.onAccessProgramSelect?.(null, sessionKey),
+              }
+            : undefined,
         providerAuth: props.modelAuthStatusResult ? providerAuth : undefined,
         accountSection: props.renderAccountSection?.(currentOverride || defaultModel),
         contextWindow:
