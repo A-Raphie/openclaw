@@ -3636,7 +3636,7 @@ html[dir="rtl"] .chat-attachment-loading > span {
   color: var(--muted);
   font: inherit;
   font-size: 11px;
-  cursor: pointer;
+  cursor: var(--cursor-action);
 }
 
 .chat-controls__access-default:disabled {
