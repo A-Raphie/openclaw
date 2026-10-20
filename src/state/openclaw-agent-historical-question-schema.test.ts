@@ -1,5 +1,7 @@
 import { constants, DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import { restoreDoctorMigrationBackup } from "../commands/doctor-migration-backup-restore.js";
+import { createScopedMigrationSnapshot } from "../infra/sqlite-migration-scoped-snapshot.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { AGENT_V14_BOARD_SCHEMA_SQL } from "./openclaw-agent-board-schema.js";
 import { withAgentDatabaseMaintenanceLease } from "./openclaw-agent-db-maintenance-lease.js";
@@ -16,6 +18,8 @@ import {
   captureOpenClawMigrationWitness,
   assertOpenClawMigrationWitnessPreserved,
 } from "./openclaw-migration-witness.js";
+import { resolveSchemaMigrationBackupTables } from "./schema-migration-backup-scope.js";
+import { assertSqliteMigrationScopePreserved } from "./sqlite-migration-scope.test-support.js";
 
 describe("historical agent question schema boundaries", () => {
   it.each([
@@ -134,5 +138,56 @@ it("refuses the unpublished question schema28 prototype as a different main writ
     expect(schema()).toEqual(before);
     expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(28);
     expect(db.prepare("SELECT schema_version FROM schema_meta").get()?.schema_version).toBe(28);
+  });
+});
+
+it("restores the scoped schema31 question migration without changing later sibling writes", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+    const pathname = state.statePath("questions-scoped.sqlite");
+    const backupPath = state.statePath("questions-scoped.bak");
+    using db = new DatabaseSync(pathname);
+    db.exec(getOpenClawAgentMigrationSchema(31));
+    db.exec(`PRAGMA user_version = 31;
+      INSERT INTO schema_meta(meta_key, role, schema_version, agent_id, created_at, updated_at)
+      VALUES ('primary', 'agent', 31, 'main', 1, 1);
+      CREATE TABLE retained_plugin_data (payload TEXT) STRICT;
+      INSERT INTO retained_plugin_data VALUES ('original');`);
+    const tables = resolveSchemaMigrationBackupTables({
+      kind: "agent",
+      foundVersion: 31,
+      supportedVersion: 32,
+    });
+    expect(tables).toEqual(["schema_meta", "session_questions"]);
+    if (!tables) {
+      throw new Error("The question migration must declare its complete backup scope");
+    }
+    await withAgentDatabaseMaintenanceLease({ env: state.env }, async (lease) => {
+      await createScopedMigrationSnapshot({
+        sourcePath: pathname,
+        targetPath: backupPath,
+        tables,
+        beforePublish: () => lease.assertOwned(),
+      });
+      await assertSqliteMigrationScopePreserved(db, tables, () =>
+        ensureOpenClawAgentDatabaseSchema(db, { agentId: "main", env: state.env, path: pathname }),
+      );
+    });
+    expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(32);
+    expect(db.prepare("SELECT schema_version FROM schema_meta").get()?.schema_version).toBe(32);
+    expect(
+      db.prepare("SELECT name FROM sqlite_schema WHERE name = 'session_questions'").get(),
+    ).toBeDefined();
+    db.exec("UPDATE retained_plugin_data SET payload = 'later owner write'");
+    await assertSqliteMigrationScopePreserved(db, tables, () =>
+      restoreDoctorMigrationBackup({ sourcePath: pathname, backupPath, env: state.env }),
+    );
+    expect(db.prepare("PRAGMA user_version").get()?.user_version).toBe(31);
+    expect(db.prepare("SELECT schema_version FROM schema_meta").get()?.schema_version).toBe(31);
+    expect(
+      db.prepare("SELECT name FROM sqlite_schema WHERE name = 'session_questions'").get(),
+    ).toBeUndefined();
+    expect(db.prepare("SELECT payload FROM retained_plugin_data").get()).toEqual({
+      payload: "later owner write",
+    });
   });
 });

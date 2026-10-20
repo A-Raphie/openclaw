@@ -5,7 +5,7 @@ import { restoreDoctorMigrationBackup } from "../commands/doctor-migration-backu
 import { createScopedMigrationSnapshot } from "../infra/sqlite-migration-scoped-snapshot.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { withAgentDatabaseMaintenanceLease } from "./openclaw-agent-db-maintenance-lease.js";
-import { ensureOpenClawAgentDatabaseSchema } from "./openclaw-agent-db-schema.js";
+import { ensureOpenClawAgentSchema } from "./openclaw-agent-db-schema.js";
 import {
   assertOpenClawMigrationWitnessPreserved,
   captureOpenClawMigrationWitness,
@@ -108,12 +108,7 @@ describe("agent memory revision migration", () => {
         }
         await withAgentDatabaseMaintenanceLease({ env: state.env }, async () => {
           await assertSqliteMigrationScopePreserved(database, scope, () => {
-            const migrate = () =>
-              ensureOpenClawAgentDatabaseSchema(database, {
-                agentId: "main",
-                env: state.env,
-                path: pathname,
-              });
+            const migrate = () => ensureOpenClawAgentSchema(database, "main", pathname, target);
             if (outcome === "rollback") {
               expect(migrate).toThrow(/authoriz/u);
             } else {
@@ -167,11 +162,7 @@ describe("agent memory revision migration", () => {
           tables: scope,
           beforePublish: () => lease.assertOwned(),
         });
-        ensureOpenClawAgentDatabaseSchema(database, {
-          agentId: "main",
-          env: state.env,
-          path: pathname,
-        });
+        ensureOpenClawAgentSchema(database, "main", pathname, target);
       });
       database.exec("UPDATE cache_entries SET blob = X'BEEF' WHERE scope = 'unrelated'");
       await assertSqliteMigrationScopePreserved(database, scope, () =>

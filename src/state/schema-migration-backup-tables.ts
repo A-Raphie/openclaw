@@ -26,6 +26,7 @@ export const SCHEMA_MIGRATION_BACKUP_TABLES: Record<
     ],
     29: ["session_nodes", "session_reactions", "sqlite_stat1", "sqlite_stat4"],
     31: ["memory_index_sources", "memory_index_chunks"],
+    32: ["session_questions"],
   },
   state: {
     [CLIENT_CREDENTIAL_CUTOVER_SCHEMA_VERSION]: [
