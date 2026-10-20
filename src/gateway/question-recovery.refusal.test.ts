@@ -77,6 +77,17 @@ it("reports a refused configured recovery source while preserving its healthy si
       expect(unavailable).toHaveLength(1);
       expect(unavailable[0]?.target.agentId).toBe("refused");
       expect(unavailable[0]?.error).toMatchObject({ refusal });
+      const selectedUnavailable = vi.fn();
+      expect(
+        (
+          await discoverRestartRecoveryStoreTargets({
+            ...params,
+            agentIds: new Set(["healthy"]),
+            onUnavailable: selectedUnavailable,
+          })
+        ).map(({ agentId }) => agentId),
+      ).toEqual(["healthy"]);
+      expect(selectedUnavailable).not.toHaveBeenCalled();
       await owner.recover();
       expect(recover.mock.calls.map(([scope]) => scope.agentId)).toEqual(["healthy"]);
       await expect(owner.waitForRecovery()).rejects.toThrow("remains unavailable");
