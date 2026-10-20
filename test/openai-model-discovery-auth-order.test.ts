@@ -248,23 +248,31 @@ describe("Provider model discovery auth preparation", () => {
       },
     };
     await state.writeAuthProfiles(store);
-    const requests: string[] = [];
+    const requests: { url: string; authorization: string }[] = [];
     const outcomes: ProviderCatalogOutcome[] = [];
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input);
       const authorization = new Headers(init?.headers).get("authorization") ?? "";
-      requests.push(authorization);
+      requests.push({ url: url.origin + url.pathname, authorization });
       if (authorization === `Bearer ${keyA}`) {
         return new Response("unauthorized", { status: 401 });
       }
       if (authorization === `Bearer ${keyB}`) {
-        return Response.json({ data: [{ id: "gpt-5.5", object: "model" }] });
+        return Response.json(
+          url.pathname === "/v1/models"
+            ? { data: [{ id: "gpt-5.5", object: "model" }] }
+            : { models: [] },
+        );
       }
       throw new Error("unexpected OpenAI catalog authorization");
     });
 
     const plan = await planCatalog(config, store, { outcomes });
 
-    expect(requests).toEqual([`Bearer ${keyB}`]);
+    expect(requests).toEqual([
+      { url: "https://api.openai.com/v1/models", authorization: `Bearer ${keyB}` },
+      { url: "https://chatgpt.com/backend-api/codex/models", authorization: `Bearer ${keyB}` },
+    ]);
     expect(outcomes).toEqual([{ provider: "openai", profileId: profileB, status: "ready" }]);
     expect(readPlannedProvider(plan, "openai")?.models.map((model) => model.id)).toContain(
       "gpt-5.5",
@@ -328,12 +336,20 @@ describe("Provider model discovery auth preparation", () => {
           events.push(`resolve:${params.profileId}`);
           return resolveApiKeyForProvider(params);
         });
-      const requests: string[] = [];
+      const requests: { url: string; authorization: string }[] = [];
       const outcomes: ProviderCatalogOutcome[] = [];
-      vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
-        events.push("catalog");
-        requests.push(new Headers(init?.headers).get("authorization") ?? "");
-        return Response.json({ data: [{ id: modelId, object: "model" }] });
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        events.push(`catalog:${url.pathname}`);
+        requests.push({
+          url: url.origin + url.pathname,
+          authorization: new Headers(init?.headers).get("authorization") ?? "",
+        });
+        return Response.json(
+          url.pathname === "/v1/models"
+            ? { data: [{ id: modelId, object: "model" }] }
+            : { models: [] },
+        );
       });
 
       const plan = await planCatalog(config, store, {
@@ -350,7 +366,12 @@ describe("Provider model discovery auth preparation", () => {
       );
       expectRefresh(refresh, providerId, "rejected-oauth-a", "refresh-a");
       const resolvedProfile = source === "profile" ? profileB : undefined;
-      expect(events).toEqual(["refresh:rejected-oauth-a", `resolve:${resolvedProfile}`, "catalog"]);
+      expect(events).toEqual([
+        "refresh:rejected-oauth-a",
+        `resolve:${resolvedProfile}`,
+        "catalog:/v1/models",
+        ...(providerId === "openai" ? ["catalog:/backend-api/codex/models"] : []),
+      ]);
       expect({
         runtimeProfiles: runtimeAuth.mock.calls.map(([params]) => ({
           profileId: params.profileId,
@@ -363,7 +384,23 @@ describe("Provider model discovery auth preparation", () => {
         runtimeProfiles: [
           { profileId: resolvedProfile, lockedProfile: resolvedProfile ? true : undefined },
         ],
-        requests: [`Bearer ${keyB}`],
+        requests: [
+          {
+            url:
+              providerId === "openai"
+                ? "https://api.openai.com/v1/models"
+                : "https://api.x.ai/v1/models",
+            authorization: `Bearer ${keyB}`,
+          },
+          ...(providerId === "openai"
+            ? [
+                {
+                  url: "https://chatgpt.com/backend-api/codex/models",
+                  authorization: `Bearer ${keyB}`,
+                },
+              ]
+            : []),
+        ],
         outcomes: [
           {
             provider: providerId,
