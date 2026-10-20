@@ -1,6 +1,5 @@
 import { createAbortError } from "../infra/abort-signal.js";
 /**
- * Abort-signal wrapping for agent tools.
  * Combines per-call cancellation with run-level aborts while preserving
  * identity-backed metadata on wrapped tools.
  */

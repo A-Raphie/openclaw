@@ -71,6 +71,7 @@ type AgentToolGatewayRequest = Pick<
   | "onAccepted"
   | "onSignalAbort"
   | "params"
+  | "sharedStateMode"
   | "signal"
   | "scopes"
   | "timeoutMs"
@@ -79,6 +80,8 @@ type AgentToolGatewayRequest = Pick<
   replyExpectation?: ReplyExpectation;
   agentRunTracking?: GatewayAgentRunTaskOwner;
   agentToolCaller?: TrustedAgentToolCaller;
+  /** Host-authored provenance; never serialized into Gateway RPC parameters. */
+  sessionCreation?: TrustedSessionCreation;
   /** Target policy checked at the mutation boundary, not after its own committed change. */
   sessionMutationCommitGuard?: () => void;
 };
@@ -226,6 +229,7 @@ async function callAgentToolGatewayRequestBound<T>(
   },
 ): Promise<T> {
   const method = request.method;
+  const sessionCreation = request.sessionCreation ?? positional?.sessionCreation;
   const assertDispatchCurrent = request.assertDispatchCurrent;
   const completion = positional ? undefined : createCronMutationCompletion(method);
   const callerSource =
@@ -248,11 +252,17 @@ async function callAgentToolGatewayRequestBound<T>(
   const scopes =
     request.scopes ?? resolveLeastPrivilegeOperatorScopesForMethod(method, request.params);
   if (forceTransport || !getInProcessGatewayRequestContext(boundGateway?.resolve)) {
+    if (request.agentToolCaller?.requesterOrigin) {
+      throw new Error("Requester provenance requires trusted in-process Gateway dispatch.");
+    }
     if (boundGateway && !forceTransport) {
       throw new Error(`Gateway instance unavailable for ${method}`);
     }
     if (getGatewayToolCallerIdentity()?.operatorAuthority) {
       throw new Error("operator run authority requires its admitted Gateway");
+    }
+    if (request.sessionCreation) {
+      throw new Error("Trusted session creation requires its admitted in-process Gateway.");
     }
     if (positional) {
       return await runBoundInProcessGatewayCall(
@@ -277,6 +287,7 @@ async function callAgentToolGatewayRequestBound<T>(
     const {
       agentRunTracking: _agentRunTracking,
       agentToolCaller: _agentToolCaller,
+      sessionCreation: _sessionCreation,
       sessionMutationCommitGuard: _sessionMutationCommitGuard,
       replyExpectation: _replyExpectation,
       ...wireRequest
@@ -301,10 +312,12 @@ async function callAgentToolGatewayRequestBound<T>(
     request.timeoutMs === null
       ? undefined
       : (request.timeoutMs ?? DEFAULT_IN_PROCESS_GATEWAY_REQUEST_TIMEOUT_MS);
-  // Creation transfers caller custody when child input commits; opaque guards remain enforced.
+  // Creation transfers caller custody when initial input commits; opaque guards remain enforced.
   const transfersCreatedInput =
     method === "sessions.create" &&
-    positional?.sessionCreation?.via === "spawn" &&
+    (sessionCreation?.via === "spawn" ||
+      (sessionCreation?.via === "operator" &&
+        sessionCreation.requesterSessionKey === request.agentToolCaller?.sessionKey)) &&
     request.agentToolCaller !== undefined;
   let assertMutationCurrent =
     assertCurrent && !transfersCreatedInput
@@ -327,9 +340,12 @@ async function callAgentToolGatewayRequestBound<T>(
     ...(request.replyExpectation ? { replyExpectation: request.replyExpectation } : {}),
     forceSyntheticClient: true,
     operatorRoleActor: { kind: "system" as const },
+    ...(method === "plugin.approval.request" && runtimeIdentity?.approvalOwnerPluginId
+      ? { allowHostPluginApprovalRequest: true }
+      : {}),
     ...(request.agentRunTracking ? { agentRunTracking: request.agentRunTracking } : {}),
     ...(request.agentToolCaller ? { agentToolCaller: request.agentToolCaller } : {}),
-    ...(positional?.sessionCreation ? { sessionCreation: positional.sessionCreation } : {}),
+    ...(sessionCreation ? { sessionCreation } : {}),
     ...(positional?.onExecution ? { onExecution: positional.onExecution } : {}),
     syntheticScopes: scopes,
     syntheticScopeMode,
@@ -429,6 +445,9 @@ async function callInProcessGatewayToolBound<T>(
       ? {
           agentId: caller.agentId,
           sessionKey: caller.sessionKey,
+          executionIdentityToken: caller.executionIdentityToken,
+          requesterOrigin: resolveGatewayToolOperatorSelection({ requireRequesterOrigin: true })
+            .requesterOrigin,
           assertCurrent: assertCallerCurrent,
         }
       : undefined;
@@ -469,6 +488,9 @@ async function callInProcessGatewayToolBound<T>(
           {
             ...(creation.requesterProfileId
               ? { requesterProfileId: creation.requesterProfileId }
+              : {}),
+            ...(creation.gitContributorProfileId
+              ? { gitContributorProfileId: creation.gitContributorProfileId }
               : {}),
             ...(creation.completionOwnerSessionKey
               ? { completionOwnerSessionKey: creation.completionOwnerSessionKey }

@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { GatewayRequestError } from "../../api/gateway.ts";
@@ -55,6 +56,7 @@ function mount(request: GatewayRequestHandler) {
   document.body.append(provider);
   return {
     page,
+    publishEvent: harness.publishEvent,
     update(this: void, patch: Partial<ApplicationGatewaySnapshot>) {
       harness.publish({ ...gateway.snapshot, ...patch });
     },
@@ -80,6 +82,33 @@ beforeEach(async () => {
 afterEach(() => {
   document.body.replaceChildren();
 });
+
+it.each(["question", "outside"] as const)(
+  "restores focus after removing a question only when it held focus (%s)",
+  async (focusAt) => {
+    const request = vi.fn().mockResolvedValue({ question: question() });
+    const { page } = mount(request);
+    await settle(page);
+    await questionPanelIn(page);
+    const input = page.querySelector("textarea")!;
+    const outside = document.body.appendChild(document.createElement("button"));
+    const target = focusAt === "question" ? input : outside;
+    target.focus();
+    expect(document.activeElement).toBe(target);
+
+    page.questionId = "";
+    await settle(page);
+
+    await waitForSolid(() => {
+      expect(input.isConnected).toBe(false);
+      expect(document.activeElement).toBe(
+        focusAt === "question" ? page.querySelector("#question-page-title") : outside,
+      );
+    });
+    expect(page.textContent).toContain("Unavailable");
+    expect(request).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("recovers a failed reconnect lookup without losing the typed answer", async () => {
   const request = vi
@@ -218,4 +247,85 @@ it("restores an authoritative answer when the retained prompt expires during rec
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("loads only the final question when native IDs change in one turn", async () => {
+  const request = vi.fn(async (_method: string, params?: unknown) => {
+    if (!isRecord(params) || typeof params.id !== "string") {
+      throw new Error("Expected a question ID");
+    }
+    return { question: question(params.id) };
+  });
+  const { page } = mount(request);
+  await settle(page);
+  await questionPanelIn(page);
+
+  page.questionId = "question-two";
+  page.questionId = "question-three";
+  await settle(page);
+  await questionPanelIn(page);
+
+  expect(request.mock.calls.map(([, params]) => params)).toEqual([
+    { id: "question-one", includeContinuation: true },
+    { id: "question-three", includeContinuation: true },
+  ]);
+  expect(page.textContent).toContain("Who should receive question-three?");
+});
+
+it("keeps newer continuation guidance when an older reconnect read completes", async () => {
+  const retained = {
+    ...question(),
+    status: "answered",
+    answers: { answers: { audience: ["The design team"] } },
+  };
+  const reconnect = createDeferred<unknown>();
+  let reads = 0;
+  let receipts = 0;
+  const request = vi.fn((method: string) => {
+    if (method === "question.get") {
+      return ++reads === 1 ? Promise.resolve({ question: retained }) : reconnect.promise;
+    }
+    if (++receipts === 1) {
+      return Promise.resolve({ questions: [] });
+    }
+    if (receipts === 2) {
+      return Promise.resolve({
+        questions: [],
+        continuations: [
+          {
+            questionId: retained.id,
+            status: "blocked",
+            reason: "Original caller is unavailable.",
+            nextAction: "Start a new user turn.",
+          },
+        ],
+      });
+    }
+    return Promise.reject(new Error("receipt refresh unavailable"));
+  });
+  const { page, update, publishEvent } = mount(request);
+  await waitForSolid(() => expect(page.textContent).toContain("Answered"));
+  await settle(page);
+  update({ phase: "reconnecting" });
+  update({ phase: "connected" });
+  await settle(page);
+  expect(reads).toBe(2);
+  const resolution = {
+    type: "event" as const,
+    event: "question.resolved",
+    payload: { id: retained.id, status: "answered", answers: retained.answers },
+  };
+  publishEvent(resolution);
+  await waitForSolid(() => expect(receipts).toBe(2));
+  await settle(page);
+  reconnect.resolve({ question: retained });
+  await settle(page);
+  publishEvent(resolution);
+  await waitForSolid(() => expect(receipts).toBeGreaterThanOrEqual(3));
+  await settle(page);
+  await waitForSolid(() => {
+    expect(page.textContent).toContain("Answered");
+    expect(page.textContent).toContain("The design team");
+    expect(page.textContent).toContain("Original caller is unavailable. Start a new user turn.");
+  });
 });

@@ -362,7 +362,7 @@ export function createQuestionHandlers(
           );
         };
         const recoverableSource =
-          operatorAuthority?.recoverySnapshot || operatorAuthority?.channelRecoveryReference;
+          operatorAuthority?.recoverySnapshot || operatorAuthority?.channelRecoverySource;
         if (request.durable && recoverableSource) {
           if (
             !durable ||
