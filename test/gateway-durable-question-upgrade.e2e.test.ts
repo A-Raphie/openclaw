@@ -53,7 +53,7 @@ it.skipIf(!stableRoot)(
       );
     };
     const identity = loadOrCreateDeviceIdentity({
-      path: instance.state.path("upgrade-device.sqlite"),
+      env: { OPENCLAW_STATE_DIR: instance.state.path("upgrade-client") },
     });
     let onUsageUpdated: ((payload: unknown) => void) | undefined;
     const persistUsageCache = async () => {
