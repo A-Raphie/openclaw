@@ -184,12 +184,12 @@ it("never borrows access entitlement from another runtime or a retired catalog",
   });
   const accessOptions = () =>
     Array.from(
-      view.container.querySelectorAll<HTMLOptionElement>("[data-chat-access-program] option"),
-      (option) => option.getAttribute("value"),
+      view.container.querySelectorAll<HTMLButtonElement>("[data-chat-access-option]"),
+      (option) => option.getAttribute("data-chat-access-option"),
     );
   expect(accessOptions()).toEqual([]);
   view.update({ selectedAgentRuntime: "openclaw" });
-  expect(accessOptions()).toEqual(["", "standard", "daybreak_blue"]);
+  expect(accessOptions()).toEqual(["standard", "daybreak_blue"]);
   view.update({ modelCatalogState: { hasSnapshot: true, status: "loading", retired: true } });
   expect(accessOptions()).toEqual([]);
   const unknownModel = { ...model, availableAccessPrograms: undefined };

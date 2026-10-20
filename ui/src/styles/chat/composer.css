@@ -3679,19 +3679,23 @@ html[dir="rtl"] .chat-attachment-loading > span {
   border-top: 0;
 }
 
-.chat-controls__access-label {
-  display: grid;
-  gap: 8px;
+.chat-controls__access-default {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
 }
 
-.chat-controls__access-select {
-  width: 100%;
-  min-height: 32px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--text-strong);
-  font: inherit;
-  font-size: 12px;
+.chat-controls__access-default:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chat-controls__access-default:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }

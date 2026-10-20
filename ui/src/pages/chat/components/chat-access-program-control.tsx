@@ -1,7 +1,7 @@
-import { For, Show } from "solid-js";
+import { Show } from "solid-js";
 import type { CyberAccessProgram } from "../../../api/types.ts";
-import { isCyberAccessProgram } from "../../../lib/chat/cyber-access-program.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
+import { ChatPreferenceSegments } from "./chat-preference-segments.tsx";
 
 const programLabels = {
   standard: "chat.modelControls.standard",
@@ -22,31 +22,34 @@ export function ChatAccessProgramControl(props: ChatAccessProgramControlProps) {
   return (
     <Show when={hasDaybreak()}>
       <div class="chat-controls__access-panel">
-        <label class="chat-controls__access-label">
+        <div class="chat-controls__reasoning-head">
           <span class="chat-controls__effort-heading">{t("chat.modelControls.access")}</span>
-          <select
-            class="chat-controls__access-select"
-            data-chat-access-program
-            aria-label={t("chat.modelControls.access")}
-            // An unavailable saved value must not masquerade as an already-selected reset.
-            value={props.requested ?? ""}
-            disabled={props.disabled}
-            onChange={(event) => {
-              const value = event.currentTarget.value;
-              if (
-                !props.disabled &&
-                (value === "" || (isCyberAccessProgram(value) && props.programs.includes(value)))
-              ) {
-                void props.onSelect(value || null, props.sessionKey);
+          <button
+            type="button"
+            class="chat-controls__access-default"
+            data-chat-access-default
+            disabled={props.disabled || props.requested === undefined}
+            onClick={() => {
+              if (!props.disabled && props.requested !== undefined) {
+                void props.onSelect(null, props.sessionKey);
               }
             }}
           >
-            <option value="">{t("chat.modelControls.accessDefault")}</option>
-            <For each={props.programs}>
-              {(program) => <option value={program}>{t(programLabels[program])}</option>}
-            </For>
-          </select>
-        </label>
+            {t("chat.modelControls.accessDefault")}
+          </button>
+        </div>
+        <ChatPreferenceSegments
+          kind="access"
+          label={t("chat.modelControls.access")}
+          options={props.programs.map((value) => ({ value, label: t(programLabels[value]) }))}
+          selected={props.requested}
+          disabled={props.disabled}
+          onSelect={(value) => {
+            if (value !== props.requested) {
+              void props.onSelect(value, props.sessionKey);
+            }
+          }}
+        />
       </div>
     </Show>
   );

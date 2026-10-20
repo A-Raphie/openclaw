@@ -14,6 +14,7 @@ import {
   type ChatAccessProgramControlProps,
 } from "./chat-access-program-control.tsx";
 import { createChatPickerOverlay } from "./chat-picker-overlay.ts";
+import { ChatPreferenceSegments } from "./chat-preference-segments.tsx";
 
 registerEnglishCatalog(registerModelControlsEnglish);
 
@@ -35,7 +36,6 @@ function formatEffortLabel(label: string): string {
 }
 
 export function ChatEffortPicker(props: ChatEffortPickerParams) {
-  const speedButtons = new Set<HTMLButtonElement>();
   const previewLabels = new Set<HTMLSpanElement>();
   let committedLabel: HTMLSpanElement | undefined;
   const view = createMemo(() => {
@@ -52,6 +52,7 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
     const hasThinkingOverride = selection.source === "override";
     const sliderIndex = selection.kind === "anchored" ? selection.index : 0;
     const sliderUnanchored = selection.kind === "unanchored";
+    // A narrowed catalog's first stop must not paint a full maximum-effort track.
     // Binary providers can use a ranked wire value with the display label "On".
     const maximumIndex = sliderStops.findLastIndex(
       (stop) =>
@@ -59,7 +60,11 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
         ["minimal", "low", "medium", "high", "xhigh", "max"].includes(stop.value),
     );
     const sliderBoost = (index: number) =>
-      sliderStops[index]?.value === "ultra" ? "ultra" : index === maximumIndex ? "max" : "";
+      sliderStops[index]?.value === "ultra"
+        ? "ultra"
+        : maximumIndex > 0 && index === maximumIndex
+          ? "max"
+          : "";
     const committedBoost = sliderUnanchored ? "" : sliderBoost(sliderIndex);
     const defaultLevelLabel = formatEffortLabel(props.thinking.inherited.displayLabel);
     const reasoningValueText = formatEffortLabel(selection.displayLabel);
@@ -109,9 +114,6 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
           : props.fastMode.active
             ? "on"
             : "off";
-    const selectedSpeedIndex = speedOptions.findIndex(
-      (option) => option.value === selectedSpeed && !option.disabled,
-    );
     return {
       sliderStops,
       showReasoning,
@@ -130,10 +132,6 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
       triggerTitle,
       speedOptions,
       selectedSpeed,
-      tabbableSpeedIndex:
-        selectedSpeedIndex >= 0
-          ? selectedSpeedIndex
-          : speedOptions.findIndex((option) => !option.disabled),
       onlyStop: sliderStops.length === 1 ? sliderStops[0] : undefined,
       onlyStopSelected: selection.kind === "anchored" && selection.index === 0,
     };
@@ -147,34 +145,6 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
   const committedSliderValue = createMemo(() => String(view().sliderIndex));
   const sliderFillPercent = (index: number, count: number) =>
     count > 1 ? (index / (count - 1)) * 100 : 0;
-  const onSpeedKeyDown = (event: KeyboardEvent) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
-      return;
-    }
-    const group = event.currentTarget;
-    if (!(group instanceof HTMLElement)) {
-      return;
-    }
-    const options = [...speedButtons]
-      .filter((button) => !button.disabled)
-      .toSorted((left, right) =>
-        left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-      );
-    if (options.length === 0) {
-      return;
-    }
-    const current = options.findIndex((option) => option === document.activeElement);
-    const next =
-      event.key === "Home"
-        ? 0
-        : event.key === "End"
-          ? options.length - 1
-          : (current + (["ArrowLeft", "ArrowUp"].includes(event.key) ? -1 : 1) + options.length) %
-            options.length;
-    event.preventDefault();
-    options[next]?.focus();
-    options[next]?.click();
-  };
   const syncSliderPreview = (input: HTMLInputElement, previewIndex?: number) => {
     const preview = previewIndex === undefined ? undefined : view().sliderStops[previewIndex];
     const index = previewIndex ?? view().sliderIndex;
@@ -469,48 +439,18 @@ export function ChatEffortPicker(props: ChatEffortPickerParams) {
                       <span class="chat-controls__effort-heading">
                         {t("chat.modelControls.speed")}
                       </span>
-                      <div
-                        class="chat-controls__speed-options"
-                        role="radiogroup"
-                        aria-label={t("chat.modelControls.speed")}
-                        onKeyDown={onSpeedKeyDown}
-                      >
-                        <For each={view().speedOptions} keyed={(option) => option.value}>
-                          {(option, index) => {
-                            let button: HTMLButtonElement;
-                            onCleanup(() => speedButtons.delete(button));
-                            return (
-                              <button
-                                ref={(element) => {
-                                  button = element;
-                                  speedButtons.add(element);
-                                }}
-                                type="button"
-                                role="radio"
-                                class="chat-controls__speed-option"
-                                data-chat-speed-option={option().value}
-                                aria-checked={
-                                  option().value === view().selectedSpeed ? "true" : "false"
-                                }
-                                tabindex={index() === view().tabbableSpeedIndex ? 0 : -1}
-                                disabled={props.fastMode.disabled || option().disabled}
-                                onClick={(event: MouseEvent) => {
-                                  event.stopPropagation();
-                                  if (
-                                    !props.fastMode.disabled &&
-                                    !option().disabled &&
-                                    option().value !== props.fastMode.persistedOverride
-                                  ) {
-                                    void props.onFastModeSelect(option().value, props.sessionKey);
-                                  }
-                                }}
-                              >
-                                {option().label}
-                              </button>
-                            );
-                          }}
-                        </For>
-                      </div>
+                      <ChatPreferenceSegments
+                        kind="speed"
+                        label={t("chat.modelControls.speed")}
+                        options={view().speedOptions}
+                        selected={view().selectedSpeed}
+                        disabled={props.fastMode.disabled}
+                        onSelect={(value) => {
+                          if (value !== props.fastMode.persistedOverride) {
+                            void props.onFastModeSelect(value, props.sessionKey);
+                          }
+                        }}
+                      />
                     </div>
                   )}
                 </div>

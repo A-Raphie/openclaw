@@ -23,6 +23,7 @@ import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts"
 let owner: OpenClawTestInstance;
 let dir: string;
 let programs: string[] | undefined = ["standard", "daybreak_blue", "daybreak_red"];
+let reasoningEfforts = ["medium"];
 const receipts: Array<{ model: string; access?: unknown; tier?: string }> = [];
 const held = new Map<number, ServerResponse>();
 let holdNext = false;
@@ -59,7 +60,10 @@ const suite = createControlUiE2eSuite({
                       visibility: "list",
                       context_window: 128000,
                       max_output_tokens: 16000,
-                      supported_reasoning_levels: [{ effort: "medium", description: "Medium" }],
+                      supported_reasoning_levels: reasoningEfforts.map((effort) => ({
+                        effort,
+                        description: effort,
+                      })),
                       service_tiers: [{ id: "priority" }, { id: "ultrafast" }],
                       ...(programs ? { available_access_programs: { cyber: programs } } : {}),
                     },
@@ -215,6 +219,7 @@ suite.define(() => {
       const name = mobile ? "mobile" : "desktop";
       const key = "agent:main:daybreak-" + name;
       programs = ["standard", "daybreak_blue", "daybreak_red"];
+      reasoningEfforts = ["medium"];
       proof.initialCatalog = await call("models.list", { agentId: "main", refresh: true });
       await call("sessions.create", { key, agentId: "main", label: "Daybreak " + name });
       await suite.withPage(
@@ -247,7 +252,11 @@ suite.define(() => {
           };
           const choose = async (value: string) => {
             await open();
-            await select.selectOption(value);
+            if (value) {
+              await select.locator(`[data-chat-access-option="${value}"]`).click();
+            } else {
+              await picker.locator("[data-chat-access-default]").click();
+            }
             await expect
               .poll(async () => (await row()).cyberAccessProgram)
               .toBe(value || undefined);
@@ -268,9 +277,11 @@ suite.define(() => {
           await expect.poll(() => select.count()).toBe(1);
           expect(
             await select
-              .locator("option")
-              .evaluateAll((nodes) => nodes.map((node) => node.getAttribute("value"))),
-          ).toEqual(["", "standard", "daybreak_blue", "daybreak_red"]);
+              .locator("[data-chat-access-option]")
+              .evaluateAll((nodes) =>
+                nodes.map((node) => node.getAttribute("data-chat-access-option")),
+              ),
+          ).toEqual(["standard", "daybreak_blue", "daybreak_red"]);
           const script = await page
             .locator('script[type="module"][src]')
             .first()
@@ -285,7 +296,29 @@ suite.define(() => {
             path: script,
             sha256: createHash("sha256").update(bytes).digest("hex"),
           };
+          const slider = picker.locator("[data-chat-thinking-slider]");
+          await expect.poll(() => slider.inputValue()).toBe("0");
+          expect(await slider.getAttribute("data-chat-thinking-values")).toBe("medium,ultra");
+          expect(await slider.getAttribute("data-effort-boost")).toBe("");
+          expect(
+            await slider.evaluate(
+              (input) => getComputedStyle(input.parentElement!).backgroundImage,
+            ),
+          ).toBe("none");
+          proof[name + "-narrowed-effort"] = await slider.evaluate((input: HTMLInputElement) => ({
+            values: input.dataset.chatThinkingValues,
+            value: input.value,
+            fill: input.style.getPropertyValue("--reasoning-fill"),
+            boost: input.dataset.effortBoost,
+          }));
           await snapshot("both");
+          const red = select.locator('[data-chat-access-option="daybreak_red"]');
+          await red.focus();
+          await red.press("Home");
+          await expect.poll(async () => (await row()).cyberAccessProgram).toBe("standard");
+          await select.locator('[data-chat-access-option="standard"]').press("ArrowRight");
+          await expect.poll(async () => (await row()).cyberAccessProgram).toBe("daybreak_blue");
+          await choose("");
           for (const target of ["standard", ""]) {
             await choose("daybreak_blue");
             const first = receipts.length;
@@ -309,13 +342,40 @@ suite.define(() => {
             await expect.poll(async () => Boolean((await row()).hasActiveRun)).toBe(false);
             proof[name + "-queued-" + (target || "cleared")] = receipts.slice(first, first + 2);
           }
+          reasoningEfforts = ["low", "medium", "high"];
+          await call("models.list", { agentId: "main", refresh: true });
+          await page.reload();
+          await waitForControlUiGatewayReady(page);
+          await open();
+          await expect
+            .poll(() => slider.getAttribute("data-chat-thinking-values"))
+            .toBe("low,medium,high,ultra");
+          await slider.press("Home");
+          await expect.poll(async () => (await row()).thinkingLevel).toBe("low");
+          await slider.press("ArrowRight");
+          await expect.poll(async () => (await row()).thinkingLevel).toBe("medium");
+          await expect.poll(() => slider.inputValue()).toBe("1");
+          expect(await slider.getAttribute("data-effort-boost")).toBe("");
+          await snapshot("multilevel-medium");
+          const bounds = await slider.boundingBox();
+          expect(bounds).not.toBeNull();
+          await slider.click({ position: { x: (bounds!.width * 2) / 3, y: bounds!.height / 2 } });
+          await expect.poll(async () => (await row()).thinkingLevel).toBe("high");
+          await slider.press("End");
+          await expect.poll(async () => (await row()).thinkingLevel).toBe("ultra");
+          await expect.poll(() => slider.inputValue()).toBe("3");
+          expect(await slider.getAttribute("data-effort-boost")).toBe("ultra");
+          await call("sessions.patch", { key, thinkingLevel: "medium" });
+          reasoningEfforts = ["medium"];
           await choose("daybreak_blue");
           programs = ["standard", "daybreak_blue"];
           await call("models.list", { agentId: "main", refresh: true });
           await page.reload();
           await waitForControlUiGatewayReady(page);
           await open();
-          await expect.poll(() => select.locator('option[value="daybreak_red"]').count()).toBe(0);
+          await expect
+            .poll(() => select.locator('[data-chat-access-option="daybreak_red"]').count())
+            .toBe(0);
           await snapshot("blue-only");
           programs = [];
           await call("models.list", { agentId: "main", refresh: true });

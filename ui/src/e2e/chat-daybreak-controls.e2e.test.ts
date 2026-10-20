@@ -100,19 +100,19 @@ suite.define(() => {
           let options: string[] = [];
           if (entitled) {
             options = await select
-              .locator("option")
+              .locator("[data-chat-access-option]")
               .evaluateAll((elements) =>
-                elements.map((element) => element.getAttribute("value") ?? ""),
+                elements.map((element) => element.getAttribute("data-chat-access-option") ?? ""),
               );
-            expect(options).toEqual(["", ...(programs ?? [])]);
-            expect(await select.locator("option:disabled").count()).toBe(0);
+            expect(options).toEqual(programs ?? []);
+            expect(await select.locator("button:disabled").count()).toBe(0);
             expect(await menu.locator(".chat-controls__effort-heading").allTextContents()).toEqual([
               "Access",
               "Effort",
               "Speed",
             ]);
             const requested = programs?.includes("daybreak_red") ? "daybreak_red" : "daybreak_blue";
-            await select.selectOption(requested);
+            await select.locator(`[data-chat-access-option="${requested}"]`).click();
             await expect
               .poll(async () =>
                 (await gateway.getRequests("sessions.patch")).some(
@@ -120,7 +120,13 @@ suite.define(() => {
                 ),
               )
               .toBe(true);
-            await expect.poll(() => select.inputValue()).toBe(requested);
+            await expect
+              .poll(() =>
+                select
+                  .locator(`[data-chat-access-option="${requested}"]`)
+                  .getAttribute("aria-checked"),
+              )
+              .toBe("true");
           } else {
             expect(await menu.locator(".chat-controls__effort-heading").allTextContents()).toEqual([
               "Effort",
@@ -181,7 +187,7 @@ suite.define(() => {
               .poll(async () => (await gateway.getSessionRow("agent:main:main")).cyberAccessProgram)
               .toBeUndefined();
           } else if (entitled) {
-            await select.selectOption("");
+            await picker.locator("[data-chat-access-default]").click();
             await expect
               .poll(
                 async () =>
@@ -189,7 +195,7 @@ suite.define(() => {
                     ?.cyberAccessProgram,
               )
               .toBeNull();
-            await expect.poll(() => select.inputValue()).toBe("");
+            await expect.poll(() => select.locator('[aria-checked="true"]').count()).toBe(0);
           }
         },
       );
