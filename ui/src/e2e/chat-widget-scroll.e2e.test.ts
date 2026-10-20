@@ -18,79 +18,73 @@ async function swipe(
   point: { x: number; y: number },
   direction: -1 | 1,
 ) {
+  const distance = 240;
   const before = await thread.evaluate((element) => element.scrollTop);
-  const timestamp = Date.now() / 1000;
-  // A 160px native text drag can commit only 105px before release on CI.
-  // Travel 240px at the same velocity without relaxing the scroll assertions.
-  const moveCount = 12;
-  const moveSeconds = 0.016;
-  const moves: number[] = [];
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [{ ...point, id: 1 }],
-    timestamp,
-  });
-  const scrollEnd = await thread.evaluateHandle((element) => {
+  const scroll = await thread.evaluateHandle((element) => {
+    const offsets = [element.scrollTop];
+    const record = () => offsets.push(element.scrollTop);
     let finish!: () => void;
     const done = new Promise<void>((resolve) => {
-      finish = () => resolve();
+      finish = resolve;
     });
+    element.addEventListener("scroll", record, { passive: true });
     element.addEventListener("scrollend", finish, { once: true });
-    return { done, dispose: () => element.removeEventListener("scrollend", finish) };
+    return {
+      offsets,
+      done,
+      dispose: () => {
+        element.removeEventListener("scroll", record);
+        element.removeEventListener("scrollend", finish);
+      },
+    };
   });
   try {
-    for (let step = 1; step <= moveCount; step++) {
+    // Dispatch native touch input with a physical event timeline. Chromium's
+    // synthesized touch scroll can emit start/end without moves on Linux.
+    const timestamp = Date.now() / 1000;
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ ...point, id: 1 }],
+      timestamp,
+    });
+    for (let step = 1; step <= 12; step++) {
       await cdp.send("Input.dispatchTouchEvent", {
         type: "touchMove",
         touchPoints: [{ ...point, y: point.y + direction * step * 20, id: 1 }],
-        // Preserve physical gesture velocity independently of CDP round-trip latency.
-        timestamp: timestamp + step * moveSeconds,
+        timestamp: timestamp + step * 0.016,
       });
-      // CDP acknowledgment can precede the renderer's scroll offset update.
-      moves.push(
-        await thread.evaluate(
-          (element) =>
-            new Promise<number>((resolve) => {
-              requestAnimationFrame(() => resolve(element.scrollTop));
-            }),
-        ),
-      );
     }
-    // Observe the drag while the finger is still down, before inertia can start.
-    let released = before;
-    await expect
-      .poll(async () => {
-        released = await thread.evaluate((element) => element.scrollTop);
-        return direction * (before - released);
-      })
-      .toBeGreaterThan(120);
+    // Sample while the finger is still down, not against the synthetic event clock.
+    const released = await thread.evaluate((element) => element.scrollTop);
+    const moves = await scroll.evaluate(({ offsets }) => offsets);
     await cdp.send("Input.dispatchTouchEvent", {
       type: "touchEnd",
       touchPoints: [],
-      timestamp: timestamp + moveCount * moveSeconds + 0.002,
+      timestamp: timestamp + 0.194,
     });
+    const dragDistance = direction * (before - released);
+    expect(dragDistance, JSON.stringify({ before, released, moves })).toBeGreaterThan(120);
     // A quiet timer window can occur during native inertia; wait for its actual end.
     const completed = await page.waitForFunction(
       async ({ done }) => {
         await done;
         return true;
       },
-      scrollEnd,
+      scroll,
       { timeout: 10_000 },
     );
     await completed.dispose();
     await waitForChatScrollIdle(page);
-    return {
-      before,
-      moves,
-      released,
-      settled: await thread.evaluate((element) => element.scrollTop),
-    };
+    const settled = await thread.evaluate((element) => element.scrollTop);
+    // The final drag scroll may arrive after touchend. Require motion beyond the
+    // entire requested drag so queued drag updates cannot masquerade as inertia.
+    expect(direction * (before - settled)).toBeGreaterThan(distance + 20);
+    return { before, moves, released, settled };
   } finally {
     try {
-      await scrollEnd.evaluate(({ dispose }) => dispose());
+      await scroll.evaluate(({ dispose }) => dispose());
     } finally {
-      await scrollEnd.dispose();
+      await scroll.dispose();
     }
   }
 }
