@@ -40,6 +40,7 @@ const realGatewayFiles = [
   "chat-agent-avatar.real-gateway",
   "chat-collaborator-scroll.real-gateway",
   "chat-composer-websearch-kill-switch.real-gateway",
+  "chat-daybreak.real-gateway",
   "chat-flow.catalog-bootstrap",
   "chat-loading-performance.real-gateway",
   "chat-managed-media-order.real-gateway",
@@ -448,6 +449,13 @@ describe("Control UI E2E resource ownership", () => {
         },
         {
           file: "ui/src/e2e/chat-collaborator-scroll.real-gateway.e2e.test.ts",
+          project: "ui-e2e-serial-standalone",
+          phase: 1,
+          workers: 1,
+          fileParallelism: false,
+        },
+        {
+          file: "ui/src/e2e/chat-daybreak.real-gateway.e2e.test.ts",
           project: "ui-e2e-serial-standalone",
           phase: 1,
           workers: 1,
