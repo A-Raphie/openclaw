@@ -251,6 +251,39 @@ it.each(["descriptor", "startup"] as const)(
   },
 );
 
+it("keeps the observed current title when startup precedes a bounded reconnect list", async () => {
+  const h = await setup();
+  const request = h.current().request.getMockImplementation();
+  assert(request);
+  const bounded = sessionsResult([]);
+  h.current().request.mockImplementation((method, params) =>
+    method === "sessions.list" ? Promise.resolve(bounded) : request(method, params),
+  );
+  await h.sessions.refresh({ agentId: "main", force: true });
+  expect(h.sessions.presentation.result?.sessions).toEqual([]);
+  const pendingList = createDeferred<typeof bounded>();
+  onTestFinished(() => pendingList.resolve(bounded));
+  const reconnectList = vi.fn(() => pendingList.promise);
+  h.current().request.mockImplementation((method, params) =>
+    method === "sessions.list" ? reconnectList() : request(method, params),
+  );
+  h.disconnect();
+  h.reconnect();
+  await waitForSolid(() => expect(reconnectList).toHaveBeenCalled());
+  await refreshPageChat(h.state, {
+    historyLoad: loadChatHistory(h.state, { startup: true }),
+    awaitHistory: true,
+    scheduleScroll: false,
+  });
+  expect(h.sessions.presentation.result?.sessions).toEqual([]);
+  expect(selectedChatSessionRow(h.state)?.label).toBe("Original title");
+  h.draw();
+  expect(h.header.textContent).toContain("Original title");
+  pendingList.resolve(bounded);
+  await waitForSolid(() => expect(h.sessions.state.resultCached).toBe(false));
+  expect(selectedChatSessionRow(h.state)?.label).toBe("Original title");
+});
+
 it("queues a header rename and rendered reaction through the shared outbox", async () => {
   const h = await setup();
   h.disconnect();
