@@ -295,23 +295,6 @@ public final class OpenClawClientCredentialStore: @unchecked Sendable {
         }
     }
 
-    /// Restored backups may retain the path while redacting the token to NULL.
-    public func replaceSocketCredentials(_ candidate: SocketCredentials, expectedToken: String?) throws -> Bool {
-        try self.transaction {
-            guard try Self.sameUTF8Bytes(self.socketCredentials()?.token, expectedToken) else { return false }
-            try self.run(
-                "INSERT INTO native_exec_socket_credentials VALUES ('current', ?, ?, ?) " +
-                    "ON CONFLICT(socket_key) DO UPDATE SET socket_path=excluded.socket_path, " +
-                    "socket_token=excluded.socket_token, updated_at_ms=excluded.updated_at_ms",
-                [
-                    candidate.path.map(Value.text) ?? .null,
-                    candidate.token.map(Value.text) ?? .null,
-                    .integer(candidate.updatedAtMs),
-                ])
-            return true
-        }
-    }
-
     static func sameUTF8Bytes(_ lhs: String?, _ rhs: String?) -> Bool {
         switch (lhs, rhs) {
         case (nil, nil): true

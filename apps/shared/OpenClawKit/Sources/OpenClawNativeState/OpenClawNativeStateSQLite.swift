@@ -761,6 +761,7 @@ public final class OpenClawNativeStateSQLiteStatement {
         }
     }
 
+    // periphery:ignore - Public in v2026.10.5; retain until a breaking native-state API window.
     public func bindNull(at index: Int32) throws {
         try self.connection.withConnectionLock {
             guard sqlite3_bind_null(self.statement, index) == SQLITE_OK else {
