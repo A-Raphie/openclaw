@@ -102,7 +102,12 @@ export function ChatDetailsEnvironment(props: ChatDetailsEnvironmentDesktopProps
       : undefined;
   };
   const branchName = () => workspace()?.branch ?? work()?.branch?.branch;
-  const diff = () => (published() ? undefined : (work()?.branch ?? changes()));
+  const diff = () => {
+    const result = published() ? undefined : (work()?.branch ?? changes());
+    return result && (result.additions !== undefined || result.deletions !== undefined)
+      ? result
+      : undefined;
+  };
   return [
     <Show when={requestUncommitted()} keyed>
       {(request) => {
@@ -196,53 +201,53 @@ export function ChatDetailsEnvironment(props: ChatDetailsEnvironmentDesktopProps
         </div>
       </Show>
       <Show when={branchName() || work()}>
-        <div
-          class={[
-            "chat-details__row chat-environment__row chat-environment__branch",
-            { "chat-environment__branch--publication": Boolean(work()) },
-          ]}
-        >
-          <Icon name={branchName() ? "gitBranch" : "gitPullRequest"} />
-          <Show
-            when={!published() && props.work?.onOpenSessionDiff}
-            fallback={
-              <span class="chat-environment__branch-name" title={branchName()}>
-                {branchName() ?? t("chat.pullRequests.publishPr")}
-              </span>
-            }
-          >
-            <button
-              class="chat-environment__branch-name"
-              type="button"
-              title={branchName()}
-              onClick={() => props.work?.onOpenSessionDiff?.()}
-            >
+        <div class="chat-environment__branch">
+          <div class="chat-details__row chat-environment__row" title={branchName()}>
+            <Icon name={branchName() ? "gitBranch" : "gitPullRequest"} />
+            <span class="chat-environment__branch-name">
               {branchName() ?? t("chat.pullRequests.publishPr")}
-            </button>
-          </Show>
-          <Show when={session()?.worktree}>
-            <small class="chat-details__badge">{t("chat.sessionDetails.worktree")}</small>
-          </Show>
-          <Show when={diff()}>
-            {(value) => (
-              <SessionGitDiff
-                classPrefix="chat-pr"
-                item={value()}
-                onOpen={work()?.branch ? work()?.onOpenSessionDiff : props.onOpenUncommitted}
-              />
-            )}
-          </Show>
-          <Show when={work()}>
-            {(value) => (
-              <ChatBranchActions
-                branch={value().branch}
-                branchName={branchName() ?? t("chat.pullRequests.publishPr")}
-                status={value().status}
-                publication={value().publication}
-                presented={props.presented && expanded()}
-                onDismiss={value().onDismissBranch}
-              />
-            )}
+            </span>
+            <Show when={session()?.worktree}>
+              <small class="chat-details__badge">{t("chat.sessionDetails.worktree")}</small>
+            </Show>
+          </div>
+          <Show when={diff() || work() || (!published() && props.work?.onOpenSessionDiff)}>
+            <div class="chat-environment__branch-controls">
+              <Show
+                when={diff()}
+                fallback={
+                  <Show when={!published() && props.work?.onOpenSessionDiff}>
+                    <button
+                      class="chat-pr__diff"
+                      type="button"
+                      onClick={() => props.work?.onOpenSessionDiff?.()}
+                    >
+                      {t("chat.sessionDetails.changes")}
+                    </button>
+                  </Show>
+                }
+              >
+                {(value) => (
+                  <SessionGitDiff
+                    classPrefix="chat-pr"
+                    item={value()}
+                    onOpen={work()?.branch ? work()?.onOpenSessionDiff : props.onOpenUncommitted}
+                  />
+                )}
+              </Show>
+              <Show when={work()}>
+                {(value) => (
+                  <ChatBranchActions
+                    branch={value().branch}
+                    branchName={branchName() ?? t("chat.pullRequests.publishPr")}
+                    status={value().status}
+                    publication={value().publication}
+                    presented={props.presented && expanded()}
+                    onDismiss={value().onDismissBranch}
+                  />
+                )}
+              </Show>
+            </div>
           </Show>
         </div>
       </Show>

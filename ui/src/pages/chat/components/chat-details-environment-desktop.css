@@ -78,21 +78,20 @@
   overflow: visible;
 }
 
-.chat-details .chat-environment__branch > .chat-environment__branch-name {
-  flex: 1;
+/* The first row keeps the native branch layout; the second starts under its label. */
+.chat-environment__branch-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   min-width: 0;
-  overflow: hidden;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  padding-inline: calc(
+      var(--details-row-padding, 0px) + var(--details-row-icon-size, 15px) +
+        var(--details-row-gap, 9px)
+    )
+    var(--details-row-padding, 0px);
 }
 
-.chat-environment__branch > .chat-pr__diff {
+.chat-environment__branch-controls > .chat-pr__diff {
   flex: none;
   overflow: visible;
   font-family: var(--font-body);
@@ -101,12 +100,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.chat-environment__branch--publication {
-  --details-row-padding-block: 0px;
-  --details-row-gap: 4px;
-}
-
-.chat-details .chat-environment__branch--publication > .chat-environment__branch-name {
-  text-overflow: clip;
-  mask-image: linear-gradient(to right, black calc(100% - 8px), transparent);
+.chat-environment__branch-controls > .chat-pr__publication-actions {
+  margin-inline-start: auto;
 }

@@ -135,7 +135,7 @@ it.each([
   { viewport: 900, width: 300, repo: "a-very-long-repository-name-that-needs-truncation" },
   { viewport: 393, width: 360, repo: "openclaw" },
 ])(
-  "keeps Environment branch rows horizontal with native menu actions at $viewport/$width",
+  "keeps the native branch row above aligned diff and publication actions at $viewport/$width",
   async ({ viewport, width, repo }) => {
     await page.viewport(viewport, 700);
     document.body.append(container);
@@ -213,16 +213,22 @@ it.each([
     const publishButton = row.querySelector<HTMLButtonElement>("button.chat-pr__create")!;
     await expect.element(page.elementLocator(row)).toBeVisible();
     await expect.element(page.elementLocator(trigger)).toBeVisible();
-    expect(row.getBoundingClientRect().height).toBe(32);
+    expect(row.querySelector(".chat-environment__row")!.getBoundingClientRect().height).toBe(32);
     expect(publishButton.getBoundingClientRect().height).toBe(26);
     expect(trigger.getBoundingClientRect().width).toBeGreaterThanOrEqual(26);
     expect(row.getBoundingClientRect().left).toBeGreaterThanOrEqual(0);
     expect(row.getBoundingClientRect().right).toBeLessThanOrEqual(viewport);
     expect(branchLabel.textContent).toBe(branch.branch);
     expect(row.querySelector(".chat-pr__repo")).toBeNull();
-    expect(branchLabel.getBoundingClientRect().right).toBeLessThanOrEqual(
-      diff.getBoundingClientRect().left,
+    expect(
+      Math.abs(branchLabel.getBoundingClientRect().left - diff.getBoundingClientRect().left),
+    ).toBeLessThanOrEqual(1);
+    expect(diff.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+      branchLabel.getBoundingClientRect().bottom,
     );
+    expect(
+      diff.getBoundingClientRect().top - branchLabel.getBoundingClientRect().bottom,
+    ).toBeLessThanOrEqual(12);
     expect(diff.getBoundingClientRect().right).toBeLessThanOrEqual(
       publishButton.getBoundingClientRect().left,
     );
@@ -237,8 +243,6 @@ it.each([
     expect(branchLabel.getBoundingClientRect().height).toBeLessThanOrEqual(
       Number.parseFloat(getComputedStyle(branchLabel).lineHeight) + 1,
     );
-    expect(getComputedStyle(branchLabel).textOverflow).toBe("clip");
-    expect(getComputedStyle(branchLabel).maskImage).toContain("linear-gradient");
     expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
 
     const dismiss = page.getByRole("button", {

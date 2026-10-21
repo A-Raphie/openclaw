@@ -522,6 +522,15 @@ it.each([false, true])(
     expect(onOpenSessionDiff).toHaveBeenCalledOnce();
     element.props = {
       ...element.props!,
+      pullRequestsBranch: { ...branch, additions: undefined, deletions: undefined },
+    };
+    await element.updateComplete;
+    const unknownDiff = environment.querySelector<HTMLButtonElement>(".chat-pr__diff")!;
+    expect(unknownDiff.textContent).toBe("Changes");
+    unknownDiff.click();
+    expect(onOpenSessionDiff).toHaveBeenCalledTimes(2);
+    element.props = {
+      ...element.props!,
       pullRequestsBranch: undefined,
       githubPublication: undefined,
       pullRequests: [pullRequest()],
