@@ -773,7 +773,12 @@ describe("node worker cleanup journal", () => {
   async function runningAnchor(cleanupMode: "owned-anchor" | "linux-subreaper" = "owned-anchor") {
     const { database, env, store } = await fixture();
     const launchId = "anchor-launch";
-    const { planHash, supervisor } = await claimLaunch(store, launchId);
+    const boot = vi
+      .spyOn(workerProcessIdentity, "getNodeWorkerBootIdentity")
+      .mockReturnValue("linux:test-boot");
+    const { planHash, supervisor } = await claimLaunch(store, launchId).finally(() =>
+      boot.mockRestore(),
+    );
     const binding = await store.cleanupBinding({ launchId, planHash, supervisor });
     const receipt = await store.markRunning({
       launchId,
