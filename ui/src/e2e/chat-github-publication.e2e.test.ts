@@ -324,7 +324,7 @@ suite.define(() => {
     await expect.poll(() => new URL(page.url()).pathname).toBe(controlUiSessionPath(sessionA));
     await showPublicationBranch(gateway, undefined, sessionA);
     await openChatPublication(page);
-    const publication = activePane.locator('.chat-pr[data-state="branch"]');
+    const publication = activePane.locator(".chat-environment__branch");
     await publication.waitFor();
     await expect
       .poll(() =>
@@ -644,7 +644,7 @@ suite.define(() => {
     expect(await gateway.getRequests("sessions.github.publish")).toHaveLength(0);
     expect(await gateway.getRequests("sessions.github.confirm")).toHaveLength(0);
 
-    const dismiss = page.locator(".chat-prs").getByRole("button", {
+    const dismiss = page.locator('[data-details-group="pull-requests"]').getByRole("button", {
       name: "Dismiss",
       exact: true,
     });

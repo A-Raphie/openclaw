@@ -5,6 +5,7 @@ import { PRESENTATION_CHANGED_EVENT } from "../../../lib/presentation.ts";
 import { ContentPresentation } from "../../../lib/solid/presentation.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import { ChatDetailsEnvironment } from "./chat-details-environment.tsx";
 import { ChatDetailsSession } from "./chat-details-session.tsx";
 import { publication, sessionBranch } from "./chat-pull-requests.test-support.ts";
 import { ChatPullRequests } from "./chat-pull-requests.tsx";
@@ -134,7 +135,7 @@ it.each([
   { viewport: 900, width: 300, repo: "a-very-long-repository-name-that-needs-truncation" },
   { viewport: 393, width: 360, repo: "openclaw" },
 ])(
-  "keeps compact branch rows horizontal with native menu actions at $viewport/$width",
+  "keeps Environment branch rows horizontal with native menu actions at $viewport/$width",
   async ({ viewport, width, repo }) => {
     await page.viewport(viewport, 700);
     document.body.append(container);
@@ -155,31 +156,44 @@ it.each([
             style={{ position: "relative", width: `${width}px`, "max-width": "none" }}
           >
             <div class="chat-details-desktop-body">
-              <ChatPullRequests
-                pullRequests={[]}
-                branch={branch}
-                status="ready"
-                compact
-                onDismiss={() => {}}
-                onDismissBranch={onDismissBranch}
-                publication={publication({
-                  onPublish,
-                  onSelect,
-                  options: {
-                    shared,
-                    personal: {
-                      state: "connected",
-                      generation: "personal",
-                      account: { accountId: 2, login: "alice-tools" },
-                      accessExpiresAtMs: null,
-                      refreshState: "available",
-                      pending: null,
-                    },
-                    pendingPersonal: null,
-                    latestShared: null,
+              <ChatDetailsEnvironment
+                presented
+                details={{
+                  sessionKey: "agent:main:branch",
+                  currentAgentId: "main",
+                  messages: [],
+                  selectedSession: undefined,
+                  detailsWorkspace: {
+                    root: "/synthetic/project",
+                    label: "project",
+                    branch: branch.branch,
                   },
-                  selection: { source: "shared", expected: shared },
-                })}
+                }}
+                work={{
+                  pullRequests: [],
+                  branch,
+                  status: "ready",
+                  onDismiss: () => {},
+                  onDismissBranch,
+                  publication: publication({
+                    onPublish,
+                    onSelect,
+                    options: {
+                      shared,
+                      personal: {
+                        state: "connected",
+                        generation: "personal",
+                        account: { accountId: 2, login: "alice-tools" },
+                        accessExpiresAtMs: null,
+                        refreshState: "available",
+                        pending: null,
+                      },
+                      pendingPersonal: null,
+                      latestShared: null,
+                    },
+                    selection: { source: "shared", expected: shared },
+                  }),
+                }}
               />
             </div>
           </section>
@@ -187,10 +201,11 @@ it.each([
       ),
       { container },
     );
-    await waitForSolid(() => expect(container.querySelector(".chat-pr")).not.toBeNull());
-    const row = container.querySelector<HTMLElement>(".chat-pr")!;
-    const label = row.querySelector<HTMLElement>(".chat-pr__link")!;
-    const branchLabel = row.querySelector<HTMLElement>(".chat-pr__branch")!;
+    await waitForSolid(() =>
+      expect(container.querySelector(".chat-environment__branch")).not.toBeNull(),
+    );
+    const row = container.querySelector<HTMLElement>(".chat-environment__branch")!;
+    const branchLabel = row.querySelector<HTMLElement>(".chat-environment__branch-name")!;
     const diff = row.querySelector<HTMLElement>(".chat-pr__diff")!;
     const trigger = row.querySelector<HTMLButtonElement>(".chat-pr__actions-trigger")!;
     const publish = page.getByRole("button", { name: "Create PR", exact: true });
@@ -203,9 +218,9 @@ it.each([
     expect(trigger.getBoundingClientRect().width).toBeGreaterThanOrEqual(26);
     expect(row.getBoundingClientRect().left).toBeGreaterThanOrEqual(0);
     expect(row.getBoundingClientRect().right).toBeLessThanOrEqual(viewport);
-    expect(label.textContent).toBe(branch.branch);
+    expect(branchLabel.textContent).toBe(branch.branch);
     expect(row.querySelector(".chat-pr__repo")).toBeNull();
-    expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(
+    expect(branchLabel.getBoundingClientRect().right).toBeLessThanOrEqual(
       diff.getBoundingClientRect().left,
     );
     expect(diff.getBoundingClientRect().right).toBeLessThanOrEqual(

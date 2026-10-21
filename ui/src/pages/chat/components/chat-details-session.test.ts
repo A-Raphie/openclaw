@@ -1,21 +1,15 @@
 /* @vitest-environment jsdom */
 import { createComponent, createSignal } from "solid-js";
-import { expect, it, onTestFinished, vi } from "vitest";
-import { createDeferred } from "../../../../../test/helpers/promise.js";
+import { expect, it, vi } from "vitest";
 import type { GatewaySessionRow } from "../../../api/types.ts";
-import type { ApplicationGateway } from "../../../app/gateway.ts";
 import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import type { SolidBridgeElement } from "../../../lib/solid-bridge.ts";
-import { createApplicationGateway } from "../../../test-helpers/application-context-fixtures.ts";
-import {
-  createGatewayRequestMock,
-  createTestGatewayClient,
-} from "../../../test-helpers/gateway-client.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { ChatDetailsEnvironmentMobile } from "./chat-details-environment-mobile.tsx";
 import { ChatDetailsSession } from "./chat-details-session.tsx";
 import type { ChatDetailsProps } from "./chat-details-types.ts";
+import { publication, sessionBranch, pullRequest } from "./chat-pull-requests.test-support.ts";
 import type { SubagentActivityProps } from "./chat-subagent-activity.tsx";
 
 type ChatSubagentActivityLive = SolidBridgeElement<SubagentActivityProps>;
@@ -77,13 +71,10 @@ it("omits empty linked-work disclosures and opens arriving pull requests", async
   const openChanges = vi.fn();
   element.props = { ...element.props!, onOpenSessionDiff: openChanges };
   await element.updateComplete;
-  const changes = element.querySelector('[data-details-group="pull-requests"]')!;
-  expect(changes.querySelector("summary")?.textContent).toContain("Changes");
-  const allChanges = changes.parentElement!.querySelector<HTMLButtonElement>(
-    ".chat-details__all-changes",
+  expect(element.querySelector('[data-details-group="pull-requests"]')).toBeNull();
+  const allChanges = element.querySelector<HTMLButtonElement>(
+    '[data-details-group="environment"] .chat-environment__action',
   )!;
-  expect(allChanges.closest("summary")).toBeNull();
-  expect(allChanges.textContent).toContain("All changes");
   allChanges.click();
   expect(openChanges).toHaveBeenCalledOnce();
   element.props = { ...element.props!, onOpenSessionDiff: undefined };
@@ -231,153 +222,16 @@ it("projects direct active children through the live observer with stable rounde
   expect(element.querySelector("openclaw-chat-subagent-activity")).toBeNull();
 });
 
-it("renders unknown without invented zero counts and keeps the All changes action usable", async () => {
+it("keeps diff navigation in Environment when branch and counts are unknown", async () => {
   const open = vi.fn();
   const element = await mount({ onOpenSessionDiff: open });
-  const button = element.querySelector<HTMLButtonElement>(".chat-details__all-changes")!;
-  expect(button.textContent).toContain("—");
-  expect(button.textContent).not.toContain("0 files");
+  expect(element.querySelector('[data-details-group="pull-requests"]')).toBeNull();
+  const button = element.querySelector<HTMLButtonElement>(
+    '[data-details-group="environment"] .chat-environment__action',
+  )!;
+  expect(button.textContent).not.toContain("+0");
   button.click();
   expect(open).toHaveBeenCalledOnce();
-});
-
-it("admits only the latest visible native summary inputs and retires detached work", async () => {
-  vi.useFakeTimers();
-  const result = { files: [{ path: "accepted.ts" }], additions: 3, deletions: 1 };
-  const first = createDeferred<typeof result>();
-  const retired = createDeferred<typeof result>();
-  let requestedAt = 0;
-  const diff = vi.fn<(params: unknown) => Promise<typeof result>>().mockImplementation(() => {
-    requestedAt = Date.now();
-    return Promise.resolve(result);
-  });
-  diff.mockReturnValueOnce(first.promise);
-  const request = createGatewayRequestMock((method, params) =>
-    method === "sessions.diff"
-      ? diff(params)
-      : { jobs: [], total: 0, hasMore: false, nextOffset: null, snapshotRevision: "1" },
-  );
-  const { gateway, publish } = createApplicationGateway();
-  publish({ ...gateway.snapshot, phase: "connected", client: createTestGatewayClient(request) });
-  const element = document.createElement("openclaw-chat-details-session");
-  onTestFinished(async () => {
-    element.remove();
-    await Promise.resolve();
-    vi.useRealTimers();
-  });
-  const select = (id: string) => {
-    element.props = {
-      sessionKey: `agent:main:${id}`,
-      currentAgentId: "main",
-      selectedSession: { key: `agent:main:${id}`, kind: "direct", sessionId: id },
-      messages: [],
-      pullRequestsGateway: gateway,
-      onOpenSessionDiff: () => {},
-    };
-  };
-  select("hidden");
-  document.body.append(element);
-  await element.updateComplete;
-  await vi.advanceTimersByTimeAsync(0);
-  expect(diff).not.toHaveBeenCalled();
-
-  element.presented = true;
-  select("intermediate");
-  select("first");
-  await element.updateComplete;
-  await vi.advanceTimersByTimeAsync(0);
-  expect(diff).toHaveBeenCalledExactlyOnceWith({
-    sessionKey: "agent:main:first",
-    agentId: "main",
-    scope: "all",
-    summaryOnly: true,
-  });
-  select("accepted");
-  first.resolve({ ...result, additions: 999 });
-  await vi.advanceTimersByTimeAsync(0);
-  await waitForSolid(() =>
-    expect(element.querySelector(".chat-details__change-lines--add")?.textContent).toBe("+3"),
-  );
-  expect(diff).toHaveBeenCalledTimes(2);
-  expect(diff).toHaveBeenLastCalledWith({
-    sessionKey: "agent:main:accepted",
-    agentId: "main",
-    scope: "all",
-    summaryOnly: true,
-  });
-
-  const button = element.querySelector(".chat-details__all-changes");
-  element.remove();
-  document.body.append(element);
-  await element.updateComplete;
-  await vi.advanceTimersByTimeAsync(0);
-  expect(element.querySelector(".chat-details__all-changes")).toBe(button);
-  expect(diff).toHaveBeenCalledTimes(2);
-
-  element.props = { ...element.props!, runActive: true };
-  await vi.advanceTimersByTimeAsync(requestedAt + 4_999 - Date.now());
-  expect(diff).toHaveBeenCalledTimes(2);
-  await vi.advanceTimersByTimeAsync(1);
-  expect(diff).toHaveBeenCalledTimes(3);
-  element.presented = false;
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(diff).toHaveBeenCalledTimes(3);
-
-  diff.mockReturnValueOnce(retired.promise);
-  element.presented = true;
-  await vi.advanceTimersByTimeAsync(0);
-  expect(diff).toHaveBeenCalledTimes(4);
-  element.remove();
-  await Promise.resolve();
-  retired.resolve({ ...result, additions: 999 });
-  await vi.advanceTimersByTimeAsync(60_000);
-  expect(diff).toHaveBeenCalledTimes(4);
-});
-
-it("shows abbreviated colored deltas with exact accessible totals, partial and stale states", async () => {
-  vi.useFakeTimers();
-  const request = vi
-    .fn<(method: string) => Promise<unknown>>()
-    .mockImplementation(async (method: string) =>
-      method === "sessions.diff"
-        ? { files: [{ path: "app.ts" }], additions: 12_480, deletions: 61, truncated: true }
-        : { jobs: [], total: 0, hasMore: false, nextOffset: null, snapshotRevision: "1" },
-    );
-  // SAFETY: These components only read the supplied connection and subscription surface.
-  const gateway = {
-    snapshot: { client: { request }, phase: "connected", hello: null },
-    connectionRevision: 1,
-    subscribe: () => () => {},
-    subscribeEvents: () => () => {},
-  } as unknown as ApplicationGateway;
-  try {
-    const element = await mount({ onOpenSessionDiff: vi.fn(), pullRequestsGateway: gateway });
-    await vi.advanceTimersByTimeAsync(0);
-    await waitForSolid(() =>
-      expect(element.querySelector(".chat-details__change-files")?.textContent).toContain("1 file"),
-    );
-    const button = element.querySelector<HTMLButtonElement>(".chat-details__all-changes")!;
-    expect(element.querySelector(".chat-details__change-lines--add")?.textContent).toBe("+12.5K");
-    expect(element.querySelector(".chat-details__change-lines--del")?.textContent).toBe("−61");
-    expect(button.getAttribute("aria-description")).toContain("+12480 lines, −61 lines");
-    expect(button.textContent).toContain("partial");
-    request.mockRejectedValue(new Error("offline"));
-    await vi.advanceTimersByTimeAsync(30_000);
-    await waitForSolid(() => expect(button.textContent).toContain("stale"));
-    expect(button.textContent).toContain("+12.5K");
-    expect(button.getAttribute("aria-description")).toContain("Last-known changes");
-    request.mockResolvedValue({ files: [], additions: 0, deletions: 0 });
-    await vi.advanceTimersByTimeAsync(30_000);
-    await waitForSolid(() => expect(button.textContent).toContain("0 files"));
-    expect(button.textContent).toContain("+0");
-    expect(button.textContent).toContain("−0");
-    expect(
-      element.querySelector(".chat-details__change-lines--add, .chat-details__change-lines--del"),
-    ).toBeNull();
-    element.remove();
-  } finally {
-    vi.useRealTimers();
-  }
 });
 
 it("groups every direct subagent with counts, live activity first, and a bounded preview", async () => {
@@ -634,4 +488,86 @@ it("demands mobile changes only while presented and retires native navigation ca
   setPresented(true);
   flush();
   expect(request).toHaveBeenCalledTimes(2);
+});
+
+it.each([false, true])(
+  "keeps branch publication on the existing Environment row (desktop=%s)",
+  async (desktop) => {
+    const branch = sessionBranch({
+      branch: "feature/environment-publication",
+      additions: 7,
+      deletions: 2,
+    });
+    const onPublish = vi.fn();
+    const onOpenSessionDiff = vi.fn();
+    const element = await mount({
+      detailsWorkspace: { root: "/synthetic/project", label: "project", branch: branch.branch },
+      pullRequestsBranch: branch,
+      githubPublication: publication({ onPublish }),
+      onOpenSessionDiff,
+    });
+    element.desktop = desktop;
+    await element.updateComplete;
+    const environment = element.querySelector('[data-details-group="environment"]')!;
+    const create = environment.querySelector<HTMLButtonElement>("button.chat-pr__create");
+    expect(create?.textContent).toBe("Create PR");
+    expect(environment.textContent).toContain("+7");
+    expect(environment.textContent).toContain("−2");
+    expect(
+      element.querySelector('[data-details-group="pull-requests"] .chat-pr--unpublished'),
+    ).toBeNull();
+    create!.click();
+    expect(onPublish).toHaveBeenCalledOnce();
+    environment.querySelector<HTMLButtonElement>(".chat-pr__diff")!.click();
+    expect(onOpenSessionDiff).toHaveBeenCalledOnce();
+    element.props = {
+      ...element.props!,
+      pullRequestsBranch: undefined,
+      githubPublication: undefined,
+      pullRequests: [pullRequest()],
+    };
+    await element.updateComplete;
+    await waitForSolid(() =>
+      expect(
+        element.querySelector('[data-details-group="pull-requests"] .chat-pr__link'),
+      ).not.toBeNull(),
+    );
+    expect(environment.querySelector(".chat-pr__publication-actions")).toBeNull();
+  },
+);
+
+it("restores the Environment branch after publication even before stale diff facts refresh", async () => {
+  const branch = sessionBranch({ branch: "feature/published", additions: 7, deletions: 2 });
+  const element = await mount({
+    detailsWorkspace: { root: "/synthetic/project", label: "project", branch: branch.branch },
+    pullRequestsBranch: branch,
+    onOpenSessionDiff: vi.fn(),
+    environment: {
+      uncommitted: {
+        sessionKey: "agent:main:details",
+        files: [{ path: "app.ts", status: "modified", additions: 7, deletions: 2 }],
+        additions: 7,
+        deletions: 2,
+      },
+    },
+    githubPublication: publication({
+      result: {
+        requestId: "published",
+        status: "published",
+        publisher: { source: "system-configured", accountId: 1, login: "system-bot" },
+        repository: "openclaw/openclaw",
+        branch: branch.branch,
+        headCommit: "a".repeat(40),
+        url: "https://github.com/openclaw/openclaw/pull/44",
+      },
+    }),
+  });
+  const environment = element.querySelector('[data-details-group="environment"]')!;
+  expect(environment.textContent).toContain(branch.branch);
+  expect(environment.querySelector(".chat-pr__diff, .chat-pr__publication-actions")).toBeNull();
+  await waitForSolid(() =>
+    expect(
+      element.querySelector('[data-details-group="pull-requests"] a[href$="/pull/44"]'),
+    ).not.toBeNull(),
+  );
 });

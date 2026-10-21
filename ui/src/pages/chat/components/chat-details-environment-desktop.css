@@ -77,3 +77,36 @@
   flex: none;
   overflow: visible;
 }
+
+.chat-details .chat-environment__branch > .chat-environment__branch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-environment__branch > .chat-pr__diff {
+  flex: none;
+  overflow: visible;
+  font-family: var(--font-body);
+  font-size: var(--details-meta-font-size, 12px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-environment__branch--publication {
+  --details-row-padding-block: 0px;
+  --details-row-gap: 4px;
+}
+
+.chat-details .chat-environment__branch--publication > .chat-environment__branch-name {
+  text-overflow: clip;
+  mask-image: linear-gradient(to right, black calc(100% - 8px), transparent);
+}

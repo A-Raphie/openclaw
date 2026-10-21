@@ -1,14 +1,17 @@
 import { Show, onSettled, createMemo, createSignal, merge } from "solid-js";
 import type { SessionsDiffResult } from "../../../../../packages/gateway-protocol/src/index.js";
+import { SessionGitDiff } from "../../../components/session-git-diff.tsx";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { useScrollState } from "../../../components/solid/scroll-state.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
+import { ChatBranchActions } from "./chat-branch-actions.tsx";
 import { getContextNoticeViewModel } from "./chat-composer-context.tsx";
 import { ChatDetailsContextContent, ChatDetailsContextSummary } from "./chat-details-context.tsx";
 import { ChatDetailsDesktopSection } from "./chat-details-desktop-section.tsx";
-import "./chat-details-environment-desktop.css";
 import type { ChatDetailsEnvironmentDesktopProps, ChatDetailsProps } from "./chat-details-types.ts";
+import "./chat-details-environment-desktop.css";
 import { ChatPanePlacement, createChatMachinePresentation } from "./chat-pane-placement.tsx";
+import { retainedPublication, showWorkRow } from "./chat-pull-requests.ts";
 
 type Props = { details: ChatDetailsProps; presented: boolean };
 
@@ -85,6 +88,21 @@ export function ChatDetailsEnvironment(props: ChatDetailsEnvironmentDesktopProps
     const result = props.uncommitted;
     return result && !result.unavailableReason && result.files.length > 0 ? result : undefined;
   };
+  const published = () => props.work?.publication?.result?.status === "published";
+  const work = () => {
+    const candidate = props.work;
+    if (!candidate || published()) {
+      return undefined;
+    }
+    const publication = candidate.publication;
+    return showWorkRow(candidate) ||
+      (retainedPublication(publication) &&
+        (publication?.result?.status !== "published" || publication.error))
+      ? candidate
+      : undefined;
+  };
+  const branchName = () => workspace()?.branch ?? work()?.branch?.branch;
+  const diff = () => (published() ? undefined : (work()?.branch ?? changes()));
   return [
     <Show when={requestUncommitted()} keyed>
       {(request) => {
@@ -177,27 +195,71 @@ export function ChatDetailsEnvironment(props: ChatDetailsEnvironmentDesktopProps
           />
         </div>
       </Show>
-      <Show when={workspace()?.branch}>
-        {(branch) => (
-          <div class="chat-details__row chat-environment__row" title={branch()}>
-            <Icon name="gitBranch" />
-            <span>{branch()}</span>
-            <Show when={session()?.worktree}>
-              <small class="chat-details__badge">{t("chat.sessionDetails.worktree")}</small>
-            </Show>
-          </div>
-        )}
+      <Show when={branchName() || work()}>
+        <div
+          class={[
+            "chat-details__row chat-environment__row chat-environment__branch",
+            { "chat-environment__branch--publication": Boolean(work()) },
+          ]}
+        >
+          <Icon name={branchName() ? "gitBranch" : "gitPullRequest"} />
+          <Show
+            when={!published() && props.work?.onOpenSessionDiff}
+            fallback={
+              <span class="chat-environment__branch-name" title={branchName()}>
+                {branchName() ?? t("chat.pullRequests.publishPr")}
+              </span>
+            }
+          >
+            <button
+              class="chat-environment__branch-name"
+              type="button"
+              title={branchName()}
+              onClick={() => props.work?.onOpenSessionDiff?.()}
+            >
+              {branchName() ?? t("chat.pullRequests.publishPr")}
+            </button>
+          </Show>
+          <Show when={session()?.worktree}>
+            <small class="chat-details__badge">{t("chat.sessionDetails.worktree")}</small>
+          </Show>
+          <Show when={diff()}>
+            {(value) => (
+              <SessionGitDiff
+                classPrefix="chat-pr"
+                item={value()}
+                onOpen={work()?.branch ? work()?.onOpenSessionDiff : props.onOpenUncommitted}
+              />
+            )}
+          </Show>
+          <Show when={work()}>
+            {(value) => (
+              <ChatBranchActions
+                branch={value().branch}
+                branchName={branchName() ?? t("chat.pullRequests.publishPr")}
+                status={value().status}
+                publication={value().publication}
+                presented={props.presented && expanded()}
+                onDismiss={value().onDismissBranch}
+              />
+            )}
+          </Show>
+        </div>
       </Show>
-      <Show when={session()?.worktree && !workspace()?.branch}>
+      <Show when={session()?.worktree && !branchName()}>
         <div class="chat-details__row chat-environment__row chat-environment__worktree">
           <Icon name="folder" />
           <span>{t("chat.sessionDetails.worktree")}</span>
         </div>
       </Show>
-      <Show when={changes()}>
+      <Show
+        when={
+          !published() && !branchName() && !work() && (changes() || props.work?.onOpenSessionDiff)
+        }
+      >
         <div class="chat-details__row chat-environment__row">
           <Show
-            when={props.onOpenUncommitted}
+            when={props.onOpenUncommitted ?? props.work?.onOpenSessionDiff}
             fallback={
               <>
                 <Icon name="diff" />
@@ -213,7 +275,7 @@ export function ChatDetailsEnvironment(props: ChatDetailsEnvironmentDesktopProps
               type="button"
               onClick={() => {
                 if (props.presented) {
-                  props.onOpenUncommitted?.();
+                  (props.onOpenUncommitted ?? props.work?.onOpenSessionDiff)?.();
                 }
               }}
             >

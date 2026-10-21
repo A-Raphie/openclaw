@@ -414,18 +414,20 @@ suite.define(() => {
       const mobile = label === "mobile";
       if (mobile) {
         const desktop = await openChatPublication(page);
-        await pollText(desktop.locator('.chat-pr[data-state="branch"] .chat-pr__branch')).toBe(
-          "claude/cloud-workers-live-events",
-        );
+        await pollText(
+          desktop.locator(".chat-environment__branch .chat-environment__branch-name"),
+        ).toBe("claude/cloud-workers-live-events");
         await page.setViewportSize(viewport);
       }
       const publication = await openChatPublication(page);
       const row = publication.locator(
-        mobile ? ".github-publication-mobile" : '.chat-pr[data-state="branch"]',
+        mobile ? ".github-publication-mobile" : ".chat-environment__branch",
       );
       await pollCount(row).toBe(1);
       await pollText(
-        row.locator(mobile ? ".github-publication-mobile__branch" : ".chat-pr__branch"),
+        row.locator(
+          mobile ? ".github-publication-mobile__branch" : ".chat-environment__branch-name",
+        ),
       ).toBe("claude/cloud-workers-live-events");
       await pollText(row.locator(".chat-pr__additions")).toBe("+2,819");
       await pollText(row.locator(".chat-pr__deletions")).toBe("−205");
@@ -476,7 +478,14 @@ suite.define(() => {
       await create.click({ trial: true });
 
       await dismiss.click();
-      await pollCount(row).toBe(0);
+      if (mobile) {
+        await pollCount(row).toBe(0);
+      } else {
+        await pollCount(row.locator(".chat-pr__publication-actions")).toBe(0);
+        await pollText(row.locator(".chat-environment__branch-name")).toBe(
+          "claude/cloud-workers-live-events",
+        );
+      }
     },
   );
 
@@ -533,9 +542,18 @@ suite.define(() => {
       branch: "openclaw/reconciled-publication",
       headCommit: "a".repeat(40),
     });
-    const open = page.getByRole("link", { name: "Open PR" });
+    const publishedGroup = await openDetailsPullRequests(page);
+    const open = publishedGroup.getByRole("link", { name: "Open PR" });
     await open.waitFor();
     await pollAttr(open, "href").toBe("https://github.com/openclaw/openclaw/pull/125200");
+    const environment = page.locator(".chat-environment__branch");
+    expect(await environment.locator(".chat-pr__diff, .chat-pr__publication-actions").count()).toBe(
+      0,
+    );
+    expect(await environment.getByRole("link", { name: "Open PR" }).count()).toBe(0);
+    expect(await environment.locator(".chat-environment__branch-name").textContent()).toBe(
+      "openclaw/reconciled-publication",
+    );
     if (captureUiProof) {
       await writeFile(
         path.join(publicationProofDir, "02-publication-published.png"),
@@ -547,6 +565,38 @@ suite.define(() => {
       pullRequests: [
         pullRequest(125200, {
           branch: "openclaw/reconciled-publication",
+          state: "open",
+        }),
+      ],
+      branch: {
+        owner: "openclaw",
+        repo: "openclaw",
+        branch: "openclaw/reconciled-publication",
+        additions: 3,
+        deletions: 0,
+        createUrl: "https://github.com/openclaw/openclaw/pull/new/openclaw/reconciled-publication",
+      },
+      rateLimited: false,
+      status: "ok",
+    });
+    await openDetailsPullRequests(page);
+    await pollCount(
+      publishedGroup.locator(
+        'a.chat-pr__link[href="https://github.com/openclaw/openclaw/pull/125200"]',
+      ),
+    ).toBe(1);
+    expect(await environment.locator(".chat-pr__diff, .chat-pr__publication-actions").count()).toBe(
+      0,
+    );
+    await pollCount(page.getByRole("button", { name: "Create PR" })).toBe(0);
+    await pollCount(page.getByRole("link", { name: "Open PR" })).toBe(0);
+
+    // Once that PR is merged, remaining branch changes are a new publication opportunity.
+    await emitPullRequests(gateway, watchedKey, {
+      pullRequests: [
+        pullRequest(125200, {
+          branch: "openclaw/reconciled-publication",
+          state: "merged",
         }),
       ],
       branch: {
@@ -561,8 +611,9 @@ suite.define(() => {
       status: "ok",
     });
     await openChatPublication(page);
-    await pollCount(page.getByRole("button", { name: "Create PR" })).toBe(1);
-    await pollCount(page.getByRole("link", { name: "Open PR" })).toBe(0);
+    await pollCount(environment.getByRole("button", { name: "Create PR", exact: true })).toBe(1);
+    await pollText(environment.locator(".chat-pr__diff")).toContain("+3");
+    expect(await gateway.getRequests("sessions.github.publish")).toHaveLength(1);
   });
 
   it("drops a deferred publication result after switching to another publishing session", async () => {
@@ -746,7 +797,9 @@ suite.define(() => {
       await page.getByRole("button", { name: "Publication account", exact: true }).count(),
     ).toBe(0);
     expect(await page.locator(".chat-pr__accounts-panel").count()).toBe(0);
-    expect(await page.locator(".chat-prs").textContent()).not.toContain("reclaim the workspace");
+    expect(await page.locator(".chat-environment__branch").textContent()).not.toContain(
+      "reclaim the workspace",
+    );
     await page.getByRole("button", { name: "Create PR" }).click();
     const request = await gateway.waitForRequest("sessions.github.publish");
     expect(request.params).toMatchObject({

@@ -1,9 +1,13 @@
 /* @vitest-environment jsdom */
 
+import { createComponent, createSignal, flush } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { GitHubPublicationView } from "../../../lib/sessions/github-publication-owner.ts";
+import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { setup, settled } from "../chat-github-publication.test-support.ts";
+import { ChatDetailsEnvironment } from "./chat-details-environment.tsx";
+import type { ChatPullRequestsProps } from "./chat-pull-request-shared.tsx";
 import {
   paintChatPullRequests,
   clearChatPullRequests,
@@ -14,6 +18,49 @@ import {
 let container: HTMLDivElement;
 const query = (selector: string) => container.querySelector(selector);
 const publish = () => container.querySelector<HTMLButtonElement>(".chat-pr__create");
+let environmentView:
+  | {
+      update: (work: ChatPullRequestsProps) => void;
+      unmount: () => void;
+    }
+  | undefined;
+
+function paintEnvironment(work: ChatPullRequestsProps) {
+  if (environmentView) {
+    environmentView.update(work);
+  } else {
+    let update!: (work: ChatPullRequestsProps) => void;
+    const mounted = mountSolid(
+      () => {
+        const [current, setCurrent] = createSignal(work);
+        update = setCurrent;
+        return createComponent(ChatDetailsEnvironment, {
+          presented: true,
+          get work() {
+            return current();
+          },
+          get details() {
+            return {
+              sessionKey: "agent:main:one",
+              currentAgentId: "main",
+              messages: [],
+              selectedSession: undefined,
+              detailsWorkspace: {
+                root: "/synthetic/project",
+                label: "project",
+                branch: current().branch?.branch,
+              },
+            };
+          },
+        });
+      },
+      { container },
+    );
+    environmentView = { update, unmount: mounted.unmount };
+  }
+  flush();
+}
+
 const personalAccount = (login = "alice-tools") => ({
   state: "connected" as const,
   generation: "personal-generation",
@@ -42,6 +89,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  environmentView?.unmount();
+  environmentView = undefined;
   clearChatPullRequests(container);
   container.remove();
 });
@@ -165,21 +214,17 @@ it("selects an eligible profile directly from Details and publishes its exact id
     publisher: { source: "personal", accountId: 2, login: "alice-tools" },
   });
   const draw = () =>
-    paintChatPullRequests(
-      {
-        pullRequests: [],
-        status: "ready",
-        onDismiss: () => {},
-        branch: sessionBranch(),
-        compact: true,
-        publication: controller.view(),
-      },
-      container,
-    );
+    paintEnvironment({
+      pullRequests: [],
+      status: "ready",
+      onDismiss: () => {},
+      branch: sessionBranch(),
+      publication: controller.view(),
+    });
   changed.mockImplementation(draw);
   draw();
   const create = container.querySelector<HTMLButtonElement>(
-    ".chat-pr--unpublished button.chat-pr__create",
+    ".chat-environment__branch button.chat-pr__create",
   );
   expect(create?.textContent).toBe("Create PR");
   expect(
@@ -213,37 +258,33 @@ it("selects an eligible profile directly from Details and publishes its exact id
 });
 
 it.each(["personal", "confirmation"] as const)(
-  "opens the native %s action from the compact row before dispatching",
+  "opens the native %s action from the Environment row before dispatching",
   async (state) => {
     const personal = personalAccount();
     const nativeAction = vi.fn();
-    paintChatPullRequests(
-      {
-        pullRequests: [],
-        status: "ready",
-        onDismiss: () => {},
-        branch: sessionBranch(),
-        compact: true,
-        publication: publication({
-          options: { shared: null, personal, pendingPersonal: null, latestShared: null },
-          selection: null,
-          result:
-            state === "confirmation"
-              ? {
-                  requestId: "original-request",
-                  status: "needs_confirmation",
-                  publisher: { source: "personal", ...personal.account },
-                  message: "Review the original publication.",
-                }
-              : null,
-          onPublish: nativeAction,
-          onConfirm: nativeAction,
-        }),
-      },
-      container,
-    );
+    paintEnvironment({
+      pullRequests: [],
+      status: "ready",
+      onDismiss: () => {},
+      branch: sessionBranch(),
+      publication: publication({
+        options: { shared: null, personal, pendingPersonal: null, latestShared: null },
+        selection: null,
+        result:
+          state === "confirmation"
+            ? {
+                requestId: "original-request",
+                status: "needs_confirmation",
+                publisher: { source: "personal", ...personal.account },
+                message: "Review the original publication.",
+              }
+            : null,
+        onPublish: nativeAction,
+        onConfirm: nativeAction,
+      }),
+    });
     const entry = container.querySelector<HTMLButtonElement>(
-      ".chat-pr--unpublished button.chat-pr__create",
+      ".chat-environment__branch button.chat-pr__create",
     )!;
     expect(entry.textContent).toBe(state === "personal" ? "Create PR" : "Review");
     entry.click();
