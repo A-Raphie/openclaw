@@ -13,7 +13,7 @@ import {
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { subtitleForRoute, titleForRoute } from "../../app-navigation.ts";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context-types.ts";
-import { hasOperatorSelfReadAccess, hasOperatorWriteAccess } from "../../app/operator-access.ts";
+import { hasOperatorSelfReadAccess } from "../../app/operator-access.ts";
 import { ShellLayoutBoundary } from "../../app/shell-layout-traits-solid.tsx";
 import { invalidateUserPreferences, saveUserPreferences } from "../../app/user-prefs-cache.ts";
 import type { AuthenticatedUser } from "../../app/user-profile.ts";
@@ -112,7 +112,8 @@ class ProfileState {
     // Hello can precede users.self; unresolved identity is not a sign-out.
     const identityReady = nextConnected && snapshot.selfUser !== undefined;
     const nextCanRead = hasOperatorSelfReadAccess(snapshot.hello?.auth ?? null);
-    const nextCanWrite = nextConnected && hasOperatorWriteAccess(snapshot.hello?.auth ?? null);
+    // Personal identity edits do not grant general server or session write access.
+    const nextCanWrite = nextConnected && nextCanRead;
     const connectionChanged =
       nextConnected !== this.connected ||
       identityReady !== this.identityReady ||
@@ -125,15 +126,8 @@ class ProfileState {
     const selfProfileChanged =
       nextSelfUser?.id !== this.selfUser?.id ||
       nextSelfUser?.identity?.id !== this.selfUser?.identity?.id;
-    const writeAccessLost =
-      nextConnected &&
-      !nextCanWrite &&
-      this.connectionScopes?.some(
-        (scope) => scope === "operator.write" || scope === "operator.admin",
-      );
     const readAccessLost = nextConnected && this.canRead && !nextCanRead;
-    const identitySourceChanged =
-      clientChanged || selfProfileChanged || writeAccessLost || readAccessLost;
+    const identitySourceChanged = clientChanged || selfProfileChanged || readAccessLost;
     this.client = snapshot.client;
     this.connected = nextConnected;
     this.identityReady = identityReady;

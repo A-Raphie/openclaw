@@ -136,37 +136,63 @@ it.each(["role", "identity"] as const)(
   },
 );
 
-it("commits profile display and avatar edits through their Gateway handlers without host SQL", async () => {
-  const person = ensureProfileForEmail("setter@example.test");
-  catalog = await prepareUserProfileCatalog();
-  const refreshConnectedUserProfile = vi.fn();
-  requireNodeSqlite();
-  const calls = observeMainThreadSql();
-  for (const [method, params, expected] of [
-    ["users.setDisplayName", { displayName: "Current name" }, { displayName: "Current name" }],
-    ["users.setAvatar", { mime: "image/png", avatarBase64: "AQI=" }, { hasAvatar: true }],
-  ] as const) {
-    const respond = vi.fn();
-    await usersHandlers[method]!({
-      req: {} as never,
-      params: { profileId: person.id, ...params },
-      respond,
-      context: { getRuntimeConfig: () => ({}), refreshConnectedUserProfile } as never,
-      client: { connect: { role: "operator", scopes: ["operator.admin"] } } as never,
-      isWebchatConnect: () => false,
+it.each(["operator.read", "operator.sessions.read", "operator.sessions.write"])(
+  "allows only self-service profile edits with %s without host SQL",
+  async (scope) => {
+    const person = ensureProfileForEmail("setter@example.test");
+    const other = ensureProfileForEmail("other@example.test");
+    catalog = await prepareUserProfileCatalog();
+    const refreshConnectedUserProfile = vi.fn();
+    context.refreshConnectedUserProfile = refreshConnectedUserProfile;
+    requireNodeSqlite();
+    const calls = observeMainThreadSql();
+    for (const [method, params, expected] of [
+      ["users.setDisplayName", { displayName: "Current name" }, { displayName: "Current name" }],
+      ["users.setAvatar", { mime: "image/png", avatarBase64: "AQI=" }, { hasAvatar: true }],
+    ] as const) {
+      const denied = dispatch(method, person.id, [scope], { profileId: other.id, ...params });
+      await denied.request;
+      expect(denied.respond).toHaveBeenCalledWith(
+        false,
+        undefined,
+        expect.objectContaining({ code: "FORBIDDEN" }),
+      );
+      const { respond, request } = dispatch(method, person.id, [scope], {
+        profileId: person.id,
+        ...params,
+      });
+      await request;
+      expect(respond).toHaveBeenCalledExactlyOnceWith(
+        true,
+        expect.objectContaining({
+          profile: expect.objectContaining({ id: person.id, ...expected }),
+        }),
+      );
+      expect(refreshConnectedUserProfile).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: person.id, ...expected }),
+      );
+    }
+    for (const [method, params] of [
+      ["users.setRole", { profileId: person.id, role: null }],
+      ["users.linkEmail", { email: "other@example.test", targetProfileId: person.id }],
+      ["users.merge", { sourceProfileId: other.id, targetProfileId: person.id }],
+    ] as const) {
+      const denied = dispatch(method, person.id, [scope], params);
+      await denied.request;
+      expect(denied.respond).toHaveBeenCalledWith(
+        false,
+        undefined,
+        expect.objectContaining({ code: "FORBIDDEN" }),
+      );
+    }
+    const saved = dispatch("users.self", person.id, [scope]);
+    await saved.request;
+    expect(saved.respond).toHaveBeenCalledWith(true, {
+      profile: expect.objectContaining({ displayName: "Current name", hasAvatar: true }),
     });
-    expect(respond).toHaveBeenCalledExactlyOnceWith(
-      true,
-      expect.objectContaining({
-        profile: expect.objectContaining({ id: person.id, ...expected }),
-      }),
-    );
-    expect(refreshConnectedUserProfile).toHaveBeenLastCalledWith(
-      expect.objectContaining({ id: person.id, ...expected }),
-    );
-  }
-  calls.expectIdle();
-});
+    calls.expectIdle();
+  },
+);
 
 it("enforces scoped, bounded users.list dispatch without filtering profiles or running host SQL", async () => {
   const alpha = ensureProfileForEmail("alpha@example.test");
