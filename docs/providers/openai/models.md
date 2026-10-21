@@ -88,14 +88,16 @@ Before the deadline:
    configured reasoning capabilities and service tiers for the specific model;
    the old aliases' capabilities are not a contract for every underlying model.
 4. Select an explicit access program in the chat Access control, or use Codex's
-   own Daybreak controls with an approved specific model. Selecting a model,
-   access program, or cyber-failover target does not grant account access.
+   own Daybreak controls with an approved specific model. Selecting a model or
+   access program does not grant account access.
 
-Automatic cyber failover now requires an explicit `model` under
-`agents.defaults.embeddedAgent.cyberFailover` (OpenClaw runtime) or
-`plugins.entries.codex.config.appServer.cyberFailover` (native Codex).
-Without a target, the original provider refusal remains terminal. Existing
-explicit targets and `mode: "off"` settings are preserved. See
+Automatic cyber recovery retries a replay-safe cyber refusal once on the same
+model and account with authorized Blue Access. It preserves the runtime, effort,
+speed, and saved session settings; ordinary configured model fallback remains
+separate. Run `openclaw doctor --fix` to remove the retired `cyberFailover.model`
+field from `agents.defaults.embeddedAgent.cyberFailover` (OpenClaw runtime) or
+`plugins.entries.codex.config.appServer.cyberFailover` (native Codex). Doctor
+preserves `mode` and `cooloffMs`, including explicit `mode: "off"`. See
 [model failover](/concepts/model-failover#automatic-cyber-policy-escalation)
 and [Codex runtime behavior](/plugins/codex-harness/runtime-behavior#automatic-daybreak-escalation).
 

@@ -94,7 +94,7 @@ it.each([
               reasoning: false,
               input: ["text", "image"],
               maxTokens: 128000,
-              headers: { "X-Model": "model", "X-Precedence": "model" },
+              headers: { "X-Model": "synthetic-model-header", "X-Precedence": "model" },
               cost: { input: 42, output: 42, cacheRead: 0, cacheWrite: 0 },
             },
           ];
@@ -312,7 +312,7 @@ it.each([
             ).toEqual([configured ? null : "Bearer synthetic-openai-key", "provider", "request"]);
             if (configured) {
               expect(["x-model", "x-credential"].map((key) => sent.headers.get(key))).toEqual([
-                "model",
+                "synthetic-model-header",
                 "synthetic-custom-auth",
               ]);
             }

@@ -82,7 +82,11 @@ suite.define(() => {
             ],
           });
           await page.goto(suite.server.baseUrl + "chat");
-          const picker = page.locator(".chat-controls__effort-picker").first();
+          const composer = page.locator(".agent-chat__input");
+          if (mobile) {
+            await composer.locator("textarea").click();
+          }
+          const picker = composer.locator(".chat-controls__effort-picker");
           await expect
             .poll(() => picker.locator("summary").getAttribute("aria-disabled"))
             .toBe("false");
@@ -164,7 +168,7 @@ suite.define(() => {
               "daybreak_blue",
             );
             await picker.locator("summary").click();
-            const modelPicker = page.locator(".chat-controls__model-picker").first();
+            const modelPicker = composer.locator(".chat-controls__model-picker");
             await modelPicker.locator("summary").click();
             const modelMenu = modelPicker.locator(".chat-controls__model-menu");
             await expect.poll(() => modelMenu.isVisible()).toBe(true);
