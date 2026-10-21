@@ -916,7 +916,8 @@ CREATE TABLE IF NOT EXISTS node_worker_launch_cleanup (
   launch_id TEXT NOT NULL PRIMARY KEY
     REFERENCES node_worker_launches(launch_id) ON DELETE CASCADE,
   cleanup_mode TEXT NOT NULL CHECK (cleanup_mode IN ('process-group', 'owned-anchor')),
-  lineage_settled INTEGER CHECK (lineage_settled IS NULL OR lineage_settled = 1)
+  lineage_settled INTEGER CHECK (lineage_settled IS NULL OR lineage_settled = 1),
+  job_kill_on_close INTEGER
 ) STRICT;
 
 -- Older readers retain owned-anchor custody: lineage EOF is not this certificate.

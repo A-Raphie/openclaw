@@ -383,6 +383,40 @@ describe("node worker launch store pruning", () => {
     });
   });
 
+  it("adds Windows Job custody to an older cleanup table without certifying old receipts", async () => {
+    const { database, store } = await fixture();
+    database.exec(`
+      CREATE TABLE node_worker_launch_cleanup (
+        launch_id TEXT NOT NULL PRIMARY KEY
+          REFERENCES node_worker_launches(launch_id) ON DELETE CASCADE,
+        cleanup_mode TEXT NOT NULL CHECK (cleanup_mode IN ('process-group', 'owned-anchor')),
+        lineage_settled INTEGER CHECK (lineage_settled IS NULL OR lineage_settled = 1)
+      ) STRICT;
+    `);
+    const previous = await claimLaunch(store, "old-windows-worker");
+    await store.markRunning({
+      launchId: "old-windows-worker",
+      ...previous,
+      worker: previous.supervisor,
+      cleanupMode: "process-group",
+    });
+    const current = await claimLaunch(store, "job-worker");
+    await store.markRunning({
+      launchId: "job-worker",
+      ...current,
+      worker: current.supervisor,
+      cleanupMode: "windows-job",
+    });
+    expect(await store.get("old-windows-worker")).toMatchObject({
+      state: "running",
+      workerCleanupMode: "process-group",
+    });
+    expect(await store.get("job-worker")).toMatchObject({
+      state: "running",
+      workerCleanupMode: "windows-job",
+    });
+  });
+
   it("prunes only the oldest expired terminal receipts in bounded batches", async () => {
     const { database, store } = await fixture();
     insertLaunch({ database, launchId: "old-completed", state: "completed", completedAtMs: 1 });

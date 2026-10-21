@@ -1,7 +1,10 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Selectable } from "kysely";
 import type { DB as OpenClawStateDatabase } from "../state/openclaw-state-db.generated.js";
-import type { NodeWorkerSupervisorReceipt } from "../worker/node-supervisor-protocol.js";
+import type {
+  NodeWorkerSupervisorIdentity,
+  NodeWorkerSupervisorReceipt,
+} from "../worker/node-supervisor-protocol.js";
 import type { NodeWorkerProcessIdentity } from "./node-worker-process-identity.js";
 
 export type NodeWorkerTerminalState = Exclude<
@@ -9,7 +12,11 @@ export type NodeWorkerTerminalState = Exclude<
   "pending" | "running"
 >;
 
-export type NodeWorkerCleanupMode = "process-group" | "owned-anchor" | "linux-subreaper";
+export type NodeWorkerCleanupMode =
+  | "process-group"
+  | "owned-anchor"
+  | "linux-subreaper"
+  | "windows-job";
 
 export type NodeWorkerCleanupBinding = {
   databasePath: string;
@@ -30,11 +37,33 @@ export type NodeWorkerLaunchRow = Selectable<OpenClawStateDatabase["node_worker_
   container_json?: string | null;
   cleanup_mode?: string | null;
   lineage_settled?: number | null;
+  job_kill_on_close?: number | null;
   scope_kind?: string | null;
   descendants_reaped?: number | null;
 };
 
 export type NodeWorkerLaunchReceipt = ReturnType<typeof nodeWorkerLaunchReceiptFromRow>;
+
+export function validateIdentifier(value: string, label: string): void {
+  if (!value || value.trim() !== value || value.length > 256 || value.includes("\0")) {
+    throw new Error(`${label} must be a bounded non-empty identifier`);
+  }
+}
+
+export function rowMatchesImmutableIdentity(
+  row: NodeWorkerLaunchRow,
+  expected: NodeWorkerSupervisorIdentity,
+): boolean {
+  return (
+    row.launch_id === expected.launchId &&
+    row.plan_hash === expected.planHash &&
+    row.environment_id === expected.environmentId &&
+    row.session_id === expected.sessionId &&
+    row.owner_epoch === expected.ownerEpoch &&
+    row.placement_generation === expected.placementGeneration &&
+    row.run_id === expected.runId
+  );
+}
 
 export function isNodeWorkerTerminalState(value: string): value is NodeWorkerTerminalState {
   return (
@@ -119,6 +148,9 @@ export function nodeWorkerLaunchReceiptFromRow(row: NodeWorkerLaunchRow) {
   if (cleanupMode !== null && cleanupMode !== "process-group" && cleanupMode !== "owned-anchor") {
     throw new Error("invalid node worker cleanup mode");
   }
+  if (row.job_kill_on_close === 1 && cleanupMode !== "process-group") {
+    throw new Error("invalid node worker Windows Job custody");
+  }
   return {
     launchId: row.launch_id,
     planHash: row.plan_hash,
@@ -136,7 +168,11 @@ export function nodeWorkerLaunchReceiptFromRow(row: NodeWorkerLaunchRow) {
         ? null
         : { pid: row.worker_pid, startTime: row.worker_start_time },
     workerCleanupMode:
-      row.scope_kind === "linux-subreaper" ? ("linux-subreaper" as const) : cleanupMode,
+      row.job_kill_on_close === 1
+        ? ("windows-job" as const)
+        : row.scope_kind === "linux-subreaper"
+          ? ("linux-subreaper" as const)
+          : cleanupMode,
     ...(row.scope_kind === "linux-subreaper"
       ? { workerDescendantsReaped: row.descendants_reaped === 1 }
       : {}),

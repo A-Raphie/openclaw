@@ -471,7 +471,7 @@ export const statePostgresRuntime = {
       indexes: [],
       dependencies: ["node_worker_launches"],
       activation: "first-use",
-      sql: '-- Generated runtime DDL; the owner supplies search_path and the transaction.\n\nCREATE TABLE "node_worker_launch_cleanup" (\n  "launch_id" text COLLATE "C" NOT NULL,\n  "cleanup_mode" text COLLATE "C" NOT NULL,\n  "lineage_settled" bigint,\n  PRIMARY KEY ("launch_id"),\n  CHECK (("cleanup_mode" IN (\'process-group\', \'owned-anchor\'))),\n  CHECK ("lineage_settled" IS NULL OR ("lineage_settled" = 1))\n);\n\nALTER TABLE "node_worker_launch_cleanup" ADD FOREIGN KEY ("launch_id") REFERENCES "node_worker_launches" ("launch_id") ON UPDATE NO ACTION ON DELETE CASCADE NOT DEFERRABLE;\n',
+      sql: '-- Generated runtime DDL; the owner supplies search_path and the transaction.\n\nCREATE TABLE "node_worker_launch_cleanup" (\n  "launch_id" text COLLATE "C" NOT NULL,\n  "cleanup_mode" text COLLATE "C" NOT NULL,\n  "lineage_settled" bigint,\n  "job_kill_on_close" bigint,\n  PRIMARY KEY ("launch_id"),\n  CHECK (("cleanup_mode" IN (\'process-group\', \'owned-anchor\'))),\n  CHECK ("lineage_settled" IS NULL OR ("lineage_settled" = 1))\n);\n\nALTER TABLE "node_worker_launch_cleanup" ADD FOREIGN KEY ("launch_id") REFERENCES "node_worker_launches" ("launch_id") ON UPDATE NO ACTION ON DELETE CASCADE NOT DEFERRABLE;\n',
     },
     {
       id: "node_worker_launch_process_scopes",
@@ -11129,6 +11129,18 @@ export const statePostgresRuntime = {
         identity: false,
         default: null,
         position: 3,
+      },
+    },
+    {
+      table: "node_worker_launch_cleanup",
+      kind: "column",
+      value: {
+        name: "job_kill_on_close",
+        type: "bigint",
+        nullable: true,
+        identity: false,
+        default: null,
+        position: 4,
       },
     },
     {

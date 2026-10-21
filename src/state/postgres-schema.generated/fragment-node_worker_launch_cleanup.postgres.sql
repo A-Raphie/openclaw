@@ -4,6 +4,7 @@ CREATE TABLE "node_worker_launch_cleanup" (
   "launch_id" text COLLATE "C" NOT NULL,
   "cleanup_mode" text COLLATE "C" NOT NULL,
   "lineage_settled" bigint,
+  "job_kill_on_close" bigint,
   PRIMARY KEY ("launch_id"),
   CHECK (("cleanup_mode" IN ('process-group', 'owned-anchor'))),
   CHECK ("lineage_settled" IS NULL OR ("lineage_settled" = 1))

@@ -258,6 +258,13 @@ the node's supervisor. Recovery keeps capacity occupied while the previous owner
 finishes stopping its commands. An upgraded node host preserves the released
 startup message and detached process-group ownership for older worker bundles.
 
+Windows node hosts record when the native Job launcher contains a worker tree
+with kill-on-close ownership. If that node host dies, Windows terminates the Job;
+after restart, the node can interrupt the recorded launch and release its slot.
+Older receipts and launches without the native helper retain conservative cleanup
+checks. A descendant explicitly created with `CREATE_BREAKAWAY_FROM_JOB` is outside
+this guarantee.
+
 Installed node hosts package the POSIX launch helpers separately to reduce
 per-turn startup work. Update and restart the node host to receive this
 improvement. The worker still waits for its durable launch receipt before

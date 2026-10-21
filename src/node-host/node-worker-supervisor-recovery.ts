@@ -183,7 +183,9 @@ async function recoverNodeWorkerLaunch(params: {
       );
       return latest();
     }
-  } else if (!rebooted && receipt.worker) {
+  } else if (!rebooted && receipt.worker && receipt.workerCleanupMode !== "windows-job") {
+    // Windows Job receipts need no PID-tree observation: the dead supervisor held
+    // the sole kill-on-close handle. Explicit CREATE_BREAKAWAY_FROM_JOB is not covered.
     const worker = receipt.worker;
     let workerState = inspectOwnedNodeWorkerTree(worker);
     if (workerState === "unknown") {

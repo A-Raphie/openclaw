@@ -8,7 +8,11 @@ import type { EngineConnection } from "../infra/sql-connection.js";
 import { createSqliteSchemaEnsurer } from "../infra/sqlite-schema-ensure.js";
 import { getAdmittedSqliteSchemaFacts } from "../infra/sqlite-schema-facts.js";
 import { requestSqliteWorkerOperationAdmission } from "../infra/sqlite-worker-operation-admission.js";
-import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
+import {
+  ensureColumn,
+  tableExists,
+  tableHasColumn,
+} from "../state/openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateDatabase } from "../state/openclaw-state-db.generated.js";
 import {
   runOpenClawStateWriteTransaction,
@@ -25,6 +29,8 @@ import type {
 import {
   isNodeWorkerTerminalState,
   nodeWorkerLaunchReceiptFromRow,
+  rowMatchesImmutableIdentity,
+  validateIdentifier,
   validateNodeWorkerContainerIdentity,
   validateNodeWorkerPlanHash,
   validateNodeWorkerProcessIdentity,
@@ -126,7 +132,10 @@ function selectLaunchRows(database: EngineConnection, schema: LaunchSchema) {
         .select([
           "node_worker_launch_cleanup.cleanup_mode",
           "node_worker_launch_cleanup.lineage_settled",
-        ]),
+        ])
+        .$if(tableHasColumn(database, "node_worker_launch_cleanup", "job_kill_on_close"), (row) =>
+          row.select("node_worker_launch_cleanup.job_kill_on_close"),
+        ),
     )
     .$if(hasLaunchTable(database, schema, "node_worker_launch_process_scopes"), (selection) =>
       selection
@@ -226,12 +235,6 @@ export function readNodeWorkerLaunchReceipt(
   return row ? nodeWorkerLaunchReceiptFromRow(row) : undefined;
 }
 
-function validateIdentifier(value: string, label: string): void {
-  if (!value || value.trim() !== value || value.length > 256 || value.includes("\0")) {
-    throw new Error(`${label} must be a bounded non-empty identifier`);
-  }
-}
-
 function validateTimestamp(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error("node worker launch timestamp must be a non-negative safe integer");
@@ -283,21 +286,6 @@ function sameObservedOwner(
     current.supervisor_start_time === observed.supervisor_start_time &&
     current.worker_pid === observed.worker_pid &&
     current.worker_start_time === observed.worker_start_time
-  );
-}
-
-function rowMatchesImmutableIdentity(
-  row: NodeWorkerLaunchRow,
-  expected: NodeWorkerSupervisorIdentity,
-): boolean {
-  return (
-    row.launch_id === expected.launchId &&
-    row.plan_hash === expected.planHash &&
-    row.environment_id === expected.environmentId &&
-    row.session_id === expected.sessionId &&
-    row.owner_epoch === expected.ownerEpoch &&
-    row.placement_generation === expected.placementGeneration &&
-    row.run_id === expected.runId
   );
 }
 
@@ -664,6 +652,9 @@ export class NodeWorkerLaunchKernel {
       }
       if (params.cleanupMode !== null) {
         ensureNodeWorkerLaunchSchema(database, "node_worker_launch_cleanup");
+        if (params.cleanupMode === "windows-job") {
+          ensureColumn(database, "node_worker_launch_cleanup", "job_kill_on_close INTEGER");
+        }
         executeSqliteQuerySync(
           database,
           query(database)
@@ -671,8 +662,13 @@ export class NodeWorkerLaunchKernel {
             .values({
               launch_id: params.launchId,
               cleanup_mode:
-                params.cleanupMode === "linux-subreaper" ? "owned-anchor" : params.cleanupMode,
+                params.cleanupMode === "linux-subreaper"
+                  ? "owned-anchor"
+                  : params.cleanupMode === "windows-job"
+                    ? "process-group"
+                    : params.cleanupMode,
               lineage_settled: null,
+              ...(params.cleanupMode === "windows-job" ? { job_kill_on_close: 1 } : {}),
             }),
         );
       }

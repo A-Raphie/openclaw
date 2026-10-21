@@ -89,6 +89,7 @@ function resolveChildInvocation(params: {
 type ChildAdapter = SpawnProcessAdapter<NodeJS.Signals | null> &
   Required<Pick<SpawnProcessAdapter<NodeJS.Signals | null>, "onExit" | "onError">>;
 type WorkerChildAdapter = ChildAdapter & {
+  readonly jobKillOnClose?: true;
   closeStartGate?: () => void;
   openStartGate?: () => Promise<void>;
 };
@@ -617,6 +618,7 @@ export async function createChildAdapter(
 
   let startGateOpened = false;
   const adapter: WorkerChildAdapter = {
+    ...(windowsJob ? { jobKillOnClose: true as const } : {}),
     get pid() {
       return windowsJob?.commandPid ?? child.pid;
     },
