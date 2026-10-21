@@ -10,6 +10,7 @@ import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import * as cron from "../../cron/active-jobs.js";
 import { prepareCronRunAdmission } from "../../cron/run-admission.js";
+import { TEST_SCHEDULED_EXECUTION } from "../../cron/scheduled-occurrence.test-support.js";
 import { createAgentRuntimeApprovalAuthorityValidator } from "../../gateway/agent-runtime-approval-authority.js";
 import * as turns from "../../gateway/message-action-turn-capability.js";
 import { createGatewayMethodRegistry } from "../../gateway/methods/registry.js";
@@ -274,6 +275,7 @@ it("retains scheduled invocation config through bound Gateway dispatch after pre
     const resolveGatewayContext = () => context;
     promptAdmission = withPluginRuntimeGatewayContextResolver(resolveGatewayContext, () =>
       prepareCronRunAdmission({
+        scheduledExecution: TEST_SCHEDULED_EXECUTION,
         deliveryAttemptFence: { beforeAttempt: async () => {}, assertCurrent: () => {} },
         cfg: configA,
         ...run,

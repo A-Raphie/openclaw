@@ -9,6 +9,7 @@ import * as runtimeConfig from "../../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import * as activeJobs from "../../cron/active-jobs.js";
 import { prepareCronRunAdmission } from "../../cron/run-admission.js";
+import { TEST_SCHEDULED_EXECUTION } from "../../cron/scheduled-occurrence.test-support.js";
 import { registerActiveCronTaskRun } from "../../cron/service/active-run-cancellation.js";
 import { createAgentRuntimeApprovalAuthorityValidator } from "../../gateway/agent-runtime-approval-authority.js";
 import { createGatewayMethodRegistry } from "../../gateway/methods/registry.js";
@@ -258,6 +259,7 @@ it.each([
       }
       const prepareAdmission = () =>
         prepareCronRunAdmission({
+          scheduledExecution: TEST_SCHEDULED_EXECUTION,
           deliveryAttemptFence: { beforeAttempt: async () => {}, assertCurrent: () => {} },
           cfg: config,
           ...runOptions,
