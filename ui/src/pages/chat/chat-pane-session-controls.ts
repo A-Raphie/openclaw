@@ -316,7 +316,9 @@ export function renderChatPaneComposerControls(params: {
         sessionKey: state.sessionKey,
         selectedSession,
         sessionsResult: state.sessionsResult,
-        stream: state.chatStream,
+        get stream() {
+          return state.chatStream;
+        },
         onModelSetup,
         onProviderSettings,
         onAccessProgramSelect: (next, targetSessionKey) =>
