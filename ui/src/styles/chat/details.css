@@ -682,7 +682,15 @@ button.chat-details__process:is(:hover, :focus-visible) {
   background: transparent;
   color: var(--muted);
 }
+.chat-details .chat-pr__actions-trigger > .oc-menu-item__label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
 .chat-details .chat-pr__actions-trigger svg {
+  display: block;
   width: 15px;
   height: 15px;
 }

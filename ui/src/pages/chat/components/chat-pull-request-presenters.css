@@ -63,7 +63,6 @@
 
 .chat-details .chat-pr__publication-actions > .chat-pr__create {
   min-height: 26px;
-  min-width: 96px;
   justify-content: center;
   padding: 0 7px;
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
