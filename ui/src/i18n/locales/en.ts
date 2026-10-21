@@ -2431,7 +2431,6 @@ export const en: TranslationMap & {
       mention: "Mention",
       mentionPerson: "Mention {name}",
       morePeople: "{count} more people",
-      agentContext: "Session and workspace for {agent}",
       renameTooltip: "Rename session",
       renameAria: "Rename session {title}",
       renameInputAria: "Session title",
