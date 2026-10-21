@@ -342,9 +342,9 @@ const tableNames: readonly (readonly [string, readonly string[]])[] = [
 ];
 const fingerprints: Readonly<Record<string, CatalogReference>> = {
   // state
-  "14bba59de6df8a0797717ebfe71a97e9068ffeb17c49e90b25a2190fee5171c4": [
+  a14abb596ae2ad416f9e7573f075bdc0314e6c31fb7fabdb732cbb7fac597adf: [
     "state",
-    "846902ef9d50ee40012fd505c5a2f176f401c79c68cabc743cde54fdbd54f35f",
+    "587dd22498db1b171f12a7838200384e50360089996b15307855845552be952d",
     [
       0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
       26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
@@ -356,9 +356,9 @@ const fingerprints: Readonly<Record<string, CatalogReference>> = {
     [],
   ],
   // state-before-v27
-  "7a6f0a8d8935ba83e2f4ba7d1c0a9655ede4cb7ea30476b755599f79659ea108": [
+  "40d1a6a4efb0313a76c2ebaa665dd3cae29ab4089554c60e9e89226f673b37d6": [
     "state-before-v27",
-    "a30db8ba5620e25f671679bbcdcb7aa872801c4edbe347ffe7084caad19ed0cd",
+    "7c96f5aeee1c1410ac0dd23b2a9534ab346f6528f34ab00fb9d724b74d6a3f59",
     [
       129, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
       25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
@@ -370,9 +370,9 @@ const fingerprints: Readonly<Record<string, CatalogReference>> = {
     [],
   ],
   // state-before-v26
-  d5ce8734366afcec227a63217245b72e5ab36b0c3515c81cd64885942e007185: [
+  "5ed6aaffd7039839e46546a30e3e9bab125eff71d791546990cdede84f537fdf": [
     "state-before-v26",
-    "b520358b4ab6a609b4f5793567d7207661a5445bc8186631ba7f8e6c3cd26e85",
+    "13c4baab95b591ab2bb07e7e06557f456b0b2207741bb7554e0f08e5d247b12e",
     [
       129, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
       25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
@@ -608,9 +608,9 @@ const fingerprints: Readonly<Record<string, CatalogReference>> = {
     [],
   ],
   // fragment-node_worker_launch_cleanup, state-feature-node_worker_launch_cleanup
-  "608e785dbc7eca9fc9dd1f89e1bd261c2cf07b5cfda5cc863c401a4657579186": [
+  "7c1c6d4fbba2f48e6ad4003bbc7d22b3b543034a8c2456fc542d2dac90c46aad": [
     "fragment-node_worker_launch_cleanup",
-    "834221c1c224be73311ffe611d43b8e4e17ddbc1806319a90110b9041ce3c7c3",
+    "d45196104873c5924d0fddabdce7a4f08b8fab2c68880492de968c978ef031c8",
     [65],
     [],
   ],
@@ -980,16 +980,16 @@ const fingerprints: Readonly<Record<string, CatalogReference>> = {
     [],
   ],
   // state-node-worker-lineage
-  "7d5ad39ee07bb426c9d109262a33877a41530b2601c10ce790a1bd092d329e35": [
+  "789bdcc904f4b35b57f9cb829909f2c9cda541c86179beb6904977146665c0c9": [
     "state-node-worker-lineage",
-    "2cfd57824537e8675b5184296b953a81ac3ecb8eaddb423859e864e785bbbf03",
+    "f235501e3f5767c362c7aebce3e678d33cdb45e3b776391980019cdf7cc0f37d",
     [65, 143],
     [],
   ],
   // state-node-worker-descendants
-  d1b53b1b4a5d744559dfed1698965eee238e508ee058f6816b307407689fb159: [
+  "7c5c2640b3ec45cbac611c07c67f478f0ddc85a4bbfceb9c3576f0d7aa3bd14a": [
     "state-node-worker-descendants",
-    "69c44fd6b52a0e4bad5bbfa3d1eb2e94ceedc689c6b94f482a5c0659b5ef962e",
+    "0991532bbc3ca042fc5c1c2026b8aa8d50b24a5bccf26e53675340a4853a665e",
     [65, 67, 143],
     [],
   ],

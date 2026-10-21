@@ -8,11 +8,7 @@ import type { EngineConnection } from "../infra/sql-connection.js";
 import { createSqliteSchemaEnsurer } from "../infra/sqlite-schema-ensure.js";
 import { getAdmittedSqliteSchemaFacts } from "../infra/sqlite-schema-facts.js";
 import { requestSqliteWorkerOperationAdmission } from "../infra/sqlite-worker-operation-admission.js";
-import {
-  ensureColumn,
-  tableExists,
-  tableHasColumn,
-} from "../state/openclaw-state-db-schema-helpers.js";
+import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateDatabase } from "../state/openclaw-state-db.generated.js";
 import {
   runOpenClawStateWriteTransaction,
@@ -132,10 +128,7 @@ function selectLaunchRows(database: EngineConnection, schema: LaunchSchema) {
         .select([
           "node_worker_launch_cleanup.cleanup_mode",
           "node_worker_launch_cleanup.lineage_settled",
-        ])
-        .$if(tableHasColumn(database, "node_worker_launch_cleanup", "job_kill_on_close"), (row) =>
-          row.select("node_worker_launch_cleanup.job_kill_on_close"),
-        ),
+        ]),
     )
     .$if(hasLaunchTable(database, schema, "node_worker_launch_process_scopes"), (selection) =>
       selection
@@ -652,9 +645,6 @@ export class NodeWorkerLaunchKernel {
       }
       if (params.cleanupMode !== null) {
         ensureNodeWorkerLaunchSchema(database, "node_worker_launch_cleanup");
-        if (params.cleanupMode === "windows-job") {
-          ensureColumn(database, "node_worker_launch_cleanup", "job_kill_on_close INTEGER");
-        }
         executeSqliteQuerySync(
           database,
           query(database)
@@ -665,10 +655,11 @@ export class NodeWorkerLaunchKernel {
                 params.cleanupMode === "linux-subreaper"
                   ? "owned-anchor"
                   : params.cleanupMode === "windows-job"
-                    ? "process-group"
+                    ? current.boot_id?.startsWith("win32:")
+                      ? "owned-anchor"
+                      : "process-group"
                     : params.cleanupMode,
               lineage_settled: null,
-              ...(params.cleanupMode === "windows-job" ? { job_kill_on_close: 1 } : {}),
             }),
         );
       }

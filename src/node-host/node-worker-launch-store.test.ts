@@ -31,6 +31,7 @@ import {
   recordNodeWorkerLineageSettled,
 } from "./node-worker-lineage-completion.js";
 import { requireNodeWorkerProcessIdentity } from "./node-worker-process-identity.js";
+import * as workerProcessIdentity from "./node-worker-process-identity.js";
 import { projectNodeWorkerSupervisorReceipt } from "./node-worker-supervisor-contract.js";
 import { createNodeWorkerSupervisor } from "./node-worker-supervisor.js";
 import { writeNodeWorkerFixture } from "./node-worker-supervisor.test-support.js";
@@ -383,7 +384,7 @@ describe("node worker launch store pruning", () => {
     });
   });
 
-  it("adds Windows Job custody to an older cleanup table without certifying old receipts", async () => {
+  it("records Windows Job custody in the existing cleanup table without certifying old receipts", async () => {
     const { database, store } = await fixture();
     database.exec(`
       CREATE TABLE node_worker_launch_cleanup (
@@ -393,6 +394,12 @@ describe("node worker launch store pruning", () => {
         lineage_settled INTEGER CHECK (lineage_settled IS NULL OR lineage_settled = 1)
       ) STRICT;
     `);
+    const schemaBefore = database
+      .prepare("SELECT sql FROM sqlite_schema WHERE name = ?")
+      .get("node_worker_launch_cleanup");
+    const boot = vi
+      .spyOn(workerProcessIdentity, "getNodeWorkerBootIdentity")
+      .mockReturnValue("win32:test-boot");
     const previous = await claimLaunch(store, "old-windows-worker");
     await store.markRunning({
       launchId: "old-windows-worker",
@@ -401,6 +408,7 @@ describe("node worker launch store pruning", () => {
       cleanupMode: "process-group",
     });
     const current = await claimLaunch(store, "job-worker");
+    boot.mockRestore();
     await store.markRunning({
       launchId: "job-worker",
       ...current,
@@ -415,6 +423,11 @@ describe("node worker launch store pruning", () => {
       state: "running",
       workerCleanupMode: "windows-job",
     });
+    expect(
+      database
+        .prepare("SELECT sql FROM sqlite_schema WHERE name = ?")
+        .get("node_worker_launch_cleanup"),
+    ).toEqual(schemaBefore);
   });
 
   it("prunes only the oldest expired terminal receipts in bounded batches", async () => {

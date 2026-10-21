@@ -345,6 +345,9 @@ describe("node worker supervisor initialization", () => {
       };
       const previousSupervisor = { pid: 2_000_000_001, startTime: 1 };
       const worker = { pid: 2_000_000_002, startTime: 2 };
+      vi.spyOn(workerProcessIdentity, "getNodeWorkerBootIdentity").mockReturnValue(
+        "win32:test-boot",
+      );
       await store.claim(claim, previousSupervisor, 1);
       await store.markRunning({
         ...claim,

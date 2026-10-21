@@ -37,7 +37,6 @@ export type NodeWorkerLaunchRow = Selectable<OpenClawStateDatabase["node_worker_
   container_json?: string | null;
   cleanup_mode?: string | null;
   lineage_settled?: number | null;
-  job_kill_on_close?: number | null;
   scope_kind?: string | null;
   descendants_reaped?: number | null;
 };
@@ -148,9 +147,6 @@ export function nodeWorkerLaunchReceiptFromRow(row: NodeWorkerLaunchRow) {
   if (cleanupMode !== null && cleanupMode !== "process-group" && cleanupMode !== "owned-anchor") {
     throw new Error("invalid node worker cleanup mode");
   }
-  if (row.job_kill_on_close === 1 && cleanupMode !== "process-group") {
-    throw new Error("invalid node worker Windows Job custody");
-  }
   return {
     launchId: row.launch_id,
     planHash: row.plan_hash,
@@ -168,7 +164,9 @@ export function nodeWorkerLaunchReceiptFromRow(row: NodeWorkerLaunchRow) {
         ? null
         : { pid: row.worker_pid, startTime: row.worker_start_time },
     workerCleanupMode:
-      row.job_kill_on_close === 1
+      // Windows never used POSIX anchors. This combination records native Job custody
+      // without changing old Windows process-group or POSIX anchor receipts.
+      cleanupMode === "owned-anchor" && row.boot_id?.startsWith("win32:")
         ? ("windows-job" as const)
         : row.scope_kind === "linux-subreaper"
           ? ("linux-subreaper" as const)
