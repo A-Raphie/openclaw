@@ -238,6 +238,9 @@ it("selects an eligible profile directly from Details and publishes its exact id
     '.chat-pr-branch-menu [role="menuitemradio"][value="personal"]',
   )!;
   expect(personal).not.toBeNull();
+  expect(personal.textContent).toContain("My GitHub");
+  expect(personal.textContent).toContain("@alice-tools");
+  expect(query('.chat-pr-branch-menu [role="menuitemradio"]')).toBe(personal);
   expect(personal.closest('[role="menu"]')).toBe(query(".chat-pr-branch-menu"));
   personal.click();
   await waitForSolid(() => expect(controller.view()?.selection?.source).toBe("personal"));

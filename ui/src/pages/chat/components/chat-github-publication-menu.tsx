@@ -33,7 +33,7 @@ export function createGitHubPublicationAccountMenuItems(
   props: Pick<
     GitHubPublicationMenuProps,
     "choices" | "selected" | "duplicateLogin" | "busy" | "mobile"
-  > & { trailingCheck?: boolean },
+  > & { trailingCheck?: boolean; accountLabels?: boolean },
 ) {
   return createMemo<MenuItem[]>(() =>
     props.choices.map((choice) => ({
@@ -50,6 +50,11 @@ export function createGitHubPublicationAccountMenuItems(
             <span>{choice.label}</span>
             <span class="github-publication-mobile__choice-login">@{choice.login}</span>
           </span>
+        </span>
+      ) : props.accountLabels ? (
+        <span class="chat-pr-account-choice">
+          <span>{choice.label}</span>
+          <span class="chat-pr-account-choice__login">@{choice.login}</span>
         </span>
       ) : (
         <span class="session-menu__text">

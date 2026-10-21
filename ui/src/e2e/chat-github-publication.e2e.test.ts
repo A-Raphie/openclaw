@@ -252,8 +252,8 @@ suite.define(() => {
     await gateway.deferNext("sessions.github.publish");
     await publicationAction(first, "Create PR").click();
     const original = await gateway.waitForRequest("sessions.github.publish");
-    await publicationAction(first, "Publishing…").waitFor();
-    await expectHiddenProjection(second, "Publishing…");
+    await publicationAction(first, "Creating…").waitFor();
+    await expectHiddenProjection(second, "Creating…");
 
     await gateway.rejectDeferred("sessions.github.publish", {
       code: "UNAVAILABLE",

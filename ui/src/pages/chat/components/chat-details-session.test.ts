@@ -525,10 +525,9 @@ it.each([false, true])(
       pullRequestsBranch: { ...branch, additions: undefined, deletions: undefined },
     };
     await element.updateComplete;
-    const unknownDiff = environment.querySelector<HTMLButtonElement>(".chat-pr__diff")!;
-    expect(unknownDiff.textContent).toBe("Changes");
-    unknownDiff.click();
-    expect(onOpenSessionDiff).toHaveBeenCalledTimes(2);
+    expect(environment.querySelector(".chat-pr__diff")).toBeNull();
+    expect(environment.querySelector("button.chat-pr__create")?.textContent).toBe("Create PR");
+    expect(onOpenSessionDiff).toHaveBeenCalledOnce();
     element.props = {
       ...element.props!,
       pullRequestsBranch: undefined,

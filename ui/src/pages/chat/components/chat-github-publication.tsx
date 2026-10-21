@@ -115,6 +115,7 @@ export function GitHubPublicationAction(props: {
   /** A containing menu can present the same eligible account choices. */
   accountSelector?: boolean;
   publishLabel?: string;
+  pendingLabel?: string;
   /** Opt embedded controls into the containing Menu’s traversal. */
   menuControls?: boolean;
   controls?: MenuControls;
@@ -140,6 +141,7 @@ export function GitHubPublicationAction(props: {
                 publication={props.publication}
                 controls={props.controls}
                 publishLabel={props.publishLabel}
+                pendingLabel={props.pendingLabel}
               />
               <Show when={!props.mobile && props.accountSelector !== false}>
                 <GitHubPublicationAccountSelector
@@ -201,6 +203,7 @@ function PublicationButton(props: {
   publication: GitHubPublicationView;
   controls?: MenuControls;
   publishLabel?: string;
+  pendingLabel?: string;
 }) {
   const controlRef = props.controls?.ref();
   const action = createMemo(() => {
@@ -208,7 +211,9 @@ function PublicationButton(props: {
     const { result, activity } = publication;
     const selection = publicationButtonSelection(publication);
     const busy = activity !== null;
-    const pendingLabel = t(activity === "read" ? "common.loading" : "chat.pullRequests.publishing");
+    const pendingLabel =
+      props.pendingLabel ??
+      t(activity === "read" ? "common.loading" : "chat.pullRequests.publishing");
     if (result?.status === "failed") {
       return {
         click: publication.onNewAction,
@@ -263,6 +268,9 @@ function PublicationButton(props: {
         disabled={action().disabled}
         onClick={() => action().click?.()}
       >
+        <Show when={props.publication.activity !== null}>
+          <span class="btn__spinner" aria-hidden="true" />
+        </Show>
         {action().label}
       </button>
     </Show>

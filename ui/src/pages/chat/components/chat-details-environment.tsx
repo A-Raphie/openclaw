@@ -211,22 +211,9 @@ export function ChatDetailsEnvironment(props: ChatDetailsEnvironmentDesktopProps
               <small class="chat-details__badge">{t("chat.sessionDetails.worktree")}</small>
             </Show>
           </div>
-          <Show when={diff() || work() || (!published() && props.work?.onOpenSessionDiff)}>
+          <Show when={diff() || work()}>
             <div class="chat-environment__branch-controls">
-              <Show
-                when={diff()}
-                fallback={
-                  <Show when={!published() && props.work?.onOpenSessionDiff}>
-                    <button
-                      class="chat-pr__diff"
-                      type="button"
-                      onClick={() => props.work?.onOpenSessionDiff?.()}
-                    >
-                      {t("chat.sessionDetails.changes")}
-                    </button>
-                  </Show>
-                }
-              >
+              <Show when={diff()}>
                 {(value) => (
                   <SessionGitDiff
                     classPrefix="chat-pr"

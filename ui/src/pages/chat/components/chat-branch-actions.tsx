@@ -62,7 +62,9 @@ export function ChatBranchActions(props: {
   );
   const accountItems = createGitHubPublicationAccountMenuItems({
     get choices() {
-      return accountChoices()?.accounts ?? [];
+      return (accountChoices()?.accounts ?? []).toSorted((a, b) =>
+        a.source === b.source ? 0 : a.source === "personal" ? -1 : 1,
+      );
     },
     get selected() {
       return props.publication?.selection?.source;
@@ -74,6 +76,7 @@ export function ChatBranchActions(props: {
       return props.publication?.activity != null;
     },
     trailingCheck: false,
+    accountLabels: true,
   });
   const accountCaption: MenuEntry = {
     kind: "content",
@@ -110,7 +113,6 @@ export function ChatBranchActions(props: {
           <button
             ref={dismissRef}
             class="oc-menu-item"
-            data-variant="danger"
             type="button"
             disabled={props.publication?.activity != null}
             aria-label={t("chat.pullRequests.dismissBranch", {
@@ -156,6 +158,7 @@ export function ChatBranchActions(props: {
                 presented={presented()}
                 accountSelector={false}
                 publishLabel={t("chat.pullRequests.createPr")}
+                pendingLabel={t("chat.pullRequests.creating")}
               />
             }
           >
@@ -169,9 +172,24 @@ export function ChatBranchActions(props: {
                 menu?.focusFirst();
               }}
             >
-              {publication().result || publication().locked
-                ? t("chat.sidePanel.review")
-                : t("chat.pullRequests.createPr")}
+              <Show when={publication().activity !== null}>
+                <span class="btn__spinner" aria-hidden="true" />
+              </Show>
+              <Show
+                when={
+                  publication().activity === null &&
+                  (publication().locked || publication().result?.status === "failed")
+                }
+              >
+                <Icon name="alertTriangle" class="chat-pr__publication-warning" />
+              </Show>
+              {publication().activity !== null
+                ? t("chat.pullRequests.creating")
+                : publication().locked || publication().result?.status === "failed"
+                  ? t("common.retry")
+                  : publication().result
+                    ? t("chat.sidePanel.review")
+                    : t("chat.pullRequests.createPr")}
             </button>
           </Show>
         )}
