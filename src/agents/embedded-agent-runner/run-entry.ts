@@ -367,13 +367,14 @@ async function runEmbeddedAgentEntryInternal<T extends EmbeddedAgentRunResult>(
                   result.acceptedSessionSpawns = accepted;
                 }
               }
+              const agentMeta = result.meta.agentMeta;
               const classification =
                 params.behavior.kind === "maintenance"
                   ? undefined
                   : classifyEmbeddedAgentRunResultForModelFallback({
                       result,
-                      provider,
-                      model,
+                      provider: agentMeta?.provider ?? provider,
+                      model: agentMeta?.model ?? model,
                       ...readChannelDeliveryEvidence?.(),
                     });
               const effectiveClassification =
@@ -386,13 +387,19 @@ async function runEmbeddedAgentEntryInternal<T extends EmbeddedAgentRunResult>(
                 effectiveClassification.code === EMBEDDED_CYBER_FAILOVER_TRIGGER_CODE;
               if (runOptions.captureCyberRefusal) {
                 // Finalization can replace the result; only its current classification
-                // may authorize policy escalation.
-                const refusal = result.meta.agentMeta?.providerRefusal;
+                // may authorize escalation. Its physical model includes hook routing;
+                // the fallback callback can still name the pre-hook candidate.
+                const refusal = agentMeta?.providerRefusal;
                 capturedCyberRefusal =
                   cyberRefusal &&
+                  agentMeta &&
                   refusal?.accessProgram !== "daybreak_blue" &&
                   refusal?.accessProgram !== "daybreak_red"
-                    ? { provider, model, authProfileId: refusal?.authProfileId }
+                    ? {
+                        provider: agentMeta.provider,
+                        model: agentMeta.model,
+                        authProfileId: refusal?.authProfileId,
+                      }
                     : undefined;
               }
               classified = {
