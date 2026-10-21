@@ -10,7 +10,7 @@ import {
   type CodexCyberAttemptOutcome,
 } from "./cyber-failover.js";
 
-const DAYBREAK = "gpt-daybreak-fixture-2026-10-01";
+const DAYBREAK = "gpt-6-astra";
 const PRIMARY = "gpt-6-astra";
 
 // The unavailable-target record is process-global and keyed by workspace, so
@@ -22,7 +22,7 @@ function nextWorkspace() {
 }
 
 function config(overrides: Partial<CodexCyberFailoverConfig> = {}): CodexCyberFailoverConfig {
-  return { mode: "auto", model: DAYBREAK, cooloffMs: 600_000, ...overrides };
+  return { mode: "auto", cooloffMs: 600_000, ...overrides };
 }
 
 function planEscalation(overrides: Partial<Parameters<typeof planCodexCyberEscalation>[0]> = {}) {
@@ -59,12 +59,15 @@ function refusal(category: string, provider = "openai") {
   });
 }
 
-it("does not guess a replacement when no Daybreak target is configured", () => {
-  const resolved = resolveCodexCyberFailoverConfig(undefined);
-  expect(planEscalation({ config: resolved })).toEqual({ kind: "skip", reason: "no_target" });
+it("defaults to Blue access on the same model", () => {
+  expect(planEscalation({ config: resolveCodexCyberFailoverConfig(undefined) })).toEqual({
+    kind: "escalate",
+    model: PRIMARY,
+    cyberAccessProgram: "daybreak_blue",
+  });
 });
 
-it.each([{ model: DAYBREAK }, { mode: "off", model: DAYBREAK }] as const)(
+it.each([{ cooloffMs: 50 }, { mode: "off" }] as const)(
   "preserves the operator-specific target %j",
   (overrides) => {
     expect(resolveCodexCyberFailoverConfig({ appServer: { cyberFailover: overrides } })).toEqual(
@@ -126,15 +129,15 @@ it.each([
   expect(planEscalation(params)).toEqual({ kind: "skip", reason });
 });
 
-it("does not escalate a turn already running on Daybreak", () => {
-  const workspace = nextWorkspace();
-  for (const currentModel of [DAYBREAK, `openai/${DAYBREAK}`]) {
-    expect(planEscalation({ currentModel, workspace })).toEqual({
+it.each(["daybreakBlue", "daybreakRed"] as const)(
+  "does not downgrade or replay %s",
+  (currentAccessProgram) => {
+    expect(planEscalation({ currentAccessProgram })).toEqual({
       kind: "skip",
-      reason: "already_daybreak",
+      reason: "already_elevated",
     });
-  }
-});
+  },
+);
 
 it.each(["expiry", "other workspace"] as const)("releases a denial for %s", (release) => {
   const workspace = nextWorkspace();
@@ -149,7 +152,7 @@ it.each(["expiry", "other workspace"] as const)("releases a denial for %s", (rel
       workspace: release === "expiry" ? workspace : nextWorkspace(),
       now: now + (release === "expiry" ? 600_001 : 1),
     }),
-  ).toEqual({ kind: "escalate", model: DAYBREAK });
+  ).toEqual({ kind: "escalate", model: DAYBREAK, cyberAccessProgram: "daybreak_blue" });
 });
 
 it("stays bounded as workspaces churn", () => {
@@ -172,7 +175,11 @@ it("holds siblings while one probe is in flight", () => {
   const release = reserveCodexCyberProbe({ model: DAYBREAK, workspace });
   expect(planEscalation({ workspace })).toEqual({ kind: "skip", reason: "probe_in_flight" });
   release();
-  expect(planEscalation({ workspace })).toEqual({ kind: "escalate", model: DAYBREAK });
+  expect(planEscalation({ workspace })).toEqual({
+    kind: "escalate",
+    model: DAYBREAK,
+    cyberAccessProgram: "daybreak_blue",
+  });
 });
 
 function deny(workspace: ReturnType<typeof nextWorkspace>, now: number) {

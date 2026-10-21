@@ -234,6 +234,7 @@ describe("prepareEmbeddedAttemptTransport", () => {
         provider: "openai",
         modelId: "synthetic-model",
         cyberAccessProgram: program,
+        streamParams: { serviceTier: "priority" },
         model: { ...anthropicModel, ...route, id: route.modelId },
         authProfileId: "openai:a",
         authProfileStore: { version: 1, profiles: { "openai:a": credential } },
@@ -243,6 +244,7 @@ describe("prepareEmbeddedAttemptTransport", () => {
           accountCatalog,
         },
       });
+      input.providerThinkingLevel = "high";
       input.attempt.runtimePlan!.auth.modelRoute = route;
       const previousHost = getAiTransportHost();
       const requests: Array<{ headers: Headers; payload: Record<string, unknown> }> = [];
@@ -266,7 +268,9 @@ describe("prepareEmbeddedAttemptTransport", () => {
         wrapProviderStreamFn: ({ context }) => provider.wrapStreamFn?.(context),
       });
       registerProviderStreamForModel.mockReturnValue(createOpenAIResponsesTransportStreamFn());
-      const send = async () => session.agent.streamFn(input.attempt.model, { messages: [] }, {});
+      // The Agent passes its selected thinking level as the stream reasoning option.
+      const send = async () =>
+        session.agent.streamFn(input.attempt.model, { messages: [] }, { reasoning: "high" });
       try {
         await prepareEmbeddedAttemptTransport(input);
         const result = await (await send()).result();
@@ -277,6 +281,8 @@ describe("prepareEmbeddedAttemptTransport", () => {
         expect(requests[0]?.payload).toMatchObject({
           model: "synthetic-model",
           access_programs: { cyber: program },
+          service_tier: "priority",
+          reasoning: { effort: "high" },
         });
         if (source === "shared") {
           setPreparedModelFullCatalogAuth(snapshot, {

@@ -168,16 +168,13 @@ describe("Codex native configuration", () => {
     },
   );
 
-  it.each(["denied", "revoked"] as const)(
-    "binds the actual harness retry model when its permission is %s",
+  it.each(["allowed", "revoked"] as const)(
+    "retains live model authority during a same-model Access retry (%s)",
     async (permission) => {
       stubCodexInferenceTransportEnv();
       const catalogModel = "catalog-primary";
       const runtimeModel = "native-primary";
-      const allowedModels = new Set([
-        catalogModel,
-        ...(permission === "denied" ? [] : ["native-retry"]),
-      ]);
+      const allowedModels = new Set([catalogModel]);
       const { source: operatorSource, listeners: policyListeners } = mutableOperator(
         "restricted-retry-fixture",
         () => {
@@ -245,6 +242,22 @@ describe("Codex native configuration", () => {
             account: { type: "chatgpt", email: "synthetic@example.test", planType: "team" },
             requiresOpenaiAuth: true,
           }),
+          "model/list": () => ({
+            data: [
+              {
+                id: runtimeModel,
+                model: runtimeModel,
+                displayName: "Fixture",
+                description: "Fixture",
+                hidden: false,
+                isDefault: true,
+                defaultReasoningEffort: "medium",
+                supportedReasoningEfforts: [],
+                availableAccessPrograms: { cyber: ["standard", "daybreakBlue"] },
+              },
+            ],
+            nextCursor: null,
+          }),
           "thread/read": () => ({ thread: nativeResponse.thread }),
           "thread/start": startThread,
           "thread/resume": startThread,
@@ -278,7 +291,7 @@ describe("Codex native configuration", () => {
             command: process.execPath,
             args: ["app-server"],
             homeScope: "agent",
-            cyberFailover: { mode: "auto", model: "openai/native-retry" },
+            cyberFailover: { mode: "auto" },
           },
         },
       });
@@ -306,14 +319,16 @@ describe("Codex native configuration", () => {
         transport.send(completedTurn("thread-policy", { status: "failed", error }));
         const retried = await Promise.race([retryStarted.promise.then(() => true), settled]);
         if (permission === "revoked") {
-          allowedModels.delete("native-retry");
+          allowedModels.delete(catalogModel);
           for (const listener of policyListeners) {
             listener();
           }
         }
-        expect(allowedControl?.signal.aborted).toBe(false);
+        expect(allowedControl?.signal.aborted).toBe(permission === "revoked");
         expect(sourceControl?.signal?.aborted).toBe(false);
-        allowedControl?.assertCurrent();
+        if (permission === "allowed") {
+          allowedControl?.assertCurrent();
+        }
         sourceControl?.assertCurrent();
         if (retried) {
           transport.send(
@@ -323,10 +338,20 @@ describe("Codex native configuration", () => {
             }),
           );
         }
-        expect(turnModels).toEqual(
-          permission === "denied" ? [runtimeModel] : [runtimeModel, "native-retry"],
-        );
-        await expect(run).rejects.toThrow("operator role cannot use this model");
+        expect(retried).toBe(true);
+        expect(turnModels).toEqual([runtimeModel, runtimeModel]);
+        expect(
+          transport.requests
+            .filter(({ method }) => method === "turn/start")
+            .map(({ params: request }) =>
+              isJsonObject(request) ? request.cyberAccessProgram : undefined,
+            ),
+        ).toEqual([undefined, "daybreakBlue"]);
+        if (permission === "revoked") {
+          await expect(run).rejects.toThrow("operator role cannot use this model");
+        } else {
+          await expect(run).resolves.toMatchObject({ terminal: { kind: "ok" } });
+        }
         expect(params).toMatchObject({ modelId: catalogModel, model: { id: catalogModel } });
         const transcript = await readTranscriptMessagesByIdentity(params);
         expect(transcript.filter((message) => message.role === "user")).toHaveLength(1);

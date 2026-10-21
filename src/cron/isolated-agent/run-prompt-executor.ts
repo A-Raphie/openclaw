@@ -76,9 +76,7 @@ import type { CronCompletedPromptRun } from "./run.types.js";
 
 type CronEmbeddedRuntime = typeof import("./run-embedded.runtime.js");
 
-const cronEmbeddedRuntimeLoader = createLazyImportLoader<CronEmbeddedRuntime>(
-  () => import("./run-embedded.runtime.js"),
-);
+const cronEmbeddedRuntimeLoader = createLazyImportLoader(() => import("./run-embedded.runtime.js"));
 
 function hasCliSessionReuseMetadata(binding: CliSessionBinding): boolean {
   return Object.entries(binding).some(([key, value]) => key !== "sessionId" && value !== undefined);
@@ -127,7 +125,7 @@ export function createCronPromptExecutor(
     callerOrigin: params.job.toolsAllowProvenance?.callerOrigin,
     execTarget: params.job.toolsAllowExecTarget,
   });
-  const { sourceDelivery, runId } = params;
+  const { sourceDelivery, runId, cronSession, liveSelection, job } = params;
   const messageChannel = sourceDelivery.target.channel ?? params.resolvedDelivery.channel;
   if (scheduledToolPolicy?.mode === "account") {
     const callerContext = resolveScheduledToolCallerContext({ scheduledToolPolicy });
@@ -648,7 +646,10 @@ export function createCronPromptExecutor(
           requestedRouteResolution: "resolved",
           modelFallbacksOverride: runOptions.modelFallbacksOverride,
           resolvedModelSelection: runOptions.resolvedModelSelection,
-          authProfileId: binding?.profileId ?? params.liveSelection.authProfileId,
+          cyberAccessProgram:
+            runOptions.cyberAccessProgram ?? cronSession.sessionEntry.cyberAccessProgram,
+          authProfileId:
+            runOptions.authProfileId ?? binding?.profileId ?? liveSelection.authProfileId,
           ...(binding && inferenceAuthorization
             ? {
                 authProfileBinding: {
@@ -665,19 +666,16 @@ export function createCronPromptExecutor(
                 },
               }
             : {}),
-          authProfileIdSource:
-            binding?.source ??
-            (params.liveSelection.authProfileId
-              ? params.liveSelection.authProfileIdSource
-              : undefined),
+          authProfileIdSource: runOptions.authProfileId
+            ? "user"
+            : (binding?.source ?? liveSelection.authProfileIdSource),
           // Cron keeps overload failures local while sharing real credential failures.
           authProfileFailurePolicy: runOptions.authProfileFailurePolicy ?? "local_transient",
           verboseLevel: params.resolvedVerboseLevel,
           runTimeoutOverrideMs: params.runTimeoutOverrideMs,
           toolsAllow: params.agentPayload?.toolsAllow,
-          scheduledRuntimeAuthority: params.job.runtimeAuthority,
-          scheduledRuntimeAuthorityRecoveryRequired:
-            params.job.runtimeAuthorityRecoveryRequired === true,
+          scheduledRuntimeAuthority: job.runtimeAuthority,
+          scheduledRuntimeAuthorityRecoveryRequired: job.runtimeAuthorityRecoveryRequired === true,
           execSession: params.cronSession.sessionEntry,
           execOverrides: params.suppressExecNotifyOnExit
             ? {

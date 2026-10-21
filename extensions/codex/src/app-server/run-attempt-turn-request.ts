@@ -1,4 +1,5 @@
 import { embeddedAgentLog, formatErrorMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { CodexAccessProgramUnavailableError } from "./access-program.js";
 import {
   interruptCodexTurnAndWaitBestEffort,
   retireUnsafeCodexTurnClientBestEffort,
@@ -205,7 +206,7 @@ export async function prepareCodexAttemptTurnRequest(
       );
       assertTurnCurrent();
       if (account.account?.type !== "chatgpt") {
-        throw new Error(
+        throw new CodexAccessProgramUnavailableError(
           "Explicit Daybreak access in the Codex runtime requires ChatGPT subscription authentication. Use the OpenClaw runtime for Platform API-key access, or reset Access to the model default.",
         );
       }
@@ -225,7 +226,7 @@ export async function prepareCodexAttemptTurnRequest(
         const program =
           turnStartParams.cyberAccessProgram === "daybreakBlue" ? "daybreak_blue" : "daybreak_red";
         if (!advertised?.includes(program)) {
-          throw new Error(
+          throw new CodexAccessProgramUnavailableError(
             "This Daybreak program is not advertised for the current account and model. Reset Access to the model default or refresh account capabilities.",
           );
         }

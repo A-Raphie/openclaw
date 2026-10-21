@@ -1,11 +1,13 @@
 import type { EmbeddedRunAttemptParamsV2 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { asOptionalRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
-import type { CodexTurnStartParams } from "./protocol.js";
+
+/** A local admission failure, not a failed model request or credential. */
+export class CodexAccessProgramUnavailableError extends Error {}
 
 /** Session override wins; an empty model setting leaves the native default unchanged. */
 export function resolveCodexCyberAccessProgram(
   params: EmbeddedRunAttemptParamsV2,
-): NonNullable<CodexTurnStartParams["cyberAccessProgram"]> | undefined {
+): "standard" | "daybreakBlue" | "daybreakRed" | undefined {
   const configured = params.runtimePlan?.transport.resolveExtraParams().accessPrograms;
   const programs = asOptionalRecord(configured);
   if (

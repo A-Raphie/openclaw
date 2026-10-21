@@ -19,12 +19,6 @@ it("warns about retiring references without rewriting models or account pins", a
           fallbacks: ["openai/gpt-daybreak-red-latest"],
         },
         models: { "openai/gpt-daybreak-blue-latest": { alias: "defensive" } },
-        embeddedAgent: { cyberFailover: { model: "openai/gpt-daybreak-red-latest" } },
-      },
-    },
-    plugins: {
-      entries: {
-        codex: { config: { appServer: { cyberFailover: { model: "gpt-daybreak-blue-latest" } } } },
       },
     },
   };
@@ -38,8 +32,6 @@ it("warns about retiring references without rewriting models or account pins", a
     "agents.defaults.model.primary",
     "agents.defaults.model.fallbacks.0",
     "agents.defaults.models.openai/gpt-daybreak-blue-latest",
-    "agents.defaults.embeddedAgent.cyberFailover.model",
-    "plugins.entries.codex.config.appServer.cyberFailover.model",
   ]) {
     expect(result[0]?.message).toContain(path);
   }
@@ -50,11 +42,11 @@ it("warns about retiring references without rewriting models or account pins", a
 
 it("leaves specific models and other providers alone", async () => {
   const cfg: OpenClawConfig = {
-    agents: { defaults: { model: "openai/gpt-daybreak-fixture-2026-10-01" } },
-    plugins: {
-      entries: {
-        codex: {
-          config: { appServer: { cyberFailover: { model: "custom/gpt-daybreak-blue-latest" } } },
+    agents: {
+      defaults: {
+        model: {
+          primary: "openai/gpt-daybreak-fixture-2026-10-01",
+          fallbacks: ["custom/gpt-daybreak-blue-latest"],
         },
       },
     },

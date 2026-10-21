@@ -94,10 +94,15 @@ describe("Codex attempt subscription recovery", () => {
     );
     const params = createParams(path.join(tempDir, "daybreak-subscription.jsonl"), tempDir);
     params.cyberAccessProgram = "daybreak_blue";
+    params.thinkLevel = "high";
+    params.fastMode = true;
     const run = runCodexAppServerAttempt(params);
     await run.waitForTurnAccepted();
     expect(harness.requests.find(({ method }) => method === "turn/start")?.params).toMatchObject({
+      model: "gpt-5.4-codex",
       cyberAccessProgram: "daybreakBlue",
+      effort: "high",
+      serviceTier: "priority",
     });
     await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
     await run;

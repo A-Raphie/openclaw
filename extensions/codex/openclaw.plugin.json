@@ -429,11 +429,6 @@
             "additionalProperties": false,
             "properties": {
               "mode": { "type": "string", "enum": ["auto", "off"], "default": "auto" },
-              "model": {
-                "type": "string",
-                "minLength": 1,
-                "description": "Explicit Daybreak model available to the approved account. No default target is selected."
-              },
               "cooloffMs": { "type": "number", "minimum": 1, "default": 600000 }
             }
           },

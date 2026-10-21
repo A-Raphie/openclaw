@@ -28,7 +28,7 @@ export function buildCommonCommandRunParams(
         : undefined,
     chatType: params.sessionEntry?.chatType,
     contextWindow: params.sessionEntry?.contextWindow,
-    cyberAccessProgram: params.sessionEntry?.cyberAccessProgram,
+    cyberAccessProgram: params.cyberAccessProgram ?? params.sessionEntry?.cyberAccessProgram,
     agentId: params.sessionAgentId,
     trigger: "user",
     sessionFile: params.sessionFile,

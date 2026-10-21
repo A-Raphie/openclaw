@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { FailoverError } from "../../failover-error.js";
 import { resolveSelectedModelCredential } from "../../model-auth-selected-credential.js";
 import { resolveModelCatalogAccessPrograms } from "../../model-catalog-access-programs.js";
 import { getPreparedModelFullCatalogAuth } from "../../prepared-model-runtime-auth.js";
@@ -59,8 +60,14 @@ export async function prepareEmbeddedAccessProgramGuard(
         isCurrent: () => runtime?.isCurrent() === true && account?.isCurrent() !== false,
       });
     if (!programs?.includes(program)) {
-      throw new Error(
-        "This saved Daybreak program is not advertised for the current account, model, and runtime. Reset Access to the model default or refresh account capabilities.",
+      throw new FailoverError(
+        "This Daybreak program is not advertised for the current account, model, and runtime. Reset Access to the model default or refresh account capabilities.",
+        {
+          reason: "auth",
+          provider: attempt.provider,
+          model: attempt.modelId,
+          code: "OPENAI_ACCESS_PROGRAM_UNAVAILABLE",
+        },
       );
     }
   };
