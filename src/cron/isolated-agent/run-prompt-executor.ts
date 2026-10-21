@@ -40,10 +40,7 @@ import {
 } from "../../sessions/user-turn-transcript.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCronJobConfigRevision } from "../config-revision.js";
-import {
-  mintCronPromptExecutionContext,
-  resolveCronJobToolPolicyContext,
-} from "../execution-context-admission.js";
+import { resolveCronJobToolPolicyContext } from "../execution-context-admission.js";
 import { prepareCronRunAdmission } from "../run-admission.js";
 import { prepareCronRunInference } from "../run-inference.js";
 import { resolveCronAuthenticatedChannelRequester } from "../tools-allow-provenance.js";
@@ -203,9 +200,15 @@ export function createCronPromptExecutor(
             errorContext: "cron user turn transcript",
           });
     pendingUserTurn = { promptText, recorder: userTurnTranscriptRecorder };
-    const scheduledExecution = await mintCronPromptExecutionContext(params, { runId, trigger });
     const cronAdmission = prepareCronRunAdmission({
-      scheduledExecution,
+      scheduledExecution: params.occurrence.mint({
+        cfg: params.cfgWithAgentDefaults,
+        agentId: params.agentId,
+        runId,
+        runSessionKey: params.runSessionKey,
+        toolsAllow: params.agentPayload?.toolsAllow,
+        operatorAuthorityRestored: params.operatorAuthority !== undefined,
+      }),
       operatorAuthority: params.operatorAuthority,
       admissionSource: params.admissionSource,
       deliveryAttemptFence: params.deliveryAttemptFence,

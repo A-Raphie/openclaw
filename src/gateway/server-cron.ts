@@ -80,6 +80,7 @@ import {
   withObservedCronStreamState,
 } from "./server-cron-drain.js";
 import {
+  admitGatewayCronOccurrence,
   enqueueCronSystemEvent,
   fireOnExitJob,
   fireStreamJob,
@@ -419,6 +420,7 @@ export function buildGatewayCronService(params: {
     cronConfig: params.cfg.cron,
     describeJobLoadWarning: (job) => describeCronInferenceMigration(getRuntimeConfig(), job),
     listConfiguredChannels: () => listConfiguredMessageChannels(getRuntimeConfig()),
+    admitScheduledOccurrence: ({ job }) => admitGatewayCronOccurrence(job, resolveCronAgent),
     ...(scriptRuntime ? { evaluateCronTrigger: scriptRuntime.evaluateTrigger } : {}),
     ...(defaultAgentId ? { defaultAgentId } : {}),
     resolveDefaultAgentId: () => tryResolveAmbientOwnerAgentId(getRuntimeConfig()),
@@ -520,13 +522,8 @@ export function buildGatewayCronService(params: {
         ssrfPolicy: webhookSsrfPolicy,
       });
     },
-    runScriptJob: async ({
-      job,
-      streamBatch,
-      abortSignal,
-      executionIdentity,
-      deliveryAttemptFence,
-    }) => {
+    runScriptJob: async (request) => {
+      const { job, abortSignal, deliveryAttemptFence } = request;
       if (!scriptRuntime || job.payload.kind !== "script") {
         return {
           status: "error",
@@ -534,13 +531,7 @@ export function buildGatewayCronService(params: {
           ...cronScriptFailureMetadata("payload", "runtime_unavailable"),
         };
       }
-      const execution = await scriptRuntime.executePayload({
-        job,
-        streamBatch,
-        abortSignal,
-        executionIdentity,
-        deliveryAttemptFence,
-      });
+      const execution = await scriptRuntime.executePayload(request);
       if (execution.kind === "error") {
         return {
           status: "error",

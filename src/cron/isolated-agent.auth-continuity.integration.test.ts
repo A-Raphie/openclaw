@@ -27,6 +27,7 @@ import {
 import { cleanupSessionStateForTest } from "../test-utils/session-state-cleanup.js";
 import { captureCronInferenceBinding } from "./inference-binding.runtime.js";
 import { runCronIsolatedAgentTurn } from "./isolated-agent/run.js";
+import { TEST_SCHEDULED_OCCURRENCE } from "./scheduled-occurrence.test-support.js";
 import { loadCronJobsStore, saveCronJobsStore } from "./store.js";
 import type { CronStoredJob } from "./types.js";
 
@@ -95,6 +96,7 @@ async function writeConfig(state: OpenClawTestState, cfg: OpenClawConfig) {
 
 function runStoredTurn(cfg: OpenClawConfig, job: CronStoredJob) {
   return runCronIsolatedAgentTurn({
+    occurrence: TEST_SCHEDULED_OCCURRENCE,
     cfg,
     deps: {},
     job,
