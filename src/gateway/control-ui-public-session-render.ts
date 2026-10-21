@@ -15,7 +15,10 @@ import {
   getPublicSessionEntryId,
 } from "./control-ui-public-session-attachments.js";
 import { PUBLIC_SESSION_LOCALES } from "./control-ui-public-session-locales.js";
-import { projectPublicSessionItems } from "./control-ui-public-session-project.js";
+import {
+  projectPublicSessionItems,
+  publicSessionLinkHref,
+} from "./control-ui-public-session-project.js";
 
 type CopyKey = keyof typeof PUBLIC_SESSION_COPY;
 function copyText(key: CopyKey, count?: number): string {
@@ -252,15 +255,7 @@ const MAX_MESSAGE_CHARS = 32_768;
 const MAX_DOCUMENT_CHARS = 262_144;
 
 const markdown = new MarkdownIt({ html: false, linkify: false, breaks: true });
-markdown.validateLink = (value) => {
-  const url = URL.parse(value);
-  return Boolean(
-    url &&
-    (url.protocol === "https:" || url.protocol === "http:") &&
-    !url.username &&
-    !url.password,
-  );
-};
+markdown.validateLink = (value) => Boolean(publicSessionLinkHref(value));
 // Images must not contact third parties or load authenticated session media.
 markdown.renderer.rules.image = () =>
   '<span class="omitted">' + copyMarkup("imageOmitted") + "</span>";
@@ -373,6 +368,15 @@ export function renderPublicSessionDocument(params: {
     remaining -= text.length;
     const entryId = getPublicSessionEntryId(item.message);
     const media: string[] = [];
+    for (const link of item.links) {
+      const html = `<p><a href="${escapeHtml(link.href)}" rel="noreferrer noopener nofollow">${escapeHtml(link.title ?? link.href)}</a></p>`;
+      if (html.length > remaining) {
+        truncated = true;
+        break;
+      }
+      remaining -= html.length;
+      media.push(html);
+    }
     for (const attachment of collectPublicSessionAttachments(item.message)) {
       const name = escapeHtml(truncateUtf16Safe(attachment.name, 200));
       const url =

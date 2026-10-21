@@ -12,6 +12,7 @@ import {
 } from "./control-ui-public-session-message.js";
 
 type PublicSessionWidget = { docId: string; title?: string; height?: number };
+type PublicSessionLink = { href: string; title?: string };
 
 export type PublicSessionItem =
   | {
@@ -21,6 +22,7 @@ export type PublicSessionItem =
       message: unknown;
       sourceIndex: number;
       widgets: PublicSessionWidget[];
+      links: PublicSessionLink[];
     }
   | { kind: "tools"; calls: { name: string; summary: string }[]; sourceIndex: number };
 
@@ -37,6 +39,17 @@ function toolSummary(args: unknown): string {
   return typeof selected === "string"
     ? truncateUtf16Safe(selected.replace(/\s+/gu, " ").trim(), 160)
     : "";
+}
+
+/** Public links leave the reader only on a click: absolute http(s), never embedded credentials. */
+export function publicSessionLinkHref(value: string | undefined): string | undefined {
+  const url = value ? URL.parse(value) : null;
+  return url &&
+    (url.protocol === "https:" || url.protocol === "http:") &&
+    !url.username &&
+    !url.password
+    ? url.href
+    : undefined;
 }
 
 function hostedWidget(
@@ -63,16 +76,28 @@ export function projectPublicSessionItems(messages: unknown[]): PublicSessionIte
       receiptTitles.set(receipt.docId, receipt.title);
     }
     const text = entry ? publicSessionMessageText(entry) : "";
-    const shortcodes = extractCanvasShortcodes(
-      entry?.role === "assistant" ? text : undefined,
-      (preview) => Boolean(hostedWidget(preview)),
-    );
+    const shortcodes = extractCanvasShortcodes(entry?.role === "assistant" ? text : undefined);
+    const widgets: PublicSessionWidget[] = [];
+    const links: PublicSessionLink[] = [];
+    // The reader never frames third-party pages; private Gateway pages are omitted.
+    for (const preview of shortcodes.previews) {
+      const widget = hostedWidget(preview);
+      if (widget) {
+        widgets.push(widget);
+        continue;
+      }
+      const href = publicSessionLinkHref(preview.url);
+      if (href) {
+        links.push({ href, title: preview.title });
+      }
+    }
     return {
       message,
       entry,
       receipt,
       text: entry?.role === "assistant" ? shortcodes.text : text,
-      widgets: shortcodes.previews.map((preview) => hostedWidget(preview)!),
+      widgets,
+      links,
       deferReceipt: false,
     };
   });
@@ -90,7 +115,7 @@ export function projectPublicSessionItems(messages: unknown[]): PublicSessionIte
   const rendered = new Set<string>();
   for (const [
     sourceIndex,
-    { message, entry, receipt, text, widgets: shortcodes, deferReceipt },
+    { message, entry, receipt, text, widgets: shortcodes, links, deferReceipt },
   ] of prepared.entries()) {
     const widgets: PublicSessionWidget[] = [];
     for (const widget of [...shortcodes, ...(receipt && !deferReceipt ? [receipt] : [])]) {
@@ -100,7 +125,7 @@ export function projectPublicSessionItems(messages: unknown[]): PublicSessionIte
       }
     }
     const attachments = entry ? collectPublicSessionAttachments(entry) : [];
-    if (text || attachments.length > 0 || widgets.length > 0) {
+    if (text || attachments.length > 0 || widgets.length > 0 || links.length > 0) {
       items.push({
         kind: "message",
         role: entry?.role === "user" ? "user" : "assistant",
@@ -108,6 +133,7 @@ export function projectPublicSessionItems(messages: unknown[]): PublicSessionIte
         message,
         sourceIndex,
         widgets,
+        links,
       });
     }
     if (entry?.role !== "assistant" || !Array.isArray(entry.content)) {
