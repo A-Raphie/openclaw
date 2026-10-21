@@ -3,7 +3,6 @@ import type { Overlay, OverlayOptions } from "./overlay-types.ts";
 
 declare global {
   interface Document {
-    // Modal writers and keyboard admission share this registry without loading the renderer.
     openClawModalLayers?: Set<HTMLElement>;
   }
 }
