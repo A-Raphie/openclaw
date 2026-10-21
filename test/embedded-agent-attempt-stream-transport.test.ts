@@ -11,35 +11,35 @@ import {
   context as anthropicContext,
   anthropicEvents,
   createAnthropicResponse,
-} from "../../../../packages/ai/src/provider-transport-parity.test-support.js";
+} from "../packages/ai/src/provider-transport-parity.test-support.js";
 import {
   resolveProviderContext,
   type ProviderStreamOptions,
-} from "../../../../packages/ai/src/provider-types.js";
-import { bindStreamLlmRuntime } from "../../../llm/model-runtime-binding.js";
-import { createCodexNativeWebSearchWrapper } from "../../../llm/providers/stream-wrappers/openai.js";
-import { createAssistantMessageEventStream } from "../../../llm/utils/event-stream.js";
-import { attachRuntimePromptMediaFacts } from "../../../media/media-facts.js";
-import { createOperationalRunInstanceRef } from "../../admitted-run-context.js";
-import { setPreparedModelFullCatalogAuth } from "../../prepared-model-runtime-auth.js";
-import { createPreparedAccountCatalogAccess } from "../../prepared-model-runtime.catalog-auth.js";
-import type { StreamFn } from "../../runtime/index.js";
-import "../../ai-transport-runtime-host.js";
-import {
-  castAgentMessage,
-  makeAgentAssistantMessage,
-} from "../../test-helpers/agent-message-fixtures.js";
+} from "../packages/ai/src/provider-types.js";
+import { createOperationalRunInstanceRef } from "../src/agents/admitted-run-context.js";
 import {
   testing as extraParamsTesting,
   type WrapProviderStreamFnParams,
-} from "../extra-params.test-support.js";
-import { createModelGenerationFixture } from "../model.generation-scope.test-support.js";
-import { prepareEmbeddedAttemptTransport } from "./attempt-stream-settle.js";
+} from "../src/agents/embedded-agent-runner/extra-params.test-support.js";
+import { createModelGenerationFixture } from "../src/agents/embedded-agent-runner/model.generation-scope.test-support.js";
+import { prepareEmbeddedAttemptTransport } from "../src/agents/embedded-agent-runner/run/attempt-stream-settle.js";
+import { setPreparedModelFullCatalogAuth } from "../src/agents/prepared-model-runtime-auth.js";
+import { createPreparedAccountCatalogAccess } from "../src/agents/prepared-model-runtime.catalog-auth.js";
+import type { StreamFn } from "../src/agents/runtime/index.js";
+import {
+  castAgentMessage,
+  makeAgentAssistantMessage,
+} from "../src/agents/test-helpers/agent-message-fixtures.js";
+import "../src/agents/ai-transport-runtime-host.js";
+import { bindStreamLlmRuntime } from "../src/llm/model-runtime-binding.js";
+import { createCodexNativeWebSearchWrapper } from "../src/llm/providers/stream-wrappers/openai.js";
+import { createAssistantMessageEventStream } from "../src/llm/utils/event-stream.js";
+import { attachRuntimePromptMediaFacts } from "../src/media/media-facts.js";
 
 const registerProviderStreamForModel = vi.hoisted(() => vi.fn());
 
-vi.mock("../../provider-stream.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../provider-stream.js")>()),
+vi.mock("../src/agents/provider-stream.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/agents/provider-stream.js")>()),
   registerProviderStreamForModel,
 }));
 
@@ -260,7 +260,7 @@ describe("prepareEmbeddedAttemptTransport", () => {
           });
         },
       });
-      const { buildOpenAIProvider } = await import("../../../../extensions/openai/api.js");
+      const { buildOpenAIProvider } = await import("../extensions/openai/api.js");
       const provider = buildOpenAIProvider();
       extraParamsTesting.setProviderRuntimeDepsForTest({
         wrapProviderStreamFn: ({ context }) => provider.wrapStreamFn?.(context),
@@ -505,7 +505,7 @@ describe("prepareEmbeddedAttemptTransport", () => {
   it.each([{ source: "resolved run", resolvedApiKey: "sk-ant-oat01-synthetic-run" }])(
     "gives provider wrappers the $source credential the Anthropic transport sends",
     async ({ resolvedApiKey }) => {
-      await import("../../ai-transport-runtime-host.js");
+      await import("../src/agents/ai-transport-runtime-host.js");
       const previousHost = getAiTransportHost();
       const requests: Array<{ headers: Headers; payload: Record<string, unknown> }> = [];
       configureAiTransportHost({

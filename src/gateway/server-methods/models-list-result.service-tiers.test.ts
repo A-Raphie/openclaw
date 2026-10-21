@@ -296,7 +296,9 @@ it.for(["codex", "openclaw"] as const)(
         expect(discover).toHaveBeenCalledTimes(3);
         expect(a.isCurrent()).toBe(false);
         current = false;
-        expect(() => readRuntime(a, "codex")).toThrow(
+        // A retained display reader may finish, but retired metadata cannot grant tiers.
+        expect(readRuntime(a, "codex")).not.toHaveProperty("serviceTiers");
+        await expect(prepare(accountA)).rejects.toThrow(
           PreparedModelRuntimePublicationSupersededError,
         );
       },

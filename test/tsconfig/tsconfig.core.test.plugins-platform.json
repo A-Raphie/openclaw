@@ -10,6 +10,7 @@
     "../../src/acp/**/*.test.tsx"
   ],
   "exclude": [
+    "../../src/plugins/contracts/**",
     "../../src/plugins/loader.native-harness-admission.test.ts"
   ]
 }

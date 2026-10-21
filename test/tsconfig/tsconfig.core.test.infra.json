@@ -16,6 +16,7 @@
     "../../dist",
     "../../**/dist/**",
     "../../src/infra/outbound/**",
+    "../../src/infra/postgres-sync/**",
     "../../src/infra/sqlite-*.test.ts",
     "../../src/infra/state-migrations*.test.ts",
     "../../src/infra/state-migrations*.test.tsx",
