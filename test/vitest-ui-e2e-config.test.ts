@@ -34,6 +34,7 @@ const qaLabFiles = [
 ] as const;
 const serialGatewayFiles =
   `background-work chat-collaborator-scroll chat-daybreak chat-managed-media-order
+  chat-html-publication
   chat-session-diff-folding chat-steer-deferred-custody chat-stop-owned-exec chat-tts-supplement
   chat-wait-clock command-palette-search deepseek-search desktop-resize device-platform-family
   peer-followup-restart provider-browser-login session-pr-reader-lifetime session-roster-request-rate
