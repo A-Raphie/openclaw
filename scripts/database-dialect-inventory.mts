@@ -122,7 +122,13 @@ function findSites(file: string, source: ts.SourceFile): DialectSite[] {
         (match.construct === "transaction-mode" ||
           match.construct === "pragma" ||
           match.construct === "schema-version")) ||
-      (file === "src/infra/sqlite-migration-scoped-snapshot.ts" && match.construct === "rowid");
+      (file === "src/infra/sqlite-migration-scoped-snapshot.ts" && match.construct === "rowid") ||
+      // Knowledge's keyword index is a rebuildable cache in its own per-store state.sqlite,
+      // never the selected Gateway engine: its FTS5 corpus, temp subset and rowid are engine-private.
+      (file === "extensions/knowledge/src/retrieval.ts" &&
+        (match.construct === "fts5" ||
+          match.construct === "temp-schema" ||
+          match.construct === "rowid"));
     const { line, character } = source.getLineAndCharacterOfPosition(position);
     sites.push({
       ...match,
