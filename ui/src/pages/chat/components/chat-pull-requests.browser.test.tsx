@@ -195,12 +195,12 @@ it.each([
     const trigger = row.querySelector<HTMLButtonElement>(".chat-pr__actions-trigger")!;
     const publish = page.getByRole("button", { name: "Create PR", exact: true });
     await expect.element(publish).toBeVisible();
-    const publishButton = row.querySelector<HTMLButtonElement>(":scope > .chat-pr__create")!;
+    const publishButton = row.querySelector<HTMLButtonElement>("button.chat-pr__create")!;
     await expect.element(page.elementLocator(row)).toBeVisible();
     await expect.element(page.elementLocator(trigger)).toBeVisible();
     expect(row.getBoundingClientRect().height).toBe(32);
-    expect(publishButton.getBoundingClientRect().height).toBeGreaterThanOrEqual(32);
-    expect(trigger.getBoundingClientRect().width).toBeGreaterThanOrEqual(24);
+    expect(publishButton.getBoundingClientRect().height).toBe(26);
+    expect(trigger.getBoundingClientRect().width).toBeGreaterThanOrEqual(26);
     expect(row.getBoundingClientRect().left).toBeGreaterThanOrEqual(0);
     expect(row.getBoundingClientRect().right).toBeLessThanOrEqual(viewport);
     expect(label.textContent).toBe(branch.branch);

@@ -365,7 +365,7 @@ function BranchActions(props: {
   );
 
   return (
-    <>
+    <div class="chat-pr__publication-actions">
       <Show
         when={props.publication}
         fallback={
@@ -439,7 +439,7 @@ function BranchActions(props: {
           },
         ]}
       />
-    </>
+    </div>
   );
 }
 

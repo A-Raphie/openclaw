@@ -73,15 +73,40 @@
   --details-row-padding-block: 0px;
 }
 
-.chat-details[data-desktop] .chat-pr--unpublished > .chat-pr__create,
-.chat-details[data-desktop] .chat-pr--unpublished > openclaw-tooltip {
-  flex: none;
+.chat-pr__publication-actions {
+  display: contents;
 }
 
-.chat-details[data-desktop] .chat-pr--unpublished > .chat-pr__create {
-  min-height: 32px;
+.chat-details[data-desktop] .chat-pr__publication-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+
+.chat-details[data-desktop] .chat-pr__publication-actions > .chat-pr__create {
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  background: transparent;
   font-family: var(--font-body);
   font-weight: 500;
+}
+
+.chat-details[data-desktop] .chat-pr__publication-actions .chat-pr__actions-trigger {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.chat-details[data-desktop] .chat-pr__publication-actions > .chat-pr__create:hover,
+.chat-details[data-desktop]
+  .chat-pr__publication-actions
+  .chat-pr__actions-trigger:is(:hover, [aria-expanded="true"]) {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .chat-pr-branch-menu .chat-pr__create {

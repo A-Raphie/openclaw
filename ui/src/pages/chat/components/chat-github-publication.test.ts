@@ -179,7 +179,7 @@ it("selects an eligible profile directly from Details and publishes its exact id
   changed.mockImplementation(draw);
   draw();
   const create = container.querySelector<HTMLButtonElement>(
-    ".chat-pr--unpublished > .chat-pr__create",
+    ".chat-pr--unpublished button.chat-pr__create",
   );
   expect(create?.textContent).toBe("Create PR");
   expect(
@@ -243,7 +243,7 @@ it.each(["personal", "confirmation"] as const)(
       container,
     );
     const entry = container.querySelector<HTMLButtonElement>(
-      ".chat-pr--unpublished > .chat-pr__create",
+      ".chat-pr--unpublished button.chat-pr__create",
     )!;
     expect(entry.textContent).toBe(state === "personal" ? "Create PR" : "Review");
     entry.click();
