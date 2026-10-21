@@ -1,4 +1,4 @@
-import { For, createEffect, createSignal, onCleanup, untrack } from "solid-js";
+import { For, action, createEffect, createOptimistic, createSignal, onCleanup } from "solid-js";
 import type {
   PluginCredentialDescriptor,
   PluginCredentialInspection,
@@ -28,7 +28,7 @@ const credentialSources = ["env", "file", "exec", "store"] as const;
 export type PluginCredentialEditorContext = {
   pluginId: string;
   baseHash: string | null;
-  gateway: Pick<GatewayPageBinding, "capture" | "isCurrent" | "epoch" | "connected">;
+  gateway: Pick<GatewayPageBinding, "capture" | "isCurrent" | "epoch" | "connected" | "client">;
   canInspect: boolean;
   saveError?: string | null;
   /** Adapter stages through field.onPatch and awaits that exact config-owner write. */
@@ -37,6 +37,10 @@ export type PluginCredentialEditorContext = {
 };
 type CredentialField = Pick<ConfigNodeRenderParams, "path" | "value" | "disabled"> & {
   descriptionId?: string;
+};
+type CredentialOperation = {
+  kind: "save" | "discard";
+  current: () => boolean;
 };
 
 export type PluginCredentialEditorProps = {
@@ -57,16 +61,28 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
   });
   const [literal, setLiteral] = createSignal("");
   const [revealed, setRevealed] = createSignal(false);
-  const [operation, setOperation] = createSignal<"save" | "discard">();
-  const saving = () => operation() === "save";
-  const cancelling = () => operation() === "discard";
+  const [operation, setOperation] = createOptimistic<CredentialOperation>();
+  const operationKind = () => {
+    const value = operation();
+    return value?.current() ? value.kind : undefined;
+  };
+  const saving = () => operationKind() === "save";
+  const cancelling = () => operationKind() === "discard";
+  const mutateReference = action(function* (
+    admitted: CredentialOperation,
+    completed: Promise<void>,
+  ) {
+    setOperation(admitted);
+    yield completed;
+  });
   let referenceSubmitted = false;
   let referenceTrigger: HTMLElement | null = null;
   let generation = 0;
   let connection: GatewayConnectionScope | null = null;
   let active = true;
-  let pending = false;
+  let pending: CredentialOperation | undefined;
   let literalInput: HTMLInputElement | undefined;
+  let referenceSourceSelect: HTMLSelectElement | undefined;
 
   // Reinspect the Gateway credential when its field, revision, or connection changes.
   createEffect(
@@ -76,39 +92,53 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
       return {
         field,
         gateway,
+        client: gateway.client,
+        epoch: gateway.epoch,
+        baseHash,
+        connected: gateway.connected,
         canInspect,
         identity: JSON.stringify([field, baseHash, gateway.epoch, canInspect]),
       };
     },
     (next, previous) => {
-      if (next.identity === previous?.identity && next.gateway === previous?.gateway) {
+      if (
+        next.identity === previous?.identity &&
+        next.gateway === previous?.gateway &&
+        next.client === previous?.client
+      ) {
         return;
       }
       const sourceChanged =
         next.gateway !== previous?.gateway ||
+        next.client !== previous?.client ||
         next.field !== previous?.field ||
-        !next.canInspect ||
-        (connection && !next.gateway.isCurrent(connection));
+        (next.connected && !next.canInspect);
       // Snapshot this revision's editing intent and error copy; neither retriggers inspection.
-      const [wasOpen, wasSaving, staleMessage] = untrack(
-        () => [dialogOpen(), saving(), t("pluginsPage.credentials.stale")] as const,
-      );
+      const [wasOpen, wasSaving, staleMessage] = [
+        dialogOpen(),
+        pending?.kind === "save",
+        t("pluginsPage.credentials.stale"),
+      ] as const;
       setRevealed(false);
       // Other settings can advance the revision before this field's blur commit.
-      // Only retiring the field or connection may discard its uncommitted key.
+      // Only retiring the field's identity or access may discard its uncommitted key.
       if (sourceChanged) {
         setLiteral("");
         setDialogOpen(false);
-        pending = false;
-        setOperation(undefined);
         referenceSubmitted = false;
         setReference({ source: "env", provider: "default", id: "" });
       }
-      setInspection(null);
+      if (sourceChanged || next.epoch !== previous?.epoch) {
+        pending = undefined;
+      }
+      setLoading(false);
+      setInspection((current) =>
+        sourceChanged ? null : current?.kind === "literal" ? { kind: "literal" } : current,
+      );
       generation++;
-      if (wasOpen && !wasSaving && !sourceChanged) {
+      if (wasOpen && !wasSaving && !sourceChanged && next.baseHash !== previous?.baseHash) {
+        setInspection(null);
         setError(staleMessage);
-        setLoading(false);
         return;
       }
       void inspect();
@@ -151,9 +181,6 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
       setRevealed(
         reveal && result.credential.kind === "literal" && result.credential.value !== undefined,
       );
-      if (dialogOpen() && result.credential.kind === "reference") {
-        setReference({ ...result.credential.ref });
-      }
     } catch (cause) {
       if (requestGeneration === generation && gateway.isCurrent(capturedConnection)) {
         setError(formatUiError(cause));
@@ -205,6 +232,7 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
     ) {
       return;
     }
+    setError("");
     return commitOrDiscardReference(value);
   }
 
@@ -224,52 +252,63 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
     const capturedConnection = connection;
     const owner = JSON.stringify([props.context.pluginId, props.field.path]);
     const current = () =>
+      pending === admitted &&
       active &&
       props.context.gateway === gateway &&
       capturedConnection !== null &&
       gateway.isCurrent(capturedConnection) &&
       JSON.stringify([props.context.pluginId, props.field.path]) === owner;
+    const admitted: CredentialOperation = {
+      kind: value === undefined ? "discard" : "save",
+      current,
+    };
     // Admission is synchronous; Solid publishes the pending presentation after this task.
-    pending = true;
-    setOperation(value === undefined ? "discard" : "save");
+    pending = admitted;
     if (value !== undefined) {
       referenceSubmitted ||= dialogOpen();
-      setError("");
     }
-    try {
-      const acknowledged = await (value === undefined
-        ? props.context.onDiscard()
-        : props.context.onCommit(props.field.path, value));
-      if (!current()) {
-        return;
-      }
-      if (acknowledged) {
-        referenceSubmitted = false;
-        setDialogOpen(false);
-        if (value !== undefined) {
-          setLiteral("");
+    // Start the authoritative write before holding the presentation transaction.
+    const completed = (async () => {
+      try {
+        const acknowledged = await (value === undefined
+          ? props.context.onDiscard()
+          : props.context.onCommit(props.field.path, value));
+        if (!current()) {
+          return;
         }
-        await inspect();
-      } else {
-        setError(
-          props.context.saveError ||
-            t(
-              value === undefined
-                ? "configView.discardUnconfirmed"
-                : "pluginsPage.credentials.saveFailed",
-            ),
-        );
+        if (acknowledged) {
+          referenceSubmitted = false;
+          setDialogOpen(false);
+          if (value !== undefined) {
+            setLiteral("");
+          }
+          await inspect();
+        } else {
+          setError(
+            props.context.saveError ||
+              t(
+                value === undefined
+                  ? "configView.discardUnconfirmed"
+                  : "pluginsPage.credentials.saveFailed",
+              ),
+          );
+        }
+      } catch (cause) {
+        if (current()) {
+          setError(formatUiError(cause));
+        }
+      } finally {
+        if (current()) {
+          pending = undefined;
+        }
       }
-    } catch (cause) {
-      if (current()) {
-        setError(formatUiError(cause));
-      }
-    } finally {
-      if (current()) {
-        pending = false;
-        setOperation(undefined);
-      }
-    }
+    })();
+    // An action owns its opening tick, including already queued owner writes.
+    // Let same-turn save/refresh continuations publish before starting presentation.
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    return current() ? mutateReference(admitted, completed) : completed;
   }
 
   const environment = () => {
@@ -277,7 +316,13 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
     return credential?.kind === "environment" ? credential.envVar : null;
   };
   const blocked = () =>
-    props.field.disabled || loading() || saving() || cancelling() || !inspection();
+    props.field.disabled ||
+    !props.context.gateway.connected ||
+    !props.context.canInspect ||
+    loading() ||
+    saving() ||
+    cancelling() ||
+    !inspection();
   const failure = () => error() || props.context.saveError;
   const configured = () =>
     props.field.value === REDACTED_SENTINEL || inspection()?.kind === "literal";
@@ -431,6 +476,9 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
         ) : null}
         {dialogOpen() ? (
           <openclaw-modal-dialog
+            prop:initialFocus={() =>
+              referenceSourceSelect?.isConnected ? referenceSourceSelect : null
+            }
             ref={(dialog) => dialog.setReturnFocusTarget(referenceTrigger)}
             label={`${t("pluginsPage.credentials.referenceTitle")}: ${props.descriptor.label}`}
             onModal-cancel={(event: Event) => {
@@ -448,6 +496,9 @@ export function PluginCredentialEditor(props: PluginCredentialEditorProps) {
                   <label>
                     {t("pluginsPage.credentials.source")}
                     <select
+                      ref={(element) => {
+                        referenceSourceSelect = element;
+                      }}
                       autofocus
                       class="settings-input"
                       aria-label={t("pluginsPage.credentials.source")}

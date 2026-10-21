@@ -1,5 +1,5 @@
 {
-  "startupJsGzipBytes": 337669,
-  "reason": "Combined protocol, Cron, and New Session deferrals measured 337669 B startup; retain the reduced baseline.",
-  "updatedAt": "2026-10-17"
+  "startupJsGzipBytes": 324900,
+  "reason": "Enterprise MCP auth config adds 338 B to measured startup JS; retain 100 B below the committed baseline cap.",
+  "updatedAt": "2026-10-20"
 }
