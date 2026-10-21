@@ -304,6 +304,7 @@ suite.define(() => {
 
       // The mobile sheet owns dismissal; Latest must not reopen it.
       await closeChatDetails(page);
+      // The hidden sheet's grid row still animates the transcript viewport.
       await waitForChatScrollIdle(page);
       const thread = page.locator(".chat-thread");
       await thread.press("Home");

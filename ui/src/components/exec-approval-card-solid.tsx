@@ -1,6 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
 import { formatApprovalDisplayPath } from "../../../src/infra/approval-display-paths.ts";
 import { normalizeCommandSpans } from "../../../src/shared/exec-approval-command-spans.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
@@ -75,12 +75,14 @@ export function approvalRemainingLabel(expiresAtMs: number, nowMs: number): stri
 
 function useApprovalClock(onTick?: (nowMs: number) => void) {
   const [now, setNow] = createSignal(Date.now());
-  const timer = setInterval(() => {
-    const time = Date.now();
-    setNow(time);
-    onTick?.(time);
-  }, 1_000);
-  onCleanup(() => clearInterval(timer));
+  onSettled(() => {
+    const timer = setInterval(() => {
+      const time = Date.now();
+      setNow(time);
+      onTick?.(time);
+    }, 1_000);
+    return () => clearInterval(timer);
+  });
   return now;
 }
 
@@ -471,7 +473,7 @@ export function SidebarApprovalRow(props: SidebarApprovalRowProps) {
                 href={props.openSessionHref}
                 aria-label={t("sessionsView.openSession")}
                 title={t("sessionsView.openSession")}
-                onClick={props.onOpenSession}
+                onClick={(event) => props.onOpenSession?.(event)}
               >
                 <Icon name="arrowUpRight" />
               </a>
