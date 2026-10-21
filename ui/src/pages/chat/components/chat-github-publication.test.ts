@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { GitHubPublicationView } from "../../../lib/sessions/github-publication-owner.ts";
 import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
+import { setup, settled } from "../chat-github-publication.test-support.ts";
 import {
   paintChatPullRequests,
   clearChatPullRequests,
@@ -154,3 +155,109 @@ it("warns about the workspace only for a selected or sole personal account", () 
   expect(container.textContent).toContain("reclaim the workspace");
   expect(onSelect).not.toHaveBeenCalled();
 });
+
+it("selects an eligible profile directly from Details and publishes its exact identity", async () => {
+  const { controller, request, changed } = setup();
+  await settled(controller);
+  request.mockResolvedValue({
+    requestId: "profile-choice",
+    status: "requested",
+    publisher: { source: "personal", accountId: 2, login: "alice-tools" },
+  });
+  const draw = () =>
+    paintChatPullRequests(
+      {
+        pullRequests: [],
+        status: "ready",
+        onDismiss: () => {},
+        branch: sessionBranch(),
+        compact: true,
+        publication: controller.view(),
+      },
+      container,
+    );
+  changed.mockImplementation(draw);
+  draw();
+  const create = container.querySelector<HTMLButtonElement>(
+    ".chat-pr--unpublished > .chat-pr__create",
+  );
+  expect(create?.textContent).toBe("Create PR");
+  expect(
+    request.mock.calls.filter(([method]) => method === "sessions.github.publish"),
+  ).toHaveLength(0);
+  container.querySelector<HTMLButtonElement>(".chat-pr__actions-trigger")!.click();
+  await waitForSolid(() =>
+    expect(query(".chat-pr-branch-menu")?.matches(":popover-open")).toBe(true),
+  );
+  const personal = container.querySelector<HTMLButtonElement>(
+    '.chat-pr-branch-menu [role="menuitemradio"][value="personal"]',
+  )!;
+  expect(personal).not.toBeNull();
+  expect(personal.closest('[role="menu"]')).toBe(query(".chat-pr-branch-menu"));
+  personal.click();
+  await waitForSolid(() => expect(controller.view()?.selection?.source).toBe("personal"));
+  expect(query(".chat-pr-branch-menu")?.matches(":popover-open")).toBe(false);
+  create!.click();
+  await waitForSolid(() =>
+    expect(request).toHaveBeenCalledWith("sessions.github.publish", {
+      sessionKey: "agent:main:one",
+      agentId: "main",
+      idempotencyKey: expect.any(String),
+      selection: {
+        source: "personal",
+        generation: "bdca439a-e787-4f9f-b5f3-a878c662cc76",
+        account: { accountId: 2, login: "alice-tools" },
+      },
+    }),
+  );
+});
+
+it.each(["personal", "confirmation"] as const)(
+  "opens the native %s action from the compact row before dispatching",
+  async (state) => {
+    const personal = personalAccount();
+    const nativeAction = vi.fn();
+    paintChatPullRequests(
+      {
+        pullRequests: [],
+        status: "ready",
+        onDismiss: () => {},
+        branch: sessionBranch(),
+        compact: true,
+        publication: publication({
+          options: { shared: null, personal, pendingPersonal: null, latestShared: null },
+          selection: null,
+          result:
+            state === "confirmation"
+              ? {
+                  requestId: "original-request",
+                  status: "needs_confirmation",
+                  publisher: { source: "personal", ...personal.account },
+                  message: "Review the original publication.",
+                }
+              : null,
+          onPublish: nativeAction,
+          onConfirm: nativeAction,
+        }),
+      },
+      container,
+    );
+    const entry = container.querySelector<HTMLButtonElement>(
+      ".chat-pr--unpublished > .chat-pr__create",
+    )!;
+    expect(entry.textContent).toBe(state === "personal" ? "Create PR" : "Review");
+    entry.click();
+    await waitForSolid(() =>
+      expect(query(".chat-pr-branch-menu")?.matches(":popover-open")).toBe(true),
+    );
+    expect(nativeAction).not.toHaveBeenCalled();
+    const action = container.querySelector<HTMLButtonElement>(
+      ".chat-pr-branch-menu .chat-pr__create",
+    )!;
+    expect(action.textContent).toBe(
+      state === "personal" ? "Publish as @alice-tools" : "Confirm original publication",
+    );
+    action.click();
+    expect(nativeAction).toHaveBeenCalledOnce();
+  },
+);

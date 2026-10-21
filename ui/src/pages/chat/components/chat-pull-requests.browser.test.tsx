@@ -139,6 +139,7 @@ it.each([
     await page.viewport(viewport, 700);
     document.body.append(container);
     const onPublish = vi.fn();
+    const onSelect = vi.fn();
     const onDismissBranch = vi.fn();
     const branch = sessionBranch({ repo, branch: "openclaw/custom-snooze-date-time" });
     const shared = { source: "agent-override" as const, accountId: 1, login: "agent-bot" };
@@ -163,7 +164,7 @@ it.each([
                 onDismissBranch={onDismissBranch}
                 publication={publication({
                   onPublish,
-                  onSelect: () => {},
+                  onSelect,
                   options: {
                     shared,
                     personal: {
@@ -192,9 +193,14 @@ it.each([
     const branchLabel = row.querySelector<HTMLElement>(".chat-pr__branch")!;
     const diff = row.querySelector<HTMLElement>(".chat-pr__diff")!;
     const trigger = row.querySelector<HTMLButtonElement>(".chat-pr__actions-trigger")!;
+    const publish = page.getByRole("button", { name: "Create PR", exact: true });
+    await expect.element(publish).toBeVisible();
+    const publishButton = row.querySelector<HTMLButtonElement>(":scope > .chat-pr__create")!;
     await expect.element(page.elementLocator(row)).toBeVisible();
     await expect.element(page.elementLocator(trigger)).toBeVisible();
     expect(row.getBoundingClientRect().height).toBe(32);
+    expect(publishButton.getBoundingClientRect().height).toBeGreaterThanOrEqual(32);
+    expect(trigger.getBoundingClientRect().width).toBeGreaterThanOrEqual(24);
     expect(row.getBoundingClientRect().left).toBeGreaterThanOrEqual(0);
     expect(row.getBoundingClientRect().right).toBeLessThanOrEqual(viewport);
     expect(label.textContent).toBe(branch.branch);
@@ -203,6 +209,9 @@ it.each([
       diff.getBoundingClientRect().left,
     );
     expect(diff.getBoundingClientRect().right).toBeLessThanOrEqual(
+      publishButton.getBoundingClientRect().left,
+    );
+    expect(publishButton.getBoundingClientRect().right).toBeLessThanOrEqual(
       trigger.getBoundingClientRect().left,
     );
     expect(diff.textContent).toContain("+2,819");
@@ -217,7 +226,6 @@ it.each([
     expect(getComputedStyle(branchLabel).maskImage).toContain("linear-gradient");
     expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth + 1);
 
-    const publish = page.getByRole("button", { name: "Publish PR", exact: true });
     const dismiss = page.getByRole("button", {
       name: `Hide ${branch.branch} for this session`,
       exact: true,
@@ -226,11 +234,22 @@ it.each([
     await expect.element(menu).not.toBeVisible();
     trigger.focus();
     await userEvent.keyboard("{Enter}");
-    await expect.element(publish).toBeVisible();
     await expect.element(dismiss).toBeVisible();
+    const personalChoice = page.getByRole("menuitemradio", { name: "@alice-tools", exact: true });
+    await expect.element(personalChoice).toBeVisible();
+    const personalElement = row.querySelector<HTMLElement>(
+      '[role="menuitemradio"][value="personal"]',
+    )!;
+    expect(personalElement.closest('[role="menu"]')).toBe(
+      row.querySelector(".chat-pr-branch-menu"),
+    );
+    await personalChoice.click();
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith("personal");
+    await expect.element(menu).not.toBeVisible();
     await publish.click();
     expect(onPublish).toHaveBeenCalledOnce();
     expect(onDismissBranch).not.toHaveBeenCalled();
+    await page.elementLocator(trigger).click();
     await dismiss.click();
     expect(onDismissBranch).toHaveBeenCalledExactlyOnceWith(branch);
     await expect.element(menu).not.toBeVisible();

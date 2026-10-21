@@ -113,7 +113,7 @@ suite.define(() => {
       expect(await gateway.getRequests("sessions.github.publish")).toHaveLength(0);
       await gateway.resolveDeferred(githubOptions);
       await openChatPublication(page);
-      await page.getByRole("button", { name: "Publish PR", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Create PR", exact: true }).waitFor();
       expect(await page.locator(".chat-prs").textContent()).toContain("openclaw/review-request");
       expect(await gateway.getRequests("sessions.github.publish")).toHaveLength(0);
       expect(await gateway.getRequests(TEST_LINK_READER.linkReader.previewMethod!)).toHaveLength(1);
@@ -390,7 +390,7 @@ suite.define(() => {
       await expect.poll(() => rows.count()).toBe(0);
       await showBranch();
       await openChatPublication(page);
-      await page.getByRole("button", { name: "Publish PR", exact: true }).waitFor();
+      await page.getByRole("button", { name: "Create PR", exact: true }).waitFor();
       expect(await gateway.getRequests("sessions.github.publish")).toHaveLength(0);
       expect(await gateway.getRequests("sessions.github.confirm")).toHaveLength(0);
     });

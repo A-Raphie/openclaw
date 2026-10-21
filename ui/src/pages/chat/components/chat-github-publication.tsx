@@ -32,7 +32,30 @@ function publicationButtonSelection(publication: GitHubPublicationView) {
   );
 }
 
-/** The same eligible choices serve the inline menu and the mobile account row. */
+/** One eligible-choice projection serves every publication presentation. */
+export function githubPublicationAccountChoices(publication: GitHubPublicationView) {
+  const personal = personalGitHubPublicationSelection(publication.options);
+  const shared = publication.options?.shared;
+  return publication.result ||
+    publication.locked ||
+    publication.optionsUnavailable ||
+    !publication.onSelect ||
+    !shared ||
+    !personal
+    ? undefined
+    : {
+        accounts: [
+          { source: "shared" as const, login: shared.login, label: sourceLabel(shared.source) },
+          {
+            source: "personal" as const,
+            login: personal.account.login,
+            label: sourceLabel("personal"),
+          },
+        ],
+        duplicateLogin: shared.login === personal.account.login,
+      };
+}
+
 export function GitHubPublicationAccountSelector(props: {
   publication: GitHubPublicationView;
   presented?: PresentationValue;
@@ -41,29 +64,7 @@ export function GitHubPublicationAccountSelector(props: {
   menuControls?: boolean;
   controls?: MenuControls;
 }) {
-  const choices = createMemo(() => {
-    const publication = props.publication;
-    const personal = personalGitHubPublicationSelection(publication.options);
-    const shared = publication.options?.shared;
-    return publication.result ||
-      publication.locked ||
-      publication.optionsUnavailable ||
-      !publication.onSelect ||
-      !shared ||
-      !personal
-      ? undefined
-      : {
-          accounts: [
-            { source: "shared" as const, login: shared.login, label: sourceLabel(shared.source) },
-            {
-              source: "personal" as const,
-              login: personal.account.login,
-              label: sourceLabel("personal"),
-            },
-          ],
-          duplicateLogin: shared.login === personal.account.login,
-        };
-  });
+  const choices = createMemo(() => githubPublicationAccountChoices(props.publication));
   const publisher = () =>
     props.publication.result
       ? props.publication.result.publisher
@@ -111,6 +112,9 @@ export function GitHubPublicationAction(props: {
   presented?: PresentationValue;
   /** Mobile places the account selector above the outcome and the primary action. */
   mobile?: boolean;
+  /** A containing menu can present the same eligible account choices. */
+  accountSelector?: boolean;
+  publishLabel?: string;
   /** Opt embedded controls into the containing Menu’s traversal. */
   menuControls?: boolean;
   controls?: MenuControls;
@@ -132,8 +136,12 @@ export function GitHubPublicationAction(props: {
           when={props.publication.optionsUnavailable}
           fallback={
             <>
-              <PublicationButton publication={props.publication} controls={props.controls} />
-              <Show when={!props.mobile}>
+              <PublicationButton
+                publication={props.publication}
+                controls={props.controls}
+                publishLabel={props.publishLabel}
+              />
+              <Show when={!props.mobile && props.accountSelector !== false}>
                 <GitHubPublicationAccountSelector
                   publication={props.publication}
                   presented={props.presented}
@@ -189,7 +197,11 @@ export function GitHubPublicationAction(props: {
   );
 }
 
-function PublicationButton(props: { publication: GitHubPublicationView; controls?: MenuControls }) {
+function PublicationButton(props: {
+  publication: GitHubPublicationView;
+  controls?: MenuControls;
+  publishLabel?: string;
+}) {
   const controlRef = props.controls?.ref();
   const action = createMemo(() => {
     const publication = props.publication;
@@ -232,7 +244,7 @@ function PublicationButton(props: { publication: GitHubPublicationView; controls
           ? t("chat.pullRequests.retryPublication")
           : !publication.selection && selection?.source === "personal"
             ? t("githubPublication.publishAs", { account: selection.account.login })
-            : t("chat.pullRequests.publishPr"),
+            : (props.publishLabel ?? t("chat.pullRequests.publishPr")),
     };
   });
   // Accepted shared requests retain their status button even without a replay callback.

@@ -69,6 +69,21 @@
   white-space: nowrap;
 }
 
+.chat-details[data-desktop] .chat-pr--unpublished {
+  --details-row-padding-block: 0px;
+}
+
+.chat-details[data-desktop] .chat-pr--unpublished > .chat-pr__create,
+.chat-details[data-desktop] .chat-pr--unpublished > openclaw-tooltip {
+  flex: none;
+}
+
+.chat-details[data-desktop] .chat-pr--unpublished > .chat-pr__create {
+  min-height: 32px;
+  font-family: var(--font-body);
+  font-weight: 500;
+}
+
 .chat-pr-branch-menu .chat-pr__create {
   display: flex;
   align-items: center;
