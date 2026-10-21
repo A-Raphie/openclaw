@@ -304,8 +304,12 @@ suite.define(() => {
 
       // The mobile sheet owns dismissal; Latest must not reopen it.
       await closeChatDetails(page);
+      await waitForChatScrollIdle(page);
       const thread = page.locator(".chat-thread");
       await thread.press("Home");
+      await expect
+        .poll(() => chatThreadDistanceFromBottom(page))
+        .toBeGreaterThan(CHAT_TRANSCRIPT_END_THRESHOLD_PX);
       await waitForChatScrollIdle(page);
       await button.press("Enter");
       await openChatTaskProgress(page);
@@ -314,7 +318,12 @@ suite.define(() => {
         .getByRole("button", { name: "Close", exact: true })
         .press("Escape");
       await page.locator(".chat-mobile-host").waitFor({ state: "hidden" });
+      await waitForChatScrollIdle(page);
       await thread.press("Home");
+      await expect
+        .poll(() => chatThreadDistanceFromBottom(page))
+        .toBeGreaterThan(CHAT_TRANSCRIPT_END_THRESHOLD_PX);
+      await waitForChatScrollIdle(page);
       await button.press("Enter");
       await waitForChatScrollIdle(page);
       expect(await page.locator(".chat-mobile-host").isVisible()).toBe(false);
