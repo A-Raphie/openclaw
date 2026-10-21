@@ -94,6 +94,7 @@ it.each([
               reasoning: false,
               input: ["text", "image"],
               maxTokens: 128000,
+              // Configured header values are guarded as credentials; avoid response field names.
               headers: { "X-Model": "synthetic-model-header", "X-Precedence": "model" },
               cost: { input: 42, output: 42, cacheRead: 0, cacheWrite: 0 },
             },
@@ -296,7 +297,7 @@ it.each([
                 expect.objectContaining({ profileId: "openai:key-fixture" }),
               );
             }
-            expect(outcome).toMatchObject({
+            expect(outcome, JSON.stringify(outcome)).toMatchObject({
               status: "ok",
               result: {
                 answers: { visible: { type: "boolean", probabilityTrue: 0.9 } },
