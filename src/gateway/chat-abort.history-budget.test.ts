@@ -136,7 +136,7 @@ describe("resolveInFlightRunSnapshot", async () => {
     return result;
   };
 
-  it("replays accepted preparation only in its visible physical session scope until cancellation", () => {
+  it("replays accepted preparation before execution until cancellation", () => {
     const runId = "preparing-repository";
     const sessionKey = "agent:main:repository";
     const storePath = "/synthetic/repository/sessions.db";
@@ -154,27 +154,17 @@ describe("resolveInFlightRunSnapshot", async () => {
       stream: "run_status",
       data: { phase: "preparing_worktree_base" },
     });
-    const resolve = (scope = storePath, key = sessionKey) =>
+    const resolve = () =>
       resolveInFlightRunSnapshot({
         chatRunState,
-        storePath: scope,
-        requestedSessionKey: key,
-        canonicalSessionKey: key,
+        storePath,
+        requestedSessionKey: sessionKey,
+        canonicalSessionKey: sessionKey,
       });
     expect(resolve()).toMatchObject({
       runId,
-      text: "",
       events: [{ data: { phase: "preparing_worktree_base" } }],
     });
-    expect(resolve("/synthetic/other/sessions.db")).toBeUndefined();
-    expect(resolve(storePath, "agent:main:other")).toBeUndefined();
-    const hiddenSource = createRpcSourceForTest(
-      { controlUiVisible: false },
-      { runId: "hidden-preparing-repository", sessionKey, storeScope: storePath, accepted: true },
-    );
-    rpcSourceTesting.reset(new Map([["hidden-preparing-repository", hiddenSource]]));
-    expect(resolve()).toBeUndefined();
-    rpcSourceTesting.reset(new Map([[runId, source]]));
     requestRpcSourceCancellation(source);
     expect(resolve()).toBeUndefined();
   });

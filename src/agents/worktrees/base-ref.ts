@@ -71,7 +71,6 @@ export async function resolveWorktreeCreationBase(
     prepareBase?: WorktreeBasePreparation;
   },
 ): Promise<ResolvedWorktreeBase> {
-  params.onProgress?.("base");
   if (params.checkoutCommit) {
     if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u.test(params.checkoutCommit)) {
       throw new Error("Worktree checkout commit is invalid");
@@ -83,6 +82,10 @@ export async function resolveWorktreeCreationBase(
       fetchSucceeded: undefined,
       warning: undefined,
     };
+  }
+  if (!params.baseRef) {
+    // Only the default-branch base fetches; pinned commits and explicit refs resolve locally.
+    params.onProgress?.("base");
   }
   return params.prepareBase && !params.baseRef
     ? await params.prepareBase({
