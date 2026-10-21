@@ -29,5 +29,6 @@ export type ModelSetupViewProps = Omit<ModelSetupOwnerView, OptionalOwnerProps |
   Partial<Pick<ModelSetupOwnerView, OptionalOwnerProps>> &
   IconProps & {
     login?: JSX.Element;
+    wizardBusy?: boolean;
     revision?: () => unknown;
   };

@@ -494,6 +494,7 @@ export function ModelSetupView(props: ModelSetupViewProps): JSX.Element {
           onDialogRef={props.onWizardDialog}
           mode={props.wizardMode}
           state={props.wizard}
+          busy={props.wizardBusy}
           refreshWarning={props.refreshWarning}
           cancellationNotice={props.cancellationNotice}
           value={props.wizardValue}

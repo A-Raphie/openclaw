@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, createSignal, createStore, onCleanup, reconcile } from "solid-js";
+import { createMemo, createSignal, createStore, onSettled, reconcile } from "solid-js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ModelCatalogEntry, ModelCatalogResult } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
@@ -15,6 +15,7 @@ import {
 import { t } from "../../lib/reactive/i18n.ts";
 import { readSessionDefaults } from "../../lib/sessions/session-key.ts";
 import type { captureModelSetupConnection } from "./first-run-setup.ts";
+import { createModelSetupSaving } from "./model-setup-saving.ts";
 import { formatModelSetupError } from "./model-setup-task-result.ts";
 
 type NativeModelSetupOptions = {
@@ -23,6 +24,7 @@ type NativeModelSetupOptions = {
   canUseSetup: (client: GatewayBrowserClient | null) => boolean;
   blocked: () => boolean;
   onSelected: () => void;
+  onChange: () => void;
 };
 
 export type NativeModelSetup = ReturnType<typeof createNativeModelSetup>;
@@ -32,9 +34,10 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
   const [nativeModel, setNativeModel] = createSignal("");
   const [nativeModelError, setNativeModelError] = createSignal<string | null>(null);
   const [nativeCatalogError, setNativeCatalogError] = createSignal<string | null>(null);
-  const [saving, setSaving] = createSignal(false);
+  const saving = createModelSetupSaving(options.getConnection);
   const [requestPending, setRequestPending] = createSignal(false);
   let generation = 0;
+  let mutationActive = false;
   let nativeModelsAbort: AbortController | null = null;
   let nativeModelsUnsubscribe: (() => void) | null = null;
   const [nativeModelsStatus, setNativeModelsStatus] = createSignal<"idle" | "loading" | "ready">(
@@ -42,14 +45,15 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
   );
 
   function reset() {
+    saving.retire();
     generation += 1;
+    mutationActive = false;
     setNativeModels((models) => {
       models.length = 0;
     });
     setNativeModel("");
     setNativeModelError(null);
     setNativeCatalogError(null);
-    setSaving(false);
     setRequestPending(false);
     nativeModelsAbort?.abort();
     nativeModelsAbort = null;
@@ -71,45 +75,56 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
       !options.canUseSetup(client) ||
       !agentId ||
       model?.available !== true ||
-      saving() ||
+      mutationActive ||
       options.blocked()
     ) {
       return;
     }
-    setSaving(true);
+    mutationActive = true;
     setNativeModelError(null);
+    options.onChange();
     const modelRef = `${model.provider}/${model.id}`;
+    const pending = (async () => {
+      try {
+        const mutation = await context.runtimeConfig.runExternalMutation(
+          (mutationClient) =>
+            mutationClient.request("agents.update", {
+              agentId,
+              model: modelRef,
+              agentRuntime: model.agentRuntime?.id,
+            }),
+          {
+            canDispatch: () => isCurrent() && options.canUseSetup(client),
+          },
+        );
+        if (!isCurrent()) {
+          return;
+        }
+        const result = mutation.ok ? mutation.refresh : mutation;
+        if (!result.ok) {
+          setNativeModelError(result.error);
+          return;
+        }
+        await context.agents.refreshList();
+        if (isCurrent()) {
+          options.onSelected();
+        }
+      } catch (error) {
+        if (isCurrent()) {
+          setNativeModelError(formatModelSetupError(error));
+        }
+      } finally {
+        if (isCurrent()) {
+          mutationActive = false;
+          options.onChange();
+        }
+      }
+    })();
     try {
-      const mutation = await context.runtimeConfig.runExternalMutation(
-        (mutationClient) =>
-          mutationClient.request("agents.update", {
-            agentId,
-            model: modelRef,
-            agentRuntime: model.agentRuntime?.id,
-          }),
-        {
-          canDispatch: () => isCurrent() && options.canUseSetup(client),
-        },
-      );
-      if (!isCurrent()) {
-        return;
-      }
-      const result = mutation.ok ? mutation.refresh : mutation;
-      if (!result.ok) {
-        setNativeModelError(result.error);
-        return;
-      }
-      await context.agents.refreshList();
-      if (isCurrent()) {
-        options.onSelected();
-      }
+      await saving.present(pending, isCurrent);
     } catch (error) {
       if (isCurrent()) {
         setNativeModelError(formatModelSetupError(error));
-      }
-    } finally {
-      if (isCurrent()) {
-        setSaving(false);
       }
     }
   }
@@ -179,7 +194,8 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
     }
   }
 
-  onCleanup(() => {
+  onSettled(() => () => {
+    saving.retire();
     generation += 1;
     nativeModelsAbort?.abort();
     nativeModelsUnsubscribe?.();
@@ -205,7 +221,10 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
       return nativeModels.length;
     },
     get saving() {
-      return saving();
+      return saving.saving() || mutationActive;
+    },
+    get active() {
+      return mutationActive;
     },
   };
 }
@@ -246,13 +265,13 @@ export function NativeModelSetupView(props: { owner: NativeModelSetup }) {
         label={t("modelSetup.nativeModels.choose")}
         value={props.owner.selected()}
         options={pickerOptions()}
-        disabled={props.owner.blocked() || props.owner.saving}
+        disabled={props.owner.saving || props.owner.blocked()}
         onChange={(value) => props.owner.setSelected(value)}
         onOpen={() => props.owner.open()}
       />
       <button
         class="btn primary"
-        disabled={props.owner.blocked() || props.owner.saving || selected()?.available !== true}
+        disabled={props.owner.saving || props.owner.blocked() || selected()?.available !== true}
         onClick={() => props.owner.useModel()}
       >
         {t(props.owner.saving ? "modelSetup.nativeModels.saving" : "modelSetup.nativeModels.use")}
@@ -268,7 +287,7 @@ export function NativeModelSetupView(props: { owner: NativeModelSetup }) {
           <button
             class="btn btn--sm"
             type="button"
-            disabled={props.owner.blocked() || props.owner.saving || props.owner.loading()}
+            disabled={props.owner.saving || props.owner.blocked() || props.owner.loading()}
             onClick={() => props.owner.retry()}
           >
             {t("common.retry")}
