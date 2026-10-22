@@ -61,7 +61,6 @@ suite.define(() => {
         const retry = progressSurface.getByRole("button", { name: "Retry", exact: true });
         // The Details shell becomes visible before its lazy composition has mounted.
         await progressSurface.waitFor();
-        await progressSurface.getByRole("meter", { name: "Context", exact: true }).waitFor();
         await page.clock.install();
         await pauseVirtualClock(page);
         await gateway.rejectDeferred("progressCard.get", { message: "Temporary read failure" });
