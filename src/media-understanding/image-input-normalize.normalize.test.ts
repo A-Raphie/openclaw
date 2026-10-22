@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  normalizeInputImageBuffer: vi.fn(async (params: { buffer: Buffer; mimeType?: string }) => ({
-    buffer: params.buffer,
-    mimeType: params.mimeType ?? "image/jpeg",
-  })),
+  normalizeInputImageBuffer: vi.fn(
+    async (params: {
+      buffer: Buffer;
+      mimeType?: string;
+      limits: { allowedMimes: Set<string>; maxBytes: number };
+    }) => ({ buffer: params.buffer, mimeType: params.mimeType ?? "image/jpeg" }),
+  ),
 }));
 
 vi.mock("../media/input-files.js", async (importOriginal) => ({
@@ -32,8 +35,8 @@ describe("normalizeImageDescriptionInput", () => {
         }),
       }),
     );
-    const limits = mocks.normalizeInputImageBuffer.mock.calls[0][0].limits;
-    expect(limits.allowedMimes.has("image/avif")).toBe(true);
+    const firstCall = mocks.normalizeInputImageBuffer.mock.calls[0]?.[0];
+    expect(firstCall?.limits.allowedMimes.has("image/avif")).toBe(true);
   });
 
   it("infers the avif mime from the .avif file extension", async () => {
