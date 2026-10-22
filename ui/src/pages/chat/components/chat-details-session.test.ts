@@ -1,12 +1,14 @@
 /* @vitest-environment jsdom */
 import { createComponent, createSignal } from "solid-js";
 import { expect, it, vi } from "vitest";
+import type { SessionsDiffResult } from "../../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../../api/types.ts";
 import { fnv1aUtf16 } from "../../../lib/fnv1a.ts";
 import type { SolidBridgeElement } from "../../../lib/solid-bridge.ts";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
 import { flush, waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import { ChatDetailsEnvironmentMobile } from "./chat-details-environment-mobile.tsx";
+import { ChatDetailsEnvironment } from "./chat-details-environment.tsx";
 import { ChatDetailsSession } from "./chat-details-session.tsx";
 import type { ChatDetailsProps } from "./chat-details-types.ts";
 import { publication, sessionBranch, pullRequest } from "./chat-pull-requests.test-support.ts";
@@ -72,11 +74,9 @@ it("omits empty linked-work disclosures and opens arriving pull requests", async
   element.props = { ...element.props!, onOpenSessionDiff: openChanges };
   await element.updateComplete;
   expect(element.querySelector('[data-details-group="pull-requests"]')).toBeNull();
-  const allChanges = element.querySelector<HTMLButtonElement>(
-    '[data-details-group="environment"] .chat-environment__action',
-  )!;
-  allChanges.click();
-  expect(openChanges).toHaveBeenCalledOnce();
+  expect(
+    element.querySelector('[data-details-group="environment"] .chat-environment__action'),
+  ).toBeNull();
   element.props = { ...element.props!, onOpenSessionDiff: undefined };
   await element.updateComplete;
   expect(
@@ -220,18 +220,6 @@ it("projects direct active children through the live observer with stable rounde
   element.presented = false;
   await element.updateComplete;
   expect(element.querySelector("openclaw-chat-subagent-activity")).toBeNull();
-});
-
-it("keeps diff navigation in Environment when branch and counts are unknown", async () => {
-  const open = vi.fn();
-  const element = await mount({ onOpenSessionDiff: open });
-  expect(element.querySelector('[data-details-group="pull-requests"]')).toBeNull();
-  const button = element.querySelector<HTMLButtonElement>(
-    '[data-details-group="environment"] .chat-environment__action',
-  )!;
-  expect(button.textContent).not.toContain("+0");
-  button.click();
-  expect(open).toHaveBeenCalledOnce();
 });
 
 it("groups every direct subagent with counts, live activity first, and a bounded preview", async () => {
@@ -578,4 +566,109 @@ it("restores the Environment branch after publication even before stale diff fac
       element.querySelector('[data-details-group="pull-requests"] a[href$="/pull/44"]'),
     ).not.toBeNull(),
   );
+});
+
+it.each([false, true])(
+  "shows only textual Changes facts without binary metadata (mobile=%s)",
+  (mobile) => {
+    const [uncommitted, setUncommitted] = createSignal<SessionsDiffResult>();
+    const open = vi.fn();
+    const details: ChatDetailsProps = {
+      sessionKey: "agent:main:details",
+      currentAgentId: "main",
+      messages: [],
+    };
+    const view = mountSolid(() =>
+      createComponent(mobile ? ChatDetailsEnvironmentMobile : ChatDetailsEnvironment, {
+        details,
+        presented: true,
+        get uncommitted() {
+          return uncommitted();
+        },
+        onOpenUncommitted: open,
+      }),
+    );
+    const row = () =>
+      [...view.container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("Changes"),
+      );
+    const result: SessionsDiffResult = {
+      sessionKey: details.sessionKey,
+      additions: 0,
+      deletions: 0,
+      files: [],
+    };
+    const binary = {
+      path: "image.png",
+      status: "modified" as const,
+      additions: 0,
+      deletions: 0,
+      binary: true,
+    };
+    const text = { path: "app.ts", status: "modified" as const, additions: 3, deletions: 1 };
+    expect(row()).toBeUndefined();
+    for (const data of [
+      result,
+      { ...result, files: [binary] },
+      { ...result, files: [binary], truncated: true },
+    ]) {
+      setUncommitted(data);
+      flush();
+      expect(row()).toBeUndefined();
+      expect(
+        view.container.querySelector("[data-details-group=environment], .chat-environment-mobile"),
+      ).toBeNull();
+    }
+    for (const data of [
+      { ...result, additions: 3, files: [{ ...text, deletions: 0 }] },
+      { ...result, deletions: 1, files: [{ ...text, additions: 0 }] },
+      { ...result, additions: 3, deletions: 1, files: [text, binary], truncated: true },
+    ]) {
+      setUncommitted(data);
+      flush();
+      expect(row()).toBeDefined();
+      expect(row()?.querySelector('[aria-label="Binary file"]')).toBeNull();
+      expect(row()?.textContent).not.toContain("…");
+      row()!.click();
+    }
+    expect(open).toHaveBeenCalledTimes(3);
+    setUncommitted({
+      ...result,
+      additions: 3,
+      files: [text],
+      unavailableReason: "unknown_session",
+    });
+    flush();
+    expect(row()).toBeUndefined();
+  },
+);
+
+it("reloads missing branchless facts even when Environment was collapsed", async () => {
+  const result: SessionsDiffResult = {
+    sessionKey: "agent:main:details",
+    additions: 1,
+    deletions: 0,
+    files: [],
+  };
+  const [uncommitted, setUncommitted] = createSignal<SessionsDiffResult | undefined>(result);
+  const stop = vi.fn();
+  const retain = vi.fn(() => stop);
+  const view = mountSolid(() =>
+    createComponent(ChatDetailsEnvironment, {
+      details: { sessionKey: result.sessionKey, currentAgentId: "main", messages: [] },
+      presented: true,
+      expanded: false,
+      get uncommitted() {
+        return uncommitted();
+      },
+      onRequestUncommitted: retain,
+    }),
+  );
+  expect(retain).not.toHaveBeenCalled();
+  setUncommitted(undefined);
+  await waitForSolid(() => expect(retain).toHaveBeenCalledOnce());
+  expect(view.container.querySelector('[data-details-group="environment"]')).toBeNull();
+  setUncommitted(result);
+  await waitForSolid(() => expect(stop).toHaveBeenCalledOnce());
+  expect(view.container.querySelector('[data-details-group="environment"]')).not.toBeNull();
 });
