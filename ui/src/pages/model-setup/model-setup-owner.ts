@@ -79,7 +79,7 @@ export function createModelSetup(
   let wizardReturnFocus: HTMLElement | null = null;
   let manualInput: HTMLInputElement | undefined;
   let feedback: HTMLElement | undefined;
-  let wizardDialog: import("../../components/modal-dialog.ts").OpenClawModalDialog | undefined;
+  let wizardDialog: import("../../components/modal-dialog.tsx").OpenClawModalDialog | undefined;
   const readConnection = () => {
     projection.revision();
     return observedConnection;
@@ -121,7 +121,11 @@ export function createModelSetup(
     (urls) => (state.iconUrls = urls),
   );
   const login = createModelProviderLogin({
-    getScope: () => ({ context, agentId: agentSelection().state.selectedId }),
+    getScope: () => ({
+      context,
+      agentId: agentSelection().state.selectedId,
+      connectionEpoch: context.gateway.connectionRevision,
+    }),
     getManualProviders: () =>
       state.pageState.phase === "ready" ? state.pageState.result.manualProviders : [],
     onManualProvider: (authChoice) => {
@@ -481,6 +485,8 @@ export function createModelSetup(
           prepareOption,
           catalogPreference,
         );
+      } else if (state.wizardState.phase === "step" && state.wizardState.busy) {
+        state.wizardState = { ...state.wizardState, busy: false };
       }
     } catch (error) {
       if (generation === wizardMutationGeneration) {
@@ -541,7 +547,7 @@ export function createModelSetup(
       onFeedback: (element: HTMLDivElement) => {
         feedback = element;
       },
-      onWizardDialog: (element: import("../../components/modal-dialog.ts").OpenClawModalDialog) => {
+      onWizardDialog: (element: NonNullable<typeof wizardDialog>) => {
         wizardDialog = element;
       },
       detecting: state.detectionRequest !== null,
@@ -653,6 +659,7 @@ export function createModelSetup(
   };
   const synchronizeCurrentGateway = () => {
     synchronizeGateway(props.routeData);
+    login.synchronizePresentation();
     notify();
   };
   createEffect(
