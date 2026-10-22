@@ -35,6 +35,19 @@ function isConfirmedYield(card: ToolCard): boolean {
   );
 }
 
+function isConfirmedPrPreparationHandoff(card: ToolCard): boolean {
+  if (
+    card.name !== "github_publish" ||
+    asRecord(card.args)?.action !== "prepare_pr" ||
+    card.completed !== true ||
+    card.isError === true
+  ) {
+    return false;
+  }
+  const receipt = asRecord(card.details) ?? safeParseJsonRecord(card.outputText ?? "");
+  return receipt?.status === "started" && receipt.async === true && receipt.yielded === true;
+}
+
 /** A handoff's private continuation is never a tool detail, whatever the disclosure preference. */
 export function hasSessionsYieldCall(message: unknown): boolean {
   return extractToolCardsCached(message).some((card) => card.name === "sessions_yield");
@@ -74,6 +87,20 @@ function scanSessionsYieldItems(
     const yields = yieldCards.filter(isConfirmedYield);
     const lastYield = yields.at(-1);
     const boundary: ChatItem[] = [];
+    // PR preparation also yields, but its public tool details and non-subagent
+    // lifecycle must not enter the private sessions_yield projection below.
+    const handoff = lastYield ?? cards.findLast(isConfirmedPrPreparationHandoff);
+    if (handoff) {
+      // The invisible boundary keeps handed-off rows in place and separates
+      // their run from a continuation without declaring an interruption.
+      boundary.push({
+        kind: "notice",
+        key: `yield:${item.key}:${handoff.id}`,
+        handoffBoundary: true,
+        text: "",
+        timestamp: (message && rawMessageTimestamp(message)) ?? 0,
+      });
+    }
     if (lastYield) {
       const timestamp = message ? rawMessageTimestamp(message) : null;
       // Later output, or output from another run, means the parent already
@@ -88,16 +115,6 @@ function scanSessionsYieldItems(
           working !== undefined &&
           !working.item.waitingOn &&
           !working.item.runId);
-      // Nothing is drawn here. The boundary keeps the handed-off turn's rows in
-      // place, also between the wait ending and the resume, and keeps a resumed
-      // run's rows from pooling or rolling up with the run that handed off.
-      boundary.push({
-        kind: "notice",
-        key: `yield:${item.key}:${lastYield.id}`,
-        handoffBoundary: true,
-        text: "",
-        timestamp: timestamp ?? 0,
-      });
       const handoffRunId = lastYield.runId ?? transcriptRunId(message);
       if (
         insideWorkingTurn &&
