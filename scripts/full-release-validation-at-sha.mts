@@ -154,7 +154,7 @@ function requiredPositiveInteger(value: unknown, label: string): number {
   return normalized;
 }
 
-export function fullReleaseConcurrencyBranch(
+export function fullReleaseConcurrencyBranchPrefix(
   workflowSha: string,
   selection: { inputs: DispatchInputs; effectiveSoak: boolean },
 ): string {
@@ -182,7 +182,9 @@ export function fullReleaseConcurrencyBranch(
     profile,
     soak: selection.effectiveSoak,
   });
-  const suffix = BigInt(`0x${createHash("sha256").update(identity).digest("hex").slice(0, 15)}`);
+  const suffix = BigInt(`0x${createHash("sha256").update(identity).digest("hex").slice(0, 15)}`)
+    .toString()
+    .padStart(18, "0");
   return `release-ci/${workflowSha.slice(0, 12)}-${suffix}`;
 }
 
@@ -1033,10 +1035,12 @@ function readDispatchRuns(request: DispatchRequest) {
 }
 
 function assertNoActiveConcurrencyRun(request: DispatchRequest) {
+  const branchPrefix = fullReleaseConcurrencyBranchPrefix(request.workflowSha, {
+    inputs: request.inputs,
+    effectiveSoak: request.effectiveSoak,
+  });
   const value: unknown = JSON.parse(
     readGhApi(`repos/${REPOSITORY}/actions/workflows/${request.workflowId}/runs`, [
-      "-f",
-      `branch=${request.workflowRef}`,
       "-f",
       "event=workflow_dispatch",
       "-f",
@@ -1053,23 +1057,27 @@ function assertNoActiveConcurrencyRun(request: DispatchRequest) {
   );
   const active = value.workflow_runs.filter(
     (workflowRun) =>
-      isJsonRecord(workflowRun) && ACTIVE_RUN_STATUSES.has(stringValue(workflowRun.status)),
+      isJsonRecord(workflowRun) &&
+      ACTIVE_RUN_STATUSES.has(stringValue(workflowRun.status)) &&
+      stringValue(workflowRun.head_branch).startsWith(branchPrefix),
   );
   for (const workflowRun of active) {
+    const headBranch = isJsonRecord(workflowRun) ? stringValue(workflowRun.head_branch) : "";
     requireDispatch(
       isJsonRecord(workflowRun) &&
         Number.isSafeInteger(workflowRun.id) &&
         Number(workflowRun.id) > 0 &&
         workflowRun.workflow_id === request.workflowId &&
         workflowRun.head_sha === request.workflowSha &&
-        workflowRun.head_branch === request.workflowRef &&
+        headBranch.startsWith(branchPrefix) &&
         workflowRun.event === request.event &&
         [
           request.workflowPath,
-          `${request.workflowPath}@${request.workflowRef}`,
-          `${request.workflowPath}@refs/heads/${request.workflowRef}`,
+          `${request.workflowPath}@${headBranch}`,
+          `${request.workflowPath}@refs/heads/${headBranch}`,
         ].includes(stringValue(workflowRun.path)) &&
-        workflowRun.html_url === `https://github.com/${REPOSITORY}/actions/runs/${workflowRun.id}`,
+        workflowRun.html_url ===
+          `https://github.com/${REPOSITORY}/actions/runs/${String(workflowRun.id)}`,
       "Same-concurrency-group run identity is invalid",
     );
   }
@@ -1888,14 +1896,19 @@ async function main() {
   if (trustedWorkflowHarness.contract === "1") {
     args.inputs.reuse_evidence = "false";
   }
-  const concurrencyInputs = { ref: targetSha, expected_sha: targetSha, ...args.inputs };
-  const branch = fullReleaseConcurrencyBranch(workflowSha, {
+  const concurrencyInputs: DispatchInputs = {
+    ref: targetSha,
+    expected_sha: targetSha,
+    ...args.inputs,
+  };
+  const branchPrefix = fullReleaseConcurrencyBranchPrefix(workflowSha, {
     inputs: concurrencyInputs,
     effectiveSoak:
-      String(concurrencyInputs.run_release_soak) === "true" ||
+      String(args.inputs.run_release_soak) === "true" ||
       concurrencyInputs.release_profile === "stable" ||
       concurrencyInputs.release_profile === "full",
   });
+  const branch = `${branchPrefix}${Date.now()}`;
   const remoteBranchRef = `refs/heads/${branch}`;
   const dispatchInputs = {
     ref: targetSha,

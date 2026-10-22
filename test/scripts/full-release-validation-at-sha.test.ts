@@ -13,7 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   assertTrustedWorkflowHarness,
   dispatchInputsDigest,
-  fullReleaseConcurrencyBranch,
+  fullReleaseConcurrencyBranchPrefix,
   parseArgs,
   releaseProfileForVersion,
   releaseDecisionStopsForeground,
@@ -90,9 +90,9 @@ describe("full-release-validation-at-sha", () => {
     expect(dispatchInputsDigest({ flag: "" })).toBe(dispatchInputsDigest({}));
   });
 
-  it("derives one workflow ref for an exact GitHub concurrency group", () => {
+  it("derives a shared branch prefix without reusing the per-request transport ref", () => {
     const workflowSha = "a".repeat(40);
-    const stable = fullReleaseConcurrencyBranch(workflowSha, {
+    const stable = fullReleaseConcurrencyBranchPrefix(workflowSha, {
       inputs: {
         expected_sha: "b".repeat(40),
         ref: "ignored",
@@ -101,9 +101,9 @@ describe("full-release-validation-at-sha", () => {
       },
       effectiveSoak: true,
     });
-    expect(stable).toMatch(/^release-ci\/a{12}-[0-9]+$/u);
+    expect(stable).toMatch(/^release-ci\/a{12}-[0-9]{18}$/u);
     expect(
-      fullReleaseConcurrencyBranch(workflowSha, {
+      fullReleaseConcurrencyBranchPrefix(workflowSha, {
         inputs: {
           expected_sha: "b".repeat(40),
           rerun_group: "all",
@@ -114,7 +114,7 @@ describe("full-release-validation-at-sha", () => {
       }),
     ).toBe(stable);
     expect(
-      fullReleaseConcurrencyBranch(workflowSha, {
+      fullReleaseConcurrencyBranchPrefix(workflowSha, {
         inputs: {
           expected_sha: "b".repeat(40),
           rerun_group: "ci",

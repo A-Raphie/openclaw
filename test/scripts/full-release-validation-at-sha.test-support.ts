@@ -486,12 +486,17 @@ if (${JSON.stringify(options.candidateOwned ?? false)} && args[0] === "api" && a
   console.log(JSON.stringify({ id: 17, path: ".github/workflows/full-release-validation.yml" }));
 } else if (args[0] === "api" && /\\/actions\\/workflows\\/(?:17|full-release-validation.yml)\\/runs$/.test(endpoint)) {
   const concurrencyInventory = fields.get("per_page") === "100";
+  const requestDirectory = require("node:path").join(process.cwd(), ".artifacts", "full-release-validation");
+  const requestFile = fs.readdirSync(requestDirectory).find((name) => name.endsWith(".json"));
+  const request = requestFile
+    ? JSON.parse(fs.readFileSync(require("node:path").join(requestDirectory, requestFile), "utf8"))
+    : null;
   const index = Number(fs.readFileSync(runDiscoveryIndexPath, "utf8"));
   if (!concurrencyInventory) fs.writeFileSync(runDiscoveryIndexPath, String(index + 1));
   const ids = ${JSON.stringify(options.duplicateOnSecondPage ?? false)} ? Array.from({ length: 21 }, (_, i) => 123 + i) : [123];
   const activeConcurrencyRuns = ${JSON.stringify(options.activeConcurrencyRun ?? false)} &&
     !fs.existsSync(acceptedRunPath) && concurrencyInventory
-    ? [{ ...runMetadata(777, { conclusion: null, status: "in_progress" }), head_branch: fields.get("branch") }]
+    ? [{ ...runMetadata(777, { conclusion: null, status: "in_progress" }), head_branch: request?.request?.workflowRef?.replace(/[0-9]{13}$/, "0000000000001") }]
     : [];
   const runs = activeConcurrencyRuns.length > 0
     ? activeConcurrencyRuns
