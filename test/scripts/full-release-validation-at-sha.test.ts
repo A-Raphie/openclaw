@@ -101,7 +101,17 @@ describe("full-release-validation-at-sha", () => {
       },
       effectiveSoak: true,
     });
-    expect(stable).toMatch(/^release-ci\/a{12}-[0-9]{18}$/u);
+    expect(stable).toMatch(/^release-ci\/a{12}-[1-9][0-9]{18}$/u);
+    expect(
+      fullReleaseConcurrencyBranchPrefix("49f695b5bc5bb753f34da0e64683f39c499c8e2c", {
+        inputs: {
+          expected_sha: "49f695b5bc5bb753f34da0e64683f39c499c8e2c",
+          rerun_group: "qa-live",
+          release_profile: "stable",
+        },
+        effectiveSoak: true,
+      }),
+    ).toMatch(/^release-ci\/49f695b5bc5b-[1-9][0-9]*$/u);
     expect(
       fullReleaseConcurrencyBranchPrefix(workflowSha, {
         inputs: {

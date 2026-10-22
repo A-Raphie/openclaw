@@ -182,9 +182,9 @@ export function fullReleaseConcurrencyBranchPrefix(
     profile,
     soak: selection.effectiveSoak,
   });
-  const suffix = BigInt(`0x${createHash("sha256").update(identity).digest("hex").slice(0, 15)}`)
+  const suffix = `1${BigInt(`0x${createHash("sha256").update(identity).digest("hex").slice(0, 15)}`)
     .toString()
-    .padStart(18, "0");
+    .padStart(18, "0")}`;
   return `release-ci/${workflowSha.slice(0, 12)}-${suffix}`;
 }
 
