@@ -2382,6 +2382,7 @@ jobs:
         if: ${{ !cancelled() && steps.node_setup.outcome == 'success' && steps.ui_chromium.outcome == 'success' && (steps.ui_bun.outcome == 'success' || steps.ui_bun.outcome == 'skipped') }}
         env:
           OPENCLAW_CI_TEST_RUNTIME_POLICY: ${{ needs.preflight.outputs.ui_test_runtime_policy }}
+          OPENCLAW_UI_MATCH_DIAGNOSTIC: ${{ matrix.shard == 2 && '1' || '' }}
           OPENCLAW_UI_E2E_DIAGNOSTIC_DIR: ${{ github.workspace }}/.artifacts/control-ui-e2e-timeouts/ui-shard-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           OPENCLAW_NODE_TEST_CONFIGS_JSON: '["ui/vitest.config.ts"]'
           OPENCLAW_NODE_TEST_GROUPS_GZIP_BASE64: ${{ needs.preflight.outputs.ui_test_groups_gzip_base64 }}

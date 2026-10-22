@@ -9,6 +9,31 @@ const require = createRequire(import.meta.url);
 export function controlUiSolidPlugin(include: FilterPattern = /\.[jt]sx$/u): Plugin[] {
   let testMode = false;
   return [
+    {
+      name: "openclaw:solid-match-test-diagnostic",
+      enforce: "pre",
+      apply(_config, env) {
+        return (
+          env.command === "serve" &&
+          env.mode === "test" &&
+          process.env.OPENCLAW_UI_MATCH_DIAGNOSTIC === "1"
+        );
+      },
+      transform(code, id) {
+        if (!/\/(?:solid-js\/dist\/solid\.dev|deps\/solid\.dev-[^/?]+)\.js(?:\?.*)?$/u.test(id)) {
+          return;
+        }
+        const original = 'throw narrowedError("Match")';
+        if (code.split(original).length !== 2) {
+          throw new Error("Expected one Solid Match diagnostic");
+        }
+        console.info(`[match-diagnostic] instrumented ${id}`);
+        return {
+          code: code.replace(original, 'throw new Error(narrowedError("Match"))'),
+          map: null,
+        };
+      },
+    },
     ...solid({
       include,
       // Skip automatic page-wide Chrome performance tracks; keep Solid's dev runtime.
