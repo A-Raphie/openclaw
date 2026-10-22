@@ -2251,6 +2251,8 @@ export const en: TranslationMap & {
       truncated: "… truncated ({total} chars, showing first {shown}).",
     },
     mermaid: {
+      missingDescription:
+        "No text description was provided. Ask the author to describe this diagram.",
       title: "Mermaid diagram",
       options: "Diagram options",
       diagram: "Show diagram",

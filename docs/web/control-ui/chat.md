@@ -847,10 +847,28 @@ automatically:
 ````markdown
 ```mermaid
 flowchart LR
+  accTitle: Message delivery
+  accDescr {
+    The Gateway sends each accepted message to a Worker.
+    The Worker saves the result in State before delivering the reply.
+  }
   Gateway --> Worker
   Worker --> State
 ```
 ````
+
+When writing diagrams, including agent-authored replies, include a short `accTitle`
+and a plain-language `accDescr` explaining the relationships or outcome. Mermaid
+supports both `accDescr: A one-line description` and the multiline form above.
+The Control UI uses the title as image alternative text and associates the
+longer description with both the inline image and expanded image. The description
+is also readable below the inline diagram. Metadata is treated as text, not HTML.
+
+Describe the meaning, not just the shapes. Source code is not a substitute for a
+text equivalent. Without `accDescr`, the viewer explains that no description was
+provided; it does not invent one. For diagram types that do not support Mermaid
+accessibility metadata, include the equivalent explanation in the surrounding
+message as well.
 
 Open the **Diagram options** menu in the top-right corner to switch between the
 diagram and source or choose **Expand diagram** for the image viewer with zoom.

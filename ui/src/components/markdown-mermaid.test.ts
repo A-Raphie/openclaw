@@ -211,10 +211,12 @@ it.each(["source", "theme"])("ignores a stale layout after a %s change", async (
   if (change === "theme") {
     expect(renderSvg.mock.calls[1]?.[1].darkMode).toBe(true);
   }
-  current.resolve(svg);
+  current.resolve(
+    svg.replace("<text>", "<title>Current diagram</title><desc>Current meaning</desc><text>"),
+  );
   const imageUrl = await waitForImage(element!);
   if (change === "source") {
-    old.resolve(svg);
+    old.resolve(svg.replace("<text>", "<title>Old diagram</title><desc>Old meaning</desc><text>"));
   } else {
     old.reject(new Error("Stale failure"));
   }
@@ -222,6 +224,8 @@ it.each(["source", "theme"])("ignores a stale layout after a %s change", async (
   await element!.updateComplete;
 
   expect(imageSource(element!)).toBe(imageUrl);
+  expect(element.querySelector("img")?.alt).toBe("Current diagram");
+  expect(element.querySelector(".description")?.textContent).toBe("Current meaning");
   expect(element!.querySelector('[role="status"]')).toBeNull();
   expect(createObjectURL).toHaveBeenCalledTimes(1);
   expect(revokeObjectURL).not.toHaveBeenCalled();
@@ -333,4 +337,49 @@ it("shares concurrent layout work while each displayed diagram owns its URL", as
   expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith(firstUrl);
   expect(imageSource(elements[1]!)).toBe(secondUrl);
   expect(revokeObjectURL).not.toHaveBeenCalledWith(secondUrl);
+});
+
+it("keeps escaped metadata as text and replaces expanded alternatives with their image", async () => {
+  const title = '<img src=x onerror="alert(1)"> 🦞';
+  const description = "<script>alert(1)</script> describes the diagram, not executable markup.";
+  const escape = (text: string) =>
+    text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  renderSvg.mockResolvedValueOnce(
+    svg.replace(
+      "<text>",
+      "<title>" + escape(title) + "</title><desc>" + escape(description) + "</desc><text>",
+    ),
+  );
+  const { element } = await mount("Escaped metadata");
+  await waitForImage(element);
+  expect(element.querySelector("img")?.alt).toBe(title);
+  expect(element.querySelector(".description")?.textContent).toBe(description);
+  expect(element.querySelector(".description")?.children).toHaveLength(0);
+  await selectAction(element, "Expand diagram");
+  await waitForSolid(() =>
+    expect(element.querySelector("openclaw-image-lightbox img")?.getAttribute("alt")).toBe(title),
+  );
+  const expanded = element.querySelector("openclaw-image-lightbox")!;
+  const expandedDescription = () =>
+    document.getElementById(expanded.querySelector("img")?.getAttribute("aria-describedby") ?? "");
+  expect(expandedDescription()?.textContent).toBe(description);
+  expect(expandedDescription()?.children).toHaveLength(0);
+  expect(element.querySelector("script")).toBeNull();
+
+  const replacement = createDeferred<string>();
+  renderSvg.mockReturnValueOnce(replacement.promise);
+  element.source = source("No metadata replacement");
+  await waitForSolid(() => expect(element.querySelector("openclaw-image-lightbox")).toBeNull());
+  expect(element.textContent).not.toContain(description);
+  replacement.resolve(svg);
+  await waitForImage(element);
+  await waitForSolid(() =>
+    expect(element.querySelector("openclaw-image-lightbox img")?.getAttribute("alt")).toBe(
+      "Mermaid diagram",
+    ),
+  );
+  const current = element.querySelector("openclaw-image-lightbox")!;
+  expect(current.imageDescription).toBe(
+    "No text description was provided. Ask the author to describe this diagram.",
+  );
 });

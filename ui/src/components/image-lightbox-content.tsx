@@ -16,7 +16,12 @@ import {
   trapLightboxTabFocus,
 } from "./image-lightbox-gallery.ts";
 import { panImageWithKeyboard } from "./image-lightbox-keyboard.ts";
-import { LightboxAction, LightboxChrome, lightboxImageStyle } from "./image-lightbox-view.tsx";
+import {
+  LightboxAction,
+  LightboxChrome,
+  LightboxImage,
+  lightboxImageStyle,
+} from "./image-lightbox-view.tsx";
 import type { ImageLightboxProps } from "./image-lightbox.types.ts";
 import { Icon } from "./solid/icon.tsx";
 import imageLightboxStyles from "./image-lightbox.css?inline";
@@ -513,6 +518,7 @@ export function ImageLightboxContent(props: ImageLightboxProps) {
     revokeOriginalBlobUrl();
   });
 
+  const description = () => (props.gallery ? undefined : props.imageDescription);
   const title = () =>
     (hasGallery() ? (currentImage()?.title ?? props.imageTitle) : props.imageTitle).trim() ||
     t("chat.imageLightbox.untitled");
@@ -590,7 +596,7 @@ export function ImageLightboxContent(props: ImageLightboxProps) {
                     slideElement = element;
                   }}
                 >
-                  <img
+                  <LightboxImage
                     class={["image", { zoomed: scale() > 1 }]}
                     ref={(element) => {
                       imageElement = element;
@@ -598,6 +604,7 @@ export function ImageLightboxContent(props: ImageLightboxProps) {
                     style={lightboxImageStyle(currentImage())}
                     src={currentImage()?.src ?? props.src}
                     alt={title()}
+                    description={description()}
                     referrerpolicy="no-referrer"
                     decoding="async"
                     onLoad={handleImageLoad}

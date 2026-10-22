@@ -85,6 +85,14 @@ openclaw-mermaid > .preview img {
   max-height: 480px;
   object-fit: contain;
 }
+openclaw-mermaid > .preview .description {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
 openclaw-mermaid > .source {
   margin: 0;
   padding: 36px 16px 16px;

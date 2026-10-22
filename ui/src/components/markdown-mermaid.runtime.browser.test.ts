@@ -186,3 +186,58 @@ click B "https://example.invalid/mermaid-link"`;
   expect(parsePassiveSvg(remote).textContent).toContain("Remote");
   expect(remote).not.toContain("example.invalid");
 });
+
+it("keeps untrusted alternatives inert and retires metadata when the source changes", async () => {
+  await import("./markdown-mermaid.tsx");
+  const element = document.createElement("openclaw-mermaid");
+  document.body.append(element);
+  const fallback = "No text description was provided. Ask the author to describe this diagram.";
+  const authored =
+    "flowchart LR\naccTitle: Audit 🧪\naccDescr: Inspect <img src=x onerror=alert(1)> before allowing the request.\nA --> B";
+  const cases = [
+    { source: authored, title: "Audit 🧪", description: "Inspect", partial: true },
+    {
+      source: "flowchart LR\nA[No authored alternative] --> B",
+      title: "Mermaid diagram",
+      description: fallback,
+    },
+    {
+      source: "flowchart LR\naccTitle: Approval order\nA --> B",
+      title: "Approval order",
+      description: fallback,
+    },
+    {
+      source: "flowchart LR\naccDescr: Approval precedes execution.\nA --> B",
+      title: "Mermaid diagram",
+      description: "Approval precedes execution.",
+    },
+    { source: authored, title: "Audit 🧪", description: "Inspect", partial: true },
+  ];
+  try {
+    for (const fixture of cases) {
+      const oldUrl = element.querySelector(".preview img")?.getAttribute("src");
+      element.source = fixture.source;
+      await expect
+        .poll(() => element.querySelector(".preview img")?.getAttribute("src"))
+        .not.toBe(oldUrl);
+      await expect
+        .poll(() => element.querySelector<HTMLImageElement>(".preview img")?.alt)
+        .toBe(fixture.title);
+      await expect
+        .poll(() => element.querySelector(".description")?.textContent)
+        .toContain(fixture.description);
+      const image = element.querySelector<HTMLImageElement>(".preview img")!;
+      await image.decode();
+      const description = document.getElementById(image.getAttribute("aria-describedby")!);
+      expect(description).not.toBeNull();
+      if (!fixture.partial) {
+        expect(description?.textContent).toBe(fixture.description);
+      }
+      expect(description?.children).toHaveLength(0);
+      expect(element.querySelector(".preview svg, .preview script, .description img")).toBeNull();
+      expect(image.src).toMatch(/^blob:/u);
+    }
+  } finally {
+    element.remove();
+  }
+});
