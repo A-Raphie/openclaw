@@ -1937,6 +1937,13 @@ async function main() {
     );
     args.trustedWorkflowRef = "candidate";
     args.admissionWorkflowRef = retained.admission!.workflowRef;
+    if (retained.request.targetContextRef !== retained.request.targetSha) {
+      verifyTargetRef(
+        retained.request.targetContextRef,
+        retained.request.targetSha,
+        retained.request.targetVersion,
+      );
+    }
     const candidateAuthorityActor =
       retained.request.inputs.validation_purpose === "publish"
         ? preflightCandidateSigningProvenance(

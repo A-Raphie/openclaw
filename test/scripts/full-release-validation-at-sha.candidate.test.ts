@@ -275,6 +275,60 @@ describe("candidate-owned full release dispatch entry point", () => {
     }
   });
 
+  it.each([
+    {
+      name: "release branch moved off the candidate",
+      releaseRef: "release/2026.8.1",
+      moveContext: (fixture: ReturnType<typeof createDispatchFixture>) => {
+        runGit(fixture.origin, [
+          "update-ref",
+          `refs/heads/${fixture.releaseRef}`,
+          fixture.workflowSha,
+        ]);
+      },
+      error: "is not reachable from release branch",
+    },
+    {
+      name: "release tag reassigned",
+      releaseRef: "v2026.8.1",
+      prepareContext: (fixture: ReturnType<typeof createDispatchFixture>) => {
+        runGit(fixture.origin, [
+          "update-ref",
+          `refs/tags/${fixture.releaseRef}`,
+          fixture.targetSha,
+        ]);
+      },
+      moveContext: (fixture: ReturnType<typeof createDispatchFixture>) => {
+        runGit(fixture.origin, [
+          "update-ref",
+          `refs/tags/${fixture.releaseRef}`,
+          fixture.workflowSha,
+        ]);
+      },
+      error: "does not resolve to",
+    },
+  ])("refuses resume when the $name", ({ releaseRef, prepareContext, moveContext, error }) => {
+    const f = createDispatchFixture({
+      candidateOwned: true,
+      releaseRef,
+      stopAfterAccepted: "admission",
+    });
+    try {
+      prepareContext?.(f);
+      expect(f.run().status).toBe(78);
+      expect(dispatches(f)).toEqual([P]);
+      moveContext(f);
+
+      const resumed = f.run(["--resume-request", f.requestPath()], true);
+      expect(resumed.status, resumed.stderr).toBe(1);
+      expect(resumed.stderr).toContain(error);
+      expect(dispatches(f)).toEqual([P]);
+      expect(f.refs()).toEqual([]);
+    } finally {
+      f.cleanup();
+    }
+  });
+
   it("does not reinterpret an accepted uncertain Q as resumable pre-Q work", () => {
     const f = createDispatchFixture({ candidateOwned: true, stopAfterAccepted: "qualification" });
     try {
