@@ -2194,7 +2194,8 @@ async function main() {
   // A new dispatch is gated by the local check; consuming existing evidence
   // defers it until the SDK acknowledgement has been checked.
   const dispatchesValidation = !options.fullReleaseRunId && !options.skipDispatch;
-  if (dispatchesValidation) {
+  const validatesScenarioCatalog = dispatchesValidation && !hasRetainedRequest;
+  if (validatesScenarioCatalog) {
     validateReleaseScenarioCatalogCompatibility({
       candidateCatalog: run("git", ["show", `${targetSha}:${UPGRADE_SURVIVOR_CATALOG_PATH}`], {
         capture: true,
