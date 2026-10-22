@@ -1,3 +1,4 @@
+import { RastermillUnavailableError } from "rastermill";
 import { describe, expect, it } from "vitest";
 import { normalizeImageDescriptionInput } from "./image-input-normalize.js";
 
@@ -19,28 +20,51 @@ function assertJpeg(buffer: Buffer): void {
   expect(buffer.subarray(0, JPEG_MAGIC.length).equals(JPEG_MAGIC)).toBe(true);
 }
 
+// HEIC/AVIF decoding goes through native OS codecs, so these tests only run on
+// codec-equipped runtimes; Rastermill reports the format as unavailable elsewhere.
+async function codecConverts(buffer: Buffer, mime: string): Promise<boolean> {
+  try {
+    await normalizeImageDescriptionInput({ buffer, mime });
+    return true;
+  } catch (error) {
+    if (error instanceof RastermillUnavailableError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+const avifConvertible = await codecConverts(AVIF_1X1, "image/avif");
+const heicConvertible = await codecConverts(HEIC_1X1, "image/heic");
+
 describe("normalizeImageDescriptionInput", () => {
-  it("converts real AVIF bytes to JPEG before image description", async () => {
-    const result = await normalizeImageDescriptionInput({
-      buffer: AVIF_1X1,
-      mime: "image/avif",
-    });
+  it.skipIf(!avifConvertible)(
+    "converts real AVIF bytes to JPEG before image description",
+    async () => {
+      const result = await normalizeImageDescriptionInput({
+        buffer: AVIF_1X1,
+        mime: "image/avif",
+      });
 
-    expect(result.mime).toBe("image/jpeg");
-    assertJpeg(result.buffer);
-  });
+      expect(result.mime).toBe("image/jpeg");
+      assertJpeg(result.buffer);
+    },
+  );
 
-  it("converts AVIF declared only by the .avif file extension", async () => {
-    const result = await normalizeImageDescriptionInput({
-      buffer: AVIF_1X1,
-      fileName: "screenshot.avif",
-    });
+  it.skipIf(!avifConvertible)(
+    "converts AVIF declared only by the .avif file extension",
+    async () => {
+      const result = await normalizeImageDescriptionInput({
+        buffer: AVIF_1X1,
+        fileName: "screenshot.avif",
+      });
 
-    expect(result.mime).toBe("image/jpeg");
-    assertJpeg(result.buffer);
-  });
+      expect(result.mime).toBe("image/jpeg");
+      assertJpeg(result.buffer);
+    },
+  );
 
-  it("still converts real HEIC bytes to JPEG", async () => {
+  it.skipIf(!heicConvertible)("still converts real HEIC bytes to JPEG", async () => {
     const result = await normalizeImageDescriptionInput({
       buffer: HEIC_1X1,
       mime: "image/heic",
