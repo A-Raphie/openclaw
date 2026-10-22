@@ -37,7 +37,6 @@ import {
 } from "../../agents/model-visibility-policy.js";
 import {
   createModelCatalogIdentityKeyResolver,
-  openAIModelCatalogRoutePolicy,
   resolveModelCatalogIdentityKey,
 } from "../../agents/openai-model-routes.js";
 import { prepareOperatorModelPolicy } from "../../agents/operator-model-policy.js";
@@ -561,7 +560,6 @@ async function prepareOwnedModelsListResult({
       policy: visibilityPolicy,
       retainedModel,
       selectedModel,
-      routePolicy: openAIModelCatalogRoutePolicy,
       routeVariants,
       prepareEntry: (entry, variants) => {
         const key = resolveModelCatalogIdentityKey(entry);
@@ -622,7 +620,6 @@ async function prepareOwnedModelsListResult({
           return resolveLogicalModelCatalogEntryState({
             evaluation,
             authBacked: evaluation.availability === true || syntheticLocal,
-            routePolicy: openAIModelCatalogRoutePolicy,
           });
         };
       },
