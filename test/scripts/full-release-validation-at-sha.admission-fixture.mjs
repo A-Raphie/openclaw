@@ -63,6 +63,20 @@ export async function respond(args, config) {
         status: sha === git(["rev-parse", "refs/heads/main"]) ? "identical" : "ahead",
       });
     }
+    if (route?.endsWith("/branches-where-head")) {
+      return JSON.stringify(
+        git([
+          "for-each-ref",
+          "--format=%(refname:short)",
+          "--points-at",
+          config.targetSha,
+          "refs/heads",
+        ])
+          .split("\n")
+          .filter(Boolean)
+          .map((name) => ({ name })),
+      );
+    }
     if (route?.startsWith("contents/")) {
       const [name, sha] = route.slice(9).split("?ref=");
       const bytes = execFileSync("git", ["--git-dir", config.origin, "show", sha + ":" + name], {
@@ -110,7 +124,7 @@ export async function respond(args, config) {
     }
     if (route === "collaborators/release-operator/permission") {
       return JSON.stringify({
-        permission: config.options.candidateSignature
+        permission: !existsSync(config.admissionCapturePath)
           ? "admin"
           : config.options.admissionRevokedActor && !active
             ? "read"

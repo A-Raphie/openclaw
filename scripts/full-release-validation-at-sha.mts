@@ -734,6 +734,44 @@ function exactCandidateMergeActors(targetSha: string, values: unknown[]) {
   });
 }
 
+function hasCanonicalUnsignedCandidateContext(targetSha: string, targetContextRef: string) {
+  const canonicalBranch = (value: string) =>
+    /^release\/[0-9]{4}\.[1-9][0-9]*\.[1-9][0-9]*$/u.test(value) ||
+    /^extended-stable\/[0-9]{4}\.[1-9][0-9]*\.33$/u.test(value);
+  if (targetContextRef !== targetSha) {
+    return (
+      canonicalBranch(targetContextRef) ||
+      parseReleaseContextRef(targetContextRef)?.kind === "release tag"
+    );
+  }
+  const branchPages: unknown = JSON.parse(
+    runGh([
+      "api",
+      "--paginate",
+      "--slurp",
+      "-H",
+      GH_NO_CACHE_HEADER,
+      `repos/${REPOSITORY}/commits/${targetSha}/branches-where-head`,
+    ]),
+  );
+  const branches = Array.isArray(branchPages)
+    ? branchPages
+        .flatMap((page) => (Array.isArray(page) ? page : [page]))
+        .filter(isJsonRecord)
+        .map((branch) => stringValue(branch.name))
+        .filter(canonicalBranch)
+    : [];
+  if (branches.length === 1) {
+    return true;
+  }
+  const comparison: unknown = JSON.parse(
+    runGh(["api", "-H", GH_NO_CACHE_HEADER, `repos/${REPOSITORY}/compare/${targetSha}...main`]),
+  );
+  return (
+    isJsonRecord(comparison) && (comparison.status === "ahead" || comparison.status === "identical")
+  );
+}
+
 function preflightCandidateSigningProvenance(targetSha: string, targetContextRef: string): void {
   const [owner, name] = REPOSITORY.split("/");
   const metadata: unknown = JSON.parse(
@@ -756,8 +794,7 @@ function preflightCandidateSigningProvenance(targetSha: string, targetContextRef
   let actor = provenance.signer;
   if (provenance.signatureStatus === "missing" || actor === "web-flow") {
     requireDispatch(
-      /^release\/[0-9]{4}\.[1-9][0-9]*\.[1-9][0-9]*$/u.test(targetContextRef) ||
-        /^extended-stable\/[0-9]{4}\.[1-9][0-9]*\.33$/u.test(targetContextRef),
+      hasCanonicalUnsignedCandidateContext(targetSha, targetContextRef),
       `Unsigned or GitHub web-flow candidate ${targetSha} requires canonical release branch provenance`,
     );
     let actors = exactCandidateMergeActors(targetSha, provenance.associatedPullRequests);

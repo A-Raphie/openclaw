@@ -391,7 +391,8 @@ if (args[0] === "api" && method === "GET" && !hasNoCache) {
 const admissionEndpoint = endpoint.includes("/actions/workflows/openclaw-release-prepare.yml") ||
   endpoint.endsWith("/actions/workflows/18/runs") || endpoint.includes("/actions/runs/321/") ||
   endpoint.includes("/actions/artifacts/9002") || endpoint.includes("/contents/") ||
-  endpoint.includes("/compare/") || endpoint.includes("/git/ref/") ||
+  endpoint.includes("/compare/") || endpoint.includes("/branches-where-head") ||
+  endpoint.includes("/git/ref/") ||
   endpoint === "repos/openclaw/openclaw/collaborators/release-operator/permission";
 if (args[0] === "api" && args[1] === "graphql" && fields.has("oid")) {
   const signature = ${JSON.stringify(options.candidateSignature ?? "valid")};

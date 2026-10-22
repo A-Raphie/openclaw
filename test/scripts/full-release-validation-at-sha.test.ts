@@ -96,6 +96,31 @@ describe("full-release-validation-at-sha", () => {
     expect(fixture.dispatches()).toHaveLength(2);
   });
 
+  it("discovers canonical branch provenance for an unsigned SHA-only candidate", () => {
+    const fixture = createDispatchFixture({
+      candidateOwned: true,
+      candidateSignature: "missing",
+      includeTargetRef: false,
+    });
+    const result = fixture.run([
+      "--workflow-sha",
+      fixture.targetSha,
+      "-f",
+      "validation_purpose=publish",
+      "-f",
+      `publication_selection_json=${JSON.stringify({
+        route: "normal",
+        npmDistTag: "latest",
+        publishOpenclawNpm: true,
+        pluginPublishScope: "all-publishable",
+        plugins: [],
+      })}`,
+    ]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(fixture.dispatches()).toHaveLength(2);
+  });
+
   it("rejects an unsigned publication candidate without exact merge attribution", () => {
     const fixture = createDispatchFixture({
       candidateOwned: true,
