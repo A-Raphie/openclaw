@@ -676,6 +676,52 @@ function preflightTargetShaFetch(targetSha: string) {
   }
 }
 
+export function validateCandidateSigningProvenance(targetSha: string, metadata: unknown): void {
+  requireDispatch(isJsonRecord(metadata), `Candidate ${targetSha} signing metadata is missing`);
+  const repository = metadata.data;
+  const object =
+    isJsonRecord(repository) && isJsonRecord(repository.repository)
+      ? repository.repository.object
+      : undefined;
+  requireDispatch(
+    isJsonRecord(object) && object.oid === targetSha,
+    `Candidate ${targetSha} signing metadata does not match the requested commit`,
+  );
+  const signature = object.signature;
+  const signer =
+    isJsonRecord(signature) && isJsonRecord(signature.signer) ? signature.signer.login : undefined;
+  requireDispatch(
+    isJsonRecord(signature) &&
+      signature.isValid === true &&
+      signature.state === "VALID" &&
+      typeof signer === "string" &&
+      signer.length > 0,
+    `Release candidate ${targetSha} requires a valid GitHub-verifiable commit signature before qualification dispatch`,
+  );
+  console.log(`Release candidate signature verified for ${targetSha}`);
+}
+
+function preflightCandidateSigningProvenance(targetSha: string): void {
+  const [owner, name] = REPOSITORY.split("/");
+  const metadata: unknown = JSON.parse(
+    runGh([
+      "api",
+      "graphql",
+      "-H",
+      GH_NO_CACHE_HEADER,
+      "-f",
+      "query=query($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){... on Commit{oid signature{isValid state signer{login}}}}}}",
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${name}`,
+      "-f",
+      `oid=${targetSha}`,
+    ]),
+  );
+  validateCandidateSigningProvenance(targetSha, metadata);
+}
+
 // pnpm release:candidate applies these gates after validation finishes; check
 // them first so an unpublishable candidate never spends a validation run.
 // Extended-stable publication does not use that checklist.
@@ -1794,6 +1840,9 @@ async function main() {
         oldestSupportedVersion: baselinePolicy.oldestSupportedBaseline,
       }),
     );
+  }
+  if (args.inputs.validation_purpose === "publish") {
+    preflightCandidateSigningProvenance(targetSha);
   }
   // Read target blobs with trusted tooling before creating the workflow ref.
   validatePackageSourceRef(targetSha, {

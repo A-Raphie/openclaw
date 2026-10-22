@@ -94,6 +94,7 @@ export function createDispatchFixture(
     targetSource?: Record<string, string>;
     omitPurpose?: boolean;
     unreachableContributionRecord?: boolean;
+    candidateSignature?: "valid" | "missing" | "invalid";
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "openclaw-release-dispatch-"));
@@ -391,7 +392,17 @@ const admissionEndpoint = endpoint.includes("/actions/workflows/openclaw-release
   endpoint.includes("/actions/artifacts/9002") || endpoint.includes("/contents/") ||
   endpoint.includes("/compare/") || endpoint.includes("/git/ref/") ||
   endpoint === "repos/openclaw/openclaw/collaborators/release-operator/permission";
-if (${JSON.stringify(options.candidateOwned ?? false)} && args[0] === "api" && admissionEndpoint) {
+if (args[0] === "api" && args[1] === "graphql" && fields.has("oid")) {
+  const signature = ${JSON.stringify(options.candidateSignature ?? "valid")};
+  console.log(JSON.stringify({ data: { repository: { object: {
+    oid: fields.get("oid"),
+    signature: signature === "missing" ? null : {
+      isValid: signature === "valid",
+      state: signature === "valid" ? "VALID" : "INVALID",
+      signer: { login: "release-operator" },
+    },
+  } } } }));
+} else if (${JSON.stringify(options.candidateOwned ?? false)} && args[0] === "api" && admissionEndpoint) {
   import(${JSON.stringify(admissionFixturePath)}).then(({ respond }) => respond(args,
     ${JSON.stringify({ origin, checkout, publisherSha: workflowSha, targetSha, admissionCapturePath, admissionReceiptPath, options })})).catch((error) => {
       console.error(error.stack); process.exitCode = 1;

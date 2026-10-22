@@ -21,6 +21,7 @@ import {
   resolveRemoteTargetRefSha,
   shouldDeleteTemporaryWorkflowRef,
   tryReadReleaseDecision,
+  validateCandidateSigningProvenance,
   validateReleaseDecisionPayload,
   verifyTargetRef,
   verifyTrustedWorkflowRef,
@@ -38,6 +39,52 @@ import {
 } from "./full-release-validation-at-sha.test-support.js";
 
 describe("full-release-validation-at-sha", () => {
+  it("rejects unsigned release candidates before qualification dispatch", () => {
+    const candidateSha = "a".repeat(40);
+    const metadata = (signature: unknown) => ({
+      data: { repository: { object: { oid: candidateSha, signature } } },
+    });
+
+    expect(() => validateCandidateSigningProvenance(candidateSha, metadata(null))).toThrow(
+      "requires a valid GitHub-verifiable commit signature",
+    );
+    expect(() =>
+      validateCandidateSigningProvenance(
+        candidateSha,
+        metadata({ isValid: false, state: "INVALID", signer: { login: "maintainer" } }),
+      ),
+    ).toThrow("requires a valid GitHub-verifiable commit signature");
+    expect(() =>
+      validateCandidateSigningProvenance(
+        candidateSha,
+        metadata({ isValid: true, state: "VALID", signer: { login: "maintainer" } }),
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects an unsigned publication candidate before remote mutation", () => {
+    const fixture = createDispatchFixture({ candidateOwned: true, candidateSignature: "missing" });
+    const result = fixture.run([
+      "--workflow-sha",
+      fixture.targetSha,
+      "-f",
+      "validation_purpose=publish",
+      "-f",
+      `publication_selection_json=${JSON.stringify({
+        route: "normal",
+        npmDistTag: "latest",
+        publishOpenclawNpm: true,
+        pluginPublishScope: "all-publishable",
+        plugins: [],
+      })}`,
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("requires a valid GitHub-verifiable commit signature");
+    expect(fixture.dispatches()).toEqual([]);
+    expect(fixture.gitCalls().filter((args) => args[0] === "push")).toEqual([]);
+  });
+
   it("rejects a missing purpose before remote creation on supporting tooling", () => {
     const fixture = createDispatchFixture({ omitPurpose: true });
     const result = fixture.run();
