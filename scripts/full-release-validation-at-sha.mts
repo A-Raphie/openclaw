@@ -800,10 +800,11 @@ function candidateTrustReason(
     .split("\n")
     .flatMap((line) => {
       const match = /^([a-f0-9]{40})\s+refs\/tags\/(v[^\s]+?)(?:\^\{\})?$/u.exec(line);
-      if (!match || match[1] !== targetSha) {
+      const contextRef = match?.[2];
+      if (!match || match[1] !== targetSha || !contextRef) {
         return [];
       }
-      const context = parseReleaseContextRef(match[2]);
+      const context = parseReleaseContextRef(contextRef);
       return context?.kind === "release tag" ? [context.ref] : [];
     });
   if (new Set(matchingTags).size === 1) {
