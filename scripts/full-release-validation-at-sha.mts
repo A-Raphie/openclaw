@@ -734,15 +734,31 @@ function exactCandidateMergeActors(targetSha: string, values: unknown[]) {
   });
 }
 
-function hasCanonicalUnsignedCandidateContext(targetSha: string, targetContextRef: string) {
+type CandidateTrustReason = "main-ancestor" | "release-branch" | "release-tag";
+
+function candidateTrustReason(
+  targetSha: string,
+  targetContextRef: string,
+): CandidateTrustReason | undefined {
   const canonicalBranch = (value: string) =>
     /^release\/[0-9]{4}\.[1-9][0-9]*\.[1-9][0-9]*$/u.test(value) ||
     /^extended-stable\/[0-9]{4}\.[1-9][0-9]*\.33$/u.test(value);
   if (targetContextRef !== targetSha) {
-    return (
-      canonicalBranch(targetContextRef) ||
-      parseReleaseContextRef(targetContextRef)?.kind === "release tag"
-    );
+    const context = parseReleaseContextRef(targetContextRef);
+    return context?.kind === "release tag"
+      ? "release-tag"
+      : context && canonicalBranch(context.ref)
+        ? "release-branch"
+        : undefined;
+  }
+  const comparison: unknown = JSON.parse(
+    runGh(["api", "-H", GH_NO_CACHE_HEADER, `repos/${REPOSITORY}/compare/${targetSha}...main`]),
+  );
+  if (
+    isJsonRecord(comparison) &&
+    (comparison.status === "ahead" || comparison.status === "identical")
+  ) {
+    return "main-ancestor";
   }
   const branchPages: unknown = JSON.parse(
     runGh([
@@ -762,17 +778,18 @@ function hasCanonicalUnsignedCandidateContext(targetSha: string, targetContextRe
         .filter(canonicalBranch)
     : [];
   if (branches.length === 1) {
-    return true;
+    return "release-branch";
   }
-  const comparison: unknown = JSON.parse(
-    runGh(["api", "-H", GH_NO_CACHE_HEADER, `repos/${REPOSITORY}/compare/${targetSha}...main`]),
-  );
-  return (
-    isJsonRecord(comparison) && (comparison.status === "ahead" || comparison.status === "identical")
-  );
+  return undefined;
 }
 
 function preflightCandidateSigningProvenance(targetSha: string, targetContextRef: string): void {
+  const trustReason = candidateTrustReason(targetSha, targetContextRef);
+  requireDispatch(trustReason, `Release candidate ${targetSha} is not trusted release provenance`);
+  if (trustReason === "main-ancestor") {
+    console.log(`Release candidate provenance verified for ${targetSha} (main-ancestor)`);
+    return;
+  }
   const [owner, name] = REPOSITORY.split("/");
   const metadata: unknown = JSON.parse(
     runGh([
@@ -794,7 +811,7 @@ function preflightCandidateSigningProvenance(targetSha: string, targetContextRef
   let actor = provenance.signer;
   if (provenance.signatureStatus === "missing" || actor === "web-flow") {
     requireDispatch(
-      hasCanonicalUnsignedCandidateContext(targetSha, targetContextRef),
+      trustReason === "release-branch",
       `Unsigned or GitHub web-flow candidate ${targetSha} requires canonical release branch provenance`,
     );
     let actors = exactCandidateMergeActors(targetSha, provenance.associatedPullRequests);

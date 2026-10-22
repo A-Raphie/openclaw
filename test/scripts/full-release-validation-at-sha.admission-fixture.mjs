@@ -55,12 +55,18 @@ export async function respond(args, config) {
       ?.slice(("repos/" + repository + "/").length);
     if (route?.startsWith("compare/")) {
       const sha = route.slice(8).split("...")[0];
-      if (sha !== publisherSha()) {
+      if (sha !== publisherSha() && sha !== config.targetSha) {
         throw new Error("Q must not be subjected to P/main ancestry");
       }
-      git(["merge-base", "--is-ancestor", sha, "refs/heads/main"]);
+      let status = "diverged";
+      try {
+        git(["merge-base", "--is-ancestor", sha, "refs/heads/main"]);
+        status = sha === git(["rev-parse", "refs/heads/main"]) ? "identical" : "ahead";
+      } catch {
+        // GitHub reports a non-ancestor comparison as data, not a transport failure.
+      }
       return JSON.stringify({
-        status: sha === git(["rev-parse", "refs/heads/main"]) ? "identical" : "ahead",
+        status,
       });
     }
     if (route?.endsWith("/branches-where-head")) {

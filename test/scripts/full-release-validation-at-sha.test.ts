@@ -121,6 +121,67 @@ describe("full-release-validation-at-sha", () => {
     expect(fixture.dispatches()).toHaveLength(2);
   });
 
+  it("preserves main-ancestor trust through the provenance preflight", () => {
+    const fixture = createDispatchFixture({
+      candidateOwned: true,
+      candidateMergeAttribution: false,
+      candidateSignature: "missing",
+      includeTargetRef: false,
+    });
+    runGit(fixture.checkout, ["push", "origin", `${fixture.targetSha}:refs/heads/main`]);
+    const result = fixture.run([
+      "--admission-workflow-sha",
+      fixture.targetSha,
+      "--workflow-sha",
+      fixture.targetSha,
+      "-f",
+      "validation_purpose=publish",
+      "-f",
+      `publication_selection_json=${JSON.stringify({
+        route: "normal",
+        npmDistTag: "latest",
+        publishOpenclawNpm: true,
+        pluginPublishScope: "all-publishable",
+        plugins: [],
+      })}`,
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("(main-ancestor)");
+    expect(result.stderr).toContain("Admission workflow identity changed");
+    expect(result.stderr).not.toContain("requires one exact merged same-repository PR");
+  });
+
+  it("rejects an unsigned candidate in explicit release-tag context", () => {
+    const fixture = createDispatchFixture({
+      candidateOwned: true,
+      candidateSignature: "missing",
+      includeTargetRef: false,
+    });
+    runGit(fixture.checkout, ["tag", "v2026.8.1", fixture.targetSha]);
+    runGit(fixture.checkout, ["push", "origin", "refs/tags/v2026.8.1"]);
+    const result = fixture.run([
+      "--target-ref",
+      "v2026.8.1",
+      "--workflow-sha",
+      fixture.targetSha,
+      "-f",
+      "validation_purpose=publish",
+      "-f",
+      `publication_selection_json=${JSON.stringify({
+        route: "normal",
+        npmDistTag: "latest",
+        publishOpenclawNpm: true,
+        pluginPublishScope: "all-publishable",
+        plugins: [],
+      })}`,
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Unsigned or GitHub web-flow candidate");
+    expect(fixture.dispatches()).toEqual([]);
+  });
+
   it("rejects an unsigned publication candidate without exact merge attribution", () => {
     const fixture = createDispatchFixture({
       candidateOwned: true,
