@@ -28,8 +28,6 @@
     "../../dist",
     "../../**/dist/**",
     "../../src/agents/tools/cron-*.test.ts",
-    "../../src/agents/tools/cron-*.test.tsx",
-    "../../src/agents/tool-loop-*.test.ts",
-    "../../src/agents/tool-loop-*.test.tsx"
+    "../../src/agents/tools/cron-*.test.tsx"
   ]
 }

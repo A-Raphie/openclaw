@@ -9,6 +9,7 @@ import {
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { cleanupSessionStateForTest } from "../../test-utils/session-state-cleanup.js";
+import { createOAuthRefreshCredential } from "../auth-profiles/credential-fixtures.test-support.js";
 import { closeAuthProfileReadPool } from "../auth-profiles/sqlite.js";
 import type { EmbeddedAgentRunResult } from "../embedded-agent.js";
 import {
@@ -85,7 +86,9 @@ describe("embedded attempt harness pinning", () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-embedded-attempt-"));
     runCliAgentMock.mockReset();
-    runEmbeddedAgentMock.mockReset();
+    runEmbeddedAgentMock
+      .mockReset()
+      .mockResolvedValueOnce({ meta: { durationMs: 1 } } satisfies EmbeddedAgentRunResult);
   });
 
   afterEach(async () => {
@@ -102,25 +105,34 @@ describe("embedded attempt harness pinning", () => {
       sessionKey: "agent:main:main",
       workspaceDir: tmpDir,
       agentDir: tmpDir,
+      sessionHasHistory: true,
       ...overrides,
     });
   }
 
-  it("rejects a saved Access override before starting an unsupported CLI runtime", async () => {
-    const sessionKey = "agent:main:main";
-    const sessionEntry = makeSessionEntry("access-cli", { cyberAccessProgram: "standard" });
-    const storePath = path.join(tmpDir, "sessions.json");
-    await replaceSessionEntry({ sessionKey, storePath }, sessionEntry);
-    await expect(
-      runHarnessAttempt({
-        providerOverride: "claude-cli",
-        modelOverride: "opus",
-        sessionEntry,
-        storePath,
-      }),
-    ).rejects.toThrow("Explicit access programs are unsupported by this CLI runtime");
-    expect(runCliAgentMock).not.toHaveBeenCalled();
-  });
+  it.each(["saved", "run-scoped"] as const)(
+    "rejects a %s Access override before starting an unsupported CLI runtime",
+    async (source) => {
+      const sessionKey = "agent:main:access-cli";
+      const sessionEntry = makeSessionEntry(
+        "access-cli",
+        source === "saved" ? { cyberAccessProgram: "standard" } : {},
+      );
+      const storePath = path.join(tmpDir, "sessions.json");
+      await replaceSessionEntry({ sessionKey, storePath }, sessionEntry);
+      await expect(
+        runHarnessAttempt({
+          providerOverride: "claude-cli",
+          modelOverride: "opus",
+          sessionKey,
+          sessionEntry,
+          storePath,
+          ...(source === "run-scoped" ? { cyberAccessProgram: "standard" as const } : {}),
+        }),
+      ).rejects.toThrow("Explicit access programs are unsupported by this CLI runtime");
+      expect(runCliAgentMock).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(["openclaw", "codex"] as const)(
     "forwards persisted Access choices to %s command turns",
@@ -160,10 +172,6 @@ describe("embedded attempt harness pinning", () => {
         },
       },
     });
-    runEmbeddedAgentMock.mockResolvedValueOnce({
-      meta: { durationMs: 1 },
-    } satisfies EmbeddedAgentRunResult);
-
     await runHarnessAttempt({
       providerOverride: "anthropic",
       modelOverride: "claude-opus-4-7",
@@ -173,7 +181,6 @@ describe("embedded attempt harness pinning", () => {
       body: "switch to minimax",
       opts: { toolsAllow: ["read", "web_search"], codeModeOverride: false },
       runId: "run-mixed-provider-auto-runtime",
-      sessionHasHistory: true,
     });
 
     expect(runCliAgentMock).not.toHaveBeenCalled();
@@ -192,17 +199,8 @@ describe("embedded attempt harness pinning", () => {
     const { clearAgentHarnesses, registerAgentHarness } = await import("../harness/registry.js");
     const sessionEntry = makeSessionEntry("codex-auth-session");
     saveTestAuthProfiles(tmpDir, {
-      "openai:work": {
-        type: "oauth",
-        provider: "openai",
-        access: "access-token",
-        refresh: "refresh-token",
-        expires: Date.now() + 60_000,
-      },
+      "openai:work": createOAuthRefreshCredential(),
     });
-    runEmbeddedAgentMock.mockResolvedValueOnce({
-      meta: { durationMs: 1 },
-    } satisfies EmbeddedAgentRunResult);
     clearAgentHarnesses();
     registerAgentHarness({
       id: "codex",
@@ -215,7 +213,6 @@ describe("embedded attempt harness pinning", () => {
       await runHarnessAttempt({
         sessionEntry,
         runId: "run-codex-auto-auth-profile",
-        sessionHasHistory: true,
       });
     } finally {
       clearAgentHarnesses();
@@ -248,10 +245,6 @@ describe("embedded attempt harness pinning", () => {
         supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
       },
     } as const;
-    runEmbeddedAgentMock.mockResolvedValueOnce({
-      meta: { durationMs: 1 },
-    } satisfies EmbeddedAgentRunResult);
-
     await runHarnessAttempt({
       modelOverride: "gpt-5.6-sol",
       modelThinkingCapability,
@@ -259,7 +252,6 @@ describe("embedded attempt harness pinning", () => {
       agentHarnessRuntimeOverride: "openclaw",
       resolvedThinkLevel: "max",
       runId: "run-explicit-openclaw-runtime",
-      sessionHasHistory: true,
     });
 
     expectMockArgFields(runEmbeddedAgentMock, {

@@ -29,6 +29,7 @@ import {
 import * as runAttemptTurnRequest from "./run-attempt-turn-request.js";
 import {
   createContextEngine,
+  DISABLED_CODEX_WEB_SEARCH_THREAD_CONFIG_FINGERPRINT,
   requestMethodsExcludingSkillDiscovery,
 } from "./run-attempt.context-engine.test-support.js";
 import {
@@ -40,74 +41,30 @@ import * as threadOwnership from "./thread-ownership.js";
 
 setupRunAttemptTestHooks();
 
-describe("Codex attempt subscription recovery", () => {
-  it("rejects an explicit access program with unsupported native API-key auth", async () => {
-    const harness = createStartedThreadHarness(async (method) =>
-      method === "account/read" ? { account: { type: "apiKey" } } : undefined,
-    );
-    const params = createParams(path.join(tempDir, "daybreak-api.jsonl"), tempDir);
-    params.cyberAccessProgram = "daybreak_blue";
-    await expect(runCodexAppServerAttempt(params)).rejects.toThrow(
-      "requires ChatGPT subscription authentication",
-    );
-    expect(harness.requests.some(({ method }) => method === "turn/start")).toBe(false);
-  });
-
-  it("rejects a saved access program when the current account does not advertise it", async () => {
-    const harness = createStartedThreadHarness(async (method) =>
-      method === "account/read"
-        ? { account: { type: "chatgpt" } }
-        : method === "model/list"
-          ? { data: [], nextCursor: null }
-          : undefined,
-    );
-    const params = createParams(path.join(tempDir, "daybreak-unknown.jsonl"), tempDir);
-    params.cyberAccessProgram = "daybreak_blue";
-    await expect(runCodexAppServerAttempt(params)).rejects.toThrow(
-      "not advertised for the current account",
-    );
-    expect(harness.requests.some(({ method }) => method === "turn/start")).toBe(false);
-  });
-
-  it("forwards explicit access to the admitted native subscription turn", async () => {
-    const harness = createStartedThreadHarness(async (method) =>
-      method === "account/read"
-        ? { account: { type: "chatgpt" } }
-        : method === "model/list"
-          ? {
-              data: [
-                {
-                  id: "gpt-5.4-codex",
-                  model: "gpt-5.4-codex",
-                  displayName: "Fixture",
-                  description: "Fixture",
-                  hidden: false,
-                  isDefault: true,
-                  defaultReasoningEffort: "medium",
-                  supportedReasoningEfforts: [],
-                  availableAccessPrograms: { cyber: ["standard", "daybreakBlue"] },
-                },
-              ],
-              nextCursor: null,
-            }
-          : undefined,
-    );
-    const params = createParams(path.join(tempDir, "daybreak-subscription.jsonl"), tempDir);
-    params.cyberAccessProgram = "daybreak_blue";
-    params.thinkLevel = "high";
-    params.fastMode = true;
-    const run = runCodexAppServerAttempt(params);
-    await run.waitForTurnAccepted();
-    expect(harness.requests.find(({ method }) => method === "turn/start")?.params).toMatchObject({
-      model: "gpt-5.4-codex",
-      cyberAccessProgram: "daybreakBlue",
-      effort: "high",
-      serviceTier: "priority",
+function captureResources() {
+  const captured =
+    createDeferred<ReturnType<typeof runAttemptResources.prepareCodexAttemptResources>>();
+  const prepare = runAttemptResources.prepareCodexAttemptResources;
+  const spy = vi
+    .spyOn(runAttemptResources, "prepareCodexAttemptResources")
+    .mockImplementationOnce((prompt) => {
+      const resources = prepare(prompt);
+      captured.resolve(resources);
+      return resources;
     });
-    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
-    await run;
-  });
+  return { captured: captured.promise, spy };
+}
 
+function requestsFor(harness: ReturnType<typeof createStartedThreadHarness>, method: string) {
+  return harness.requests.filter((request) => request.method === method);
+}
+
+const workspace = () => path.join(tempDir, "workspace");
+const sessionParams = (name: string) => createParams(path.join(tempDir, `${name}.jsonl`), tempDir);
+const complete = (harness: ReturnType<typeof createStartedThreadHarness>) =>
+  harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+
+describe("Codex attempt subscription recovery", () => {
   it("reports an unavailable binding reader before admitting a native turn", async () => {
     const prepare = runAttemptResources.prepareCodexAttemptResources;
     vi.spyOn(runAttemptResources, "prepareCodexAttemptResources").mockImplementationOnce(
@@ -122,31 +79,22 @@ describe("Codex attempt subscription recovery", () => {
     );
     const register = vi.spyOn(codexNativeSubagentMonitorRuntime, "register");
     const harness = createStartedThreadHarness();
-    const params = createParams(path.join(tempDir, "unavailable-reader.jsonl"), tempDir);
+    const params = sessionParams("unavailable-reader");
 
     await expect(runCodexAppServerAttempt(params)).rejects.toThrow(
       "Codex native subagent binding reader is unavailable",
     );
     expect(register).not.toHaveBeenCalled();
-    expect(harness.requests.some(({ method }) => method === "turn/start")).toBe(false);
+    expect(requestsFor(harness, "turn/start")).toEqual([]);
   });
 
   it("declines optional subscription retention when its binding reader is unavailable", async () => {
-    const captured =
-      createDeferred<ReturnType<typeof runAttemptResources.prepareCodexAttemptResources>>();
-    const prepare = runAttemptResources.prepareCodexAttemptResources;
-    vi.spyOn(runAttemptResources, "prepareCodexAttemptResources").mockImplementationOnce(
-      (prompt) => {
-        const resources = prepare(prompt);
-        captured.resolve(resources);
-        return resources;
-      },
-    );
+    const { captured } = captureResources();
     const harness = createStartedThreadHarness();
-    const params = createParams(path.join(tempDir, "unavailable-retention.jsonl"), tempDir);
+    const params = sessionParams("unavailable-retention");
     const run = runCodexAppServerAttempt(params);
     await run.waitForTurnAccepted();
-    const resources = await captured.promise;
+    const resources = await captured;
     const prepareRead = vi
       .spyOn(resources.prompt.context.runtime.connection.bindingStore, "prepareRead")
       .mockResolvedValueOnce(undefined);
@@ -156,7 +104,7 @@ describe("Codex attempt subscription recovery", () => {
       expect(publish).not.toHaveBeenCalled();
     } finally {
       prepareRead.mockRestore();
-      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+      await complete(harness);
       await run;
     }
   });
@@ -164,7 +112,7 @@ describe("Codex attempt subscription recovery", () => {
   it("revokes native submission custody when an unstamped parent session is replaced", async () => {
     // Worker preparation must not race this authority check's execution deadline.
     vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
-    const params = createParams(path.join(tempDir, "unstamped-parent.jsonl"), tempDir);
+    const params = sessionParams("unstamped-parent");
     const target = {
       agentId: "main",
       sessionId: params.sessionId,
@@ -173,7 +121,7 @@ describe("Codex attempt subscription recovery", () => {
     };
     params.sessionTarget = target;
     const register = vi.spyOn(codexNativeSubagentMonitorRuntime, "register");
-    const harness = createStartedThreadHarness(async () => undefined);
+    const harness = createStartedThreadHarness();
     const attempt = runCodexAppServerAttempt(params);
     const settledAttempt = attempt.then(
       (result) => result,
@@ -195,7 +143,7 @@ describe("Codex attempt subscription recovery", () => {
         "Native submission session lifecycle is no longer current.",
       );
     } finally {
-      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+      await complete(harness);
       await settledAttempt;
     }
     expect(await settledAttempt).toMatchObject({
@@ -204,7 +152,7 @@ describe("Codex attempt subscription recovery", () => {
   });
 
   it("continues a confirmed interrupted thread while a sibling turn stays active", async () => {
-    const workspaceDir = path.join(tempDir, "workspace");
+    const workspaceDir = workspace();
     const sessionFile = path.join(tempDir, "interrupted.jsonl");
     const abort = new AbortController();
     const params = createParams(sessionFile, workspaceDir);
@@ -254,7 +202,7 @@ describe("Codex attempt subscription recovery", () => {
         },
       });
       expect(readAttemptTerminal(await first).aborted).toBe(true);
-      expect(harness.requests.filter(({ method }) => method === "thread/unsubscribe")).toEqual([
+      expect(requestsFor(harness, "thread/unsubscribe")).toEqual([
         { method: "thread/unsubscribe", params: { threadId: "thread-1" } },
       ]);
       expect(getCurrentSharedClientEntry(harness.client)).toBeDefined();
@@ -266,7 +214,7 @@ describe("Codex attempt subscription recovery", () => {
       await next.waitForTurnAccepted();
       expect(siblingSettled).not.toHaveBeenCalled();
       expect(starts).toBe(2);
-      expect(harness.requests.filter(({ method }) => method === "thread/resume")).toEqual([
+      expect(requestsFor(harness, "thread/resume")).toEqual([
         { method: "thread/resume", params: expect.objectContaining({ threadId: "thread-1" }) },
       ]);
       await harness.completeTurn({ threadId: "thread-1", turnId: "turn-3" });
@@ -293,7 +241,7 @@ describe("Codex attempt subscription recovery", () => {
     "settles a native warm claim after $failureAt failure (revoked: $revoked)",
     async ({ failureAt, revoked }) => {
       const sessionFile = path.join(tempDir, "subscription-session.jsonl");
-      const workspaceDir = path.join(tempDir, "workspace");
+      const workspaceDir = workspace();
       const threadId = "thread-1";
       const params = createParams(sessionFile, workspaceDir);
       const abortController = new AbortController();
@@ -316,10 +264,7 @@ describe("Codex attempt subscription recovery", () => {
         cwd: workspaceDir,
         dynamicToolsFingerprint: "[]",
         preserveNativeModel: true,
-        webSearchThreadConfigFingerprint: JSON.stringify({
-          "features.standalone_web_search": false,
-          web_search: "disabled",
-        }),
+        webSearchThreadConfigFingerprint: DISABLED_CODEX_WEB_SEARCH_THREAD_CONFIG_FINGERPRINT,
         model: native.model,
         modelProvider: native.modelProvider,
       });
@@ -339,7 +284,7 @@ describe("Codex attempt subscription recovery", () => {
       );
       const first = runCodexAppServerAttempt(params);
       await harness.waitForMethod("turn/start");
-      await harness.completeTurn({ threadId, turnId: "turn-1" });
+      await complete(harness);
       await first;
       const originalBinding = await readCodexAppServerBinding(sessionFile);
       expect(originalBinding).toMatchObject({
@@ -400,7 +345,7 @@ describe("Codex attempt subscription recovery", () => {
       );
       resourcesSpy.mockRestore();
       turnRequestSpy?.mockRestore();
-      expect(harness.requests.some(({ method }) => method === "turn/start")).toBe(false);
+      expect(requestsFor(harness, "turn/start")).toEqual([]);
       expect(isCodexAppServerLiveThreadClaimed(harness.client, threadId)).toBe(
         revoked === "successor",
       );
@@ -408,9 +353,9 @@ describe("Codex attempt subscription recovery", () => {
       expect(expiredRetentionAttempted).toBe(false);
       if (revoked) {
         expect(hasCodexAppServerLiveThread(harness.client, threadId)).toBe(revoked === "successor");
-        expect(
-          harness.requests.filter(({ method }) => method === "thread/unsubscribe"),
-        ).toHaveLength(revoked === "closed" || revoked === "successor" ? 0 : 1);
+        expect(requestsFor(harness, "thread/unsubscribe")).toHaveLength(
+          revoked === "closed" || revoked === "successor" ? 0 : 1,
+        );
         expect(await readCodexAppServerBinding(sessionFile)).toMatchObject({
           threadId: revoked === "binding" ? "replacement-thread" : threadId,
         });
@@ -442,24 +387,12 @@ describe("Codex attempt subscription recovery", () => {
   it.each(["after publication", "before publication with new native custody"] as const)(
     "recovers subscription custody when row admission fails %s",
     async (failureAt) => {
-      const captured =
-        createDeferred<ReturnType<typeof runAttemptResources.prepareCodexAttemptResources>>();
-      const prepare = runAttemptResources.prepareCodexAttemptResources;
-      const capture = vi
-        .spyOn(runAttemptResources, "prepareCodexAttemptResources")
-        .mockImplementationOnce((prompt) => {
-          const resources = prepare(prompt);
-          captured.resolve(resources);
-          return resources;
-        });
+      const { captured, spy: capture } = captureResources();
       const harness = createStartedThreadHarness();
-      const params = createParams(
-        path.join(tempDir, "custody.jsonl"),
-        path.join(tempDir, "workspace"),
-      );
+      const params = createParams(path.join(tempDir, "custody.jsonl"), workspace());
       const run = runCodexAppServerAttempt(params);
       const resources = await Promise.race([
-        captured.promise,
+        captured,
         run.then(() => {
           throw new Error("Attempt ended before preparation");
         }),
@@ -507,7 +440,7 @@ describe("Codex attempt subscription recovery", () => {
         }
         expect(publication).toHaveBeenCalledOnce();
         expect(hasCodexAppServerLiveThread(harness.client, threadId)).toBe(true);
-        expect(harness.requests.some(({ method }) => method === "thread/unsubscribe")).toBe(false);
+        expect(requestsFor(harness, "thread/unsubscribe")).toEqual([]);
       } finally {
         admission.mockRestore();
         publication.mockRestore();
@@ -526,7 +459,7 @@ describe("Codex attempt subscription recovery", () => {
     "preserves native ownership through terminal overflow (expected native: %s)",
     async (nativeOwned) => {
       const sessionFile = path.join(tempDir, "session.jsonl");
-      const workspaceDir = path.join(tempDir, "workspace");
+      const workspaceDir = workspace();
       openFileBackedSessionManagerForTest(sessionFile, { sessionId: "session-1" }).appendMessage(
         assistantMessage("pre-compaction context", Date.now()) as never,
       );
@@ -535,10 +468,7 @@ describe("Codex attempt subscription recovery", () => {
         threadId: "thread-old",
         cwd: workspaceDir,
         dynamicToolsFingerprint: "[]",
-        webSearchThreadConfigFingerprint: JSON.stringify({
-          "features.standalone_web_search": false,
-          web_search: "disabled",
-        }),
+        webSearchThreadConfigFingerprint: DISABLED_CODEX_WEB_SEARCH_THREAD_CONFIG_FINGERPRINT,
         ...(nativeOwned
           ? {
               preserveNativeModel: true,

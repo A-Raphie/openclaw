@@ -5,12 +5,52 @@ import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { registerApprovalPromptsEnglish } from "../locales/en-approval-prompts.ts";
 import { registerBoardWebsiteEnglish } from "../locales/en-board-website.ts";
 import { registerBoardEnglish } from "../locales/en-board.ts";
+import { registerChatSessionEnglish } from "../locales/en-chat-session.ts";
 import { en } from "../locales/en.ts";
 import { loadLazyLocaleTranslation } from "./registry.ts";
 import { captureI18nStateForTesting } from "./translate.test-support.ts";
 import { i18n } from "./translate.ts";
+import type { TranslationMap } from "./types.ts";
 
 vi.hoisted(() => vi.resetModules());
+
+it("keeps shared session labels eager while lazy renderers extend their retained namespaces", async () => {
+  const restoreI18n = captureI18nStateForTesting();
+  const snapshots: { target: TranslationMap; value: TranslationMap }[] = [];
+  function remember(target: TranslationMap): void {
+    snapshots.push({ target, value: { ...target } });
+    for (const value of Object.values(target)) {
+      if (typeof value !== "string") {
+        remember(value);
+      }
+    }
+  }
+  remember(en.chat);
+  const details = en.chat.sessionDetails;
+  const diff = en.chat.sessionDiff;
+  try {
+    await i18n.setLocale("en");
+    expect(t("chat.sessionDetails.progressOptions")).toBe("Task progress options");
+    expect(t("chat.sessionDiff.title")).toBe("Changes");
+    expect(t("chat.activityPills.label")).toBe("chat.activityPills.label");
+
+    registerEnglishCatalog(registerChatSessionEnglish);
+    expect(t("chat.activityPills.label")).toBe("Session activity");
+    expect(t("chat.sessionDiff.modeUnified")).toBe("Unified");
+    expect(en.chat.sessionDetails).toBe(details);
+    expect(en.chat.sessionDiff).toBe(diff);
+  } finally {
+    for (const { target, value } of snapshots) {
+      for (const key of Object.keys(target)) {
+        if (!Object.hasOwn(value, key)) {
+          Reflect.deleteProperty(target, key);
+        }
+      }
+      Object.assign(target, value);
+    }
+    await restoreI18n();
+  }
+});
 
 it("loads approval-page copy on demand while retaining shared startup labels", () => {
   const original = { ...en.approvalPage };

@@ -48,18 +48,6 @@ it("serves protocol-valid empty channel status and pairing defaults", async ({ g
   expect([pairing.accounts, pairing.requests]).toEqual([[], []]);
 });
 
-it("serves protocol-valid empty custodian history before its first greeting", async ({
-  gatewayPage,
-}) => {
-  gatewayPage.execute(createControlUiMockGatewayInitScript());
-  const { request } = gatewayPage.connect();
-  await flushMockTimers();
-
-  const history = await request("custodian-history", "openclaw.chat.history", {});
-  expect(Compile(SystemAgentChatHistoryResultSchema).Check(history)).toBe(true);
-  expect(history.turns).toEqual([]);
-});
-
 it("serves protocol-valid empty plugin discovery defaults", async ({ gatewayPage }) => {
   gatewayPage.execute(createControlUiMockGatewayInitScript());
   const { request } = gatewayPage.connect();

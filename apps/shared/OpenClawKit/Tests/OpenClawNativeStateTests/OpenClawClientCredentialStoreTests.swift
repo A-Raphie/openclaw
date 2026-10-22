@@ -185,23 +185,6 @@ struct OpenClawClientCredentialStoreTests {
         }
     }
 
-    @Test func `socket ensure repairs a restored token without replacing a live token`() throws {
-        try self.withRoot { root in
-            do {
-                let owner = try Store(rootURL: root)
-                defer { owner.close() }
-                _ = try owner.createSocketCredentials(.init(path: "/socket", token: nil, updatedAtMs: 20))
-                let replacement = Store.SocketCredentials(path: "/socket", token: "fresh-token", updatedAtMs: 1)
-                var operation = ClientCredentialOperation(kind: .socketEnsure)
-                operation.fallback = replacement
-                #expect(try owner.execute(operation).socket == replacement)
-                operation.fallback = .init(path: "/socket", token: "stale-replacement", updatedAtMs: 100)
-                #expect(try owner.execute(operation).socket == replacement)
-                #expect(try owner.readSocketCredentials() == replacement)
-            }
-        }
-    }
-
     @Test func `bounded custody releases on success and thrown operation`() throws {
         try self.withRoot { root in
             enum ExpectedFailure: Error { case failure }

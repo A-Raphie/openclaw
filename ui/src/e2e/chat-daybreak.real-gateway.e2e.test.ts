@@ -313,6 +313,10 @@ suite.define(() => {
           const menu = picker.locator(".chat-controls__effort-menu");
           const select = picker.locator("[data-chat-access-program]");
           const open = async () => {
+            // The mobile toolbar is revealed by the real composer focus interaction.
+            if (mobile && !(await picker.locator("summary").isVisible())) {
+              await page.locator(".agent-chat__input textarea").click();
+            }
             await expect
               .poll(() => picker.locator("summary").getAttribute("aria-disabled"))
               .toBe("false");

@@ -330,7 +330,7 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
         classifyResult: params.classifyResult,
       },
       async ({ sessionEntry, cliSessionBinding, assertSettlementCurrent, settleResult }) => {
-        if (sessionEntry?.cyberAccessProgram !== undefined) {
+        if ((params.cyberAccessProgram ?? sessionEntry?.cyberAccessProgram) !== undefined) {
           throw new Error(
             "Explicit access programs are unsupported by this CLI runtime. Reset Access to the model default or use the OpenClaw or native Codex runtime.",
           );

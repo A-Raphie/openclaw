@@ -11,8 +11,6 @@
     "../../src/agents/model-*.test.tsx",
     "../../src/agents/prepared-model-runtime*.test.ts",
     "../../src/agents/prepared-model-runtime*.test.tsx",
-    "../../src/agents/tool-loop-*.test.ts",
-    "../../src/agents/tool-loop-*.test.tsx",
     "../../src/agents/workspace-access.test.ts",
     "../../src/agents/workspace-bootstrap-policy.test.ts",
     "../../src/agents/workspace-input-attachments.test.ts",

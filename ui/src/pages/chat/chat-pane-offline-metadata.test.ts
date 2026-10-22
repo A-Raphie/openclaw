@@ -255,12 +255,15 @@ it("keeps the observed current title when startup precedes a bounded reconnect l
   const h = await setup();
   const request = h.current().request.getMockImplementation();
   assert(request);
-  const bounded = sessionsResult([]);
+  const bounded = sessionsResult([
+    { key: "agent:main:other", kind: "direct", label: "Other session", updatedAt: 2 },
+  ]);
+  bounded.defaults = { modelProvider: "openai", model: "gpt-6.1", contextTokens: 128_000 };
   h.current().request.mockImplementation((method, params) =>
     method === "sessions.list" ? Promise.resolve(bounded) : request(method, params),
   );
   await h.sessions.refresh({ agentId: "main", force: true });
-  expect(h.sessions.presentation.result?.sessions).toEqual([]);
+  expect(h.sessions.presentation.result?.sessions).toEqual(bounded.sessions);
   const pendingList = createDeferred<typeof bounded>();
   onTestFinished(() => pendingList.resolve(bounded));
   const reconnectList = vi.fn(() => pendingList.promise);
@@ -275,12 +278,16 @@ it("keeps the observed current title when startup precedes a bounded reconnect l
     awaitHistory: true,
     scheduleScroll: false,
   });
-  expect(h.sessions.presentation.result?.sessions).toEqual([]);
+  expect(h.sessions.presentation.result?.sessions).toEqual(bounded.sessions);
+  expect(h.state.sessionsResult?.defaults).toEqual(bounded.defaults);
+  expect(h.state.sessionsResult?.sessions).toContainEqual(bounded.sessions[0]);
   expect(selectedChatSessionRow(h.state)?.label).toBe("Original title");
   h.draw();
   expect(h.header.textContent).toContain("Original title");
   pendingList.resolve(bounded);
   await waitForSolid(() => expect(h.sessions.state.resultCached).toBe(false));
+  expect(h.state.sessionsResult?.defaults).toEqual(bounded.defaults);
+  expect(h.state.sessionsResult?.sessions).toContainEqual(bounded.sessions[0]);
   expect(selectedChatSessionRow(h.state)?.label).toBe("Original title");
 });
 
