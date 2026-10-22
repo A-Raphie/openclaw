@@ -1,6 +1,7 @@
 /* Details and the desktop menus share the same block-divider color. Keep the
    token available before lazy menu/Details styles load, without changing other borders. */
 .chat-details-desktop-body,
+.context-usage__popover,
 .chat-dashboard-menu__panel,
 .side-panel-position-menu,
 .chat-pr-menu,

@@ -438,13 +438,9 @@ suite.define(() => {
       await polledAncestor(contextUsage, ".agent-chat__composer-meta").toBe(true);
       await contextUsage.click();
       await polledVisible(usage).toBe(true);
-      await expect
-        .poll(async () =>
-          (await composer.locator(".context-usage__limit").first().textContent())
-            ?.replace(/\s+/g, " ")
-            .trim(),
-        )
-        .toBe("Weekly 72%");
+      const weeklyQuota = composer.getByRole("progressbar", { name: "Weekly", exact: true });
+      await polledAttribute(weeklyQuota, "aria-valuenow").toBe("72");
+      await polledVisible(weeklyQuota.getByText("72%", { exact: true })).toBe(true);
       await contextUsage.click();
 
       await effort.click();

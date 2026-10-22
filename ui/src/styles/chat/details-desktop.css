@@ -219,12 +219,6 @@
   padding: 0;
 }
 
-.chat-details-desktop-context-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* Composition tokens apply only under the native desktop body, never mobile leaves. */
 .chat-details
   .chat-details-desktop-body
@@ -538,7 +532,6 @@
   font-weight: 500;
 }
 
-.chat-details-desktop-context > .chat-details-desktop-section,
 .chat-details-desktop-environment:not(:first-child) > .chat-details-desktop-section {
   border-top: 1px solid var(--details-separator);
 }

@@ -327,11 +327,7 @@ suite.define(() => {
         expect(await environment.textContent()).not.toContain(
           "/workspace/openclaw/session-details",
         );
-        const context = details.locator('[data-details-group="context"]');
-        expect(await context.locator("summary").textContent()).toContain("50%");
-        await context.locator("summary").click();
-        expect(await context.textContent()).toContain("64k / 128k");
-        await context.locator("summary").click();
+        expect(await details.locator('[data-details-group="context"]').count()).toBe(0);
         await capture("after.png");
         // A dock is nonmodal: composing, including Escape, must not close it.
         await composer.click();
@@ -348,12 +344,6 @@ suite.define(() => {
         await expect
           .poll(() =>
             environment.locator(":scope > summary").evaluate((el) => el === document.activeElement),
-          )
-          .toBe(true);
-        await page.keyboard.press("Tab");
-        await expect
-          .poll(() =>
-            context.locator(":scope > summary").evaluate((el) => el === document.activeElement),
           )
           .toBe(true);
         await geometry(false);

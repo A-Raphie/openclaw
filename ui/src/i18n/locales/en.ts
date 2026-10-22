@@ -2570,6 +2570,8 @@ export const en: TranslationMap & {
       close: "Close {panel}",
     },
     sidePanel: {
+      context: "Context",
+      contextEmpty: "Send a message to capture context usage.",
       label: "Side panel",
       quickAccess: "Quick access",
       explorePanels: "Explore panels",
