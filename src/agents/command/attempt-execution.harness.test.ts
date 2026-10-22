@@ -100,9 +100,10 @@ describe("embedded attempt harness pinning", () => {
 
   function runHarnessAttempt(
     overrides: Omit<RunAgentAttemptOverrides, "agentDir" | "sessionKey" | "workspaceDir">,
+    sessionKey = "agent:main:main",
   ) {
     return runAgentAttempt({
-      sessionKey: "agent:main:main",
+      sessionKey,
       workspaceDir: tmpDir,
       agentDir: tmpDir,
       sessionHasHistory: true,
@@ -121,14 +122,16 @@ describe("embedded attempt harness pinning", () => {
       const storePath = path.join(tmpDir, "sessions.json");
       await replaceSessionEntry({ sessionKey, storePath }, sessionEntry);
       await expect(
-        runHarnessAttempt({
-          providerOverride: "claude-cli",
-          modelOverride: "opus",
+        runHarnessAttempt(
+          {
+            providerOverride: "claude-cli",
+            modelOverride: "opus",
+            sessionEntry,
+            storePath,
+            ...(source === "run-scoped" ? { cyberAccessProgram: "daybreak_blue" as const } : {}),
+          },
           sessionKey,
-          sessionEntry,
-          storePath,
-          ...(source === "run-scoped" ? { cyberAccessProgram: "standard" as const } : {}),
-        }),
+        ),
       ).rejects.toThrow("Explicit access programs are unsupported by this CLI runtime");
       expect(runCliAgentMock).not.toHaveBeenCalled();
     },
