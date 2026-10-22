@@ -7,7 +7,8 @@ const mocks = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("../media/input-files.js", () => ({
+vi.mock("../media/input-files.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../media/input-files.js")>()),
   normalizeInputImageBuffer: mocks.normalizeInputImageBuffer,
 }));
 
