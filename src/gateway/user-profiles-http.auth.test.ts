@@ -15,16 +15,18 @@ import { createDeferredCore } from "../shared/deferred.js";
 import {
   linkEmail,
   setAvatar,
+  setDisplayName,
   setUserProfileRole,
   syncGitHubIdentity,
 } from "../state/user-profile-writes.worker.js";
 import * as profileAvatars from "../state/user-profiles-avatar.js";
-import { ensureGatewayOwnerProfile } from "../state/user-profiles.js";
+import { ensureGatewayOwnerProfile, ensureProfileForEmail } from "../state/user-profiles.js";
 import { closeStateDatabaseForTest } from "../test-utils/database-cleanup.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { createGatewayAuthRateLimiter, type AuthRateLimiter } from "./auth-rate-limit.js";
 import type { ResolvedGatewayAuth } from "./auth.js";
 import { authorizeGatewayHttpRequestOrReply } from "./http-auth-utils.js";
+import { finishGatewayHttpAuthorityError } from "./http-request-authority.js";
 import { invalidateOperatorRolePolicy } from "./operator-role-policy.js";
 import { resolveSharedGatewaySessionGeneration } from "./server/ws-shared-generation.js";
 import { handleUserProfileAvatarHttpRequest } from "./user-profiles-http.js";
@@ -307,7 +309,25 @@ describe("personal avatar HTTP authentication", () => {
       setAvatar(primary.id, PNG, "image/png");
       setUserProfileRole(primary.id, "reader");
       avatarPath = "/api/users/" + primary.id + "/avatar";
+      const originalAvatarReader = profileAvatars.createProfileAvatarReader;
       const readAvatar = vi.spyOn(profileAvatars, "createProfileAvatarReader");
+      let beforeAvatarBytes: (() => void) | undefined;
+      readAvatar.mockImplementation((id, options) => {
+        const reader = originalAvatarReader(id, options);
+        return {
+          async inspect() {
+            const prepared = await reader.inspect();
+            return {
+              ...prepared,
+              async loadBytes() {
+                const bytes = await prepared.loadBytes();
+                beforeAvatarBytes?.();
+                return bytes;
+              },
+            };
+          },
+        };
+      });
       const send = async (email = identity.email) => {
         const req = new IncomingMessage(new Socket());
         Object.defineProperty(req.socket, "remoteAddress", { value: "127.0.0.1" });
@@ -333,8 +353,14 @@ describe("personal avatar HTTP authentication", () => {
           return res;
         });
         try {
-          await handleUserProfileAvatarHttpRequest(req, res, avatarPath, { auth });
-          return { status: res.statusCode, bytes };
+          try {
+            await handleUserProfileAvatarHttpRequest(req, res, avatarPath, { auth });
+          } catch (error) {
+            if (!finishGatewayHttpAuthorityError(res, error)) {
+              throw error;
+            }
+          }
+          return { status: res.statusCode, bytes, contentType: res.getHeader("content-type") };
         } finally {
           req.destroy();
         }
@@ -369,6 +395,37 @@ describe("personal avatar HTTP authentication", () => {
       identity.email = "mismatched@example.test";
       expect((await send("work@example.test")).status).toBe(401);
       expect(readAvatar).not.toHaveBeenCalled();
+
+      Object.assign(identity, { id: 511, email: "work@example.test" });
+      const replacement = ensureProfileForEmail("image-replacement@example.test");
+      for (const change of ["cosmetic", "role", "alias"] as const) {
+        let boundaryReached = false;
+        beforeAvatarBytes = () => {
+          beforeAvatarBytes = undefined;
+          boundaryReached = true;
+          if (change === "role") {
+            setUserProfileRole(primary.id, null);
+            invalidateOperatorRolePolicy(primary.id);
+          } else if (change === "alias") {
+            linkEmail("work@example.test", replacement.id);
+          } else {
+            setDisplayName(primary.id, "Cosmetic update");
+          }
+        };
+        const refused = await send();
+        expect(boundaryReached).toBe(true);
+        if (change === "cosmetic") {
+          expect(refused.status).toBe(200);
+          expect(refused.bytes).toEqual(PNG);
+        } else {
+          expect(refused.status, change).toBe(401);
+          expect(refused.contentType).not.toMatch(/^image\//);
+          expect(refused.bytes).not.toEqual(PNG);
+        }
+        setUserProfileRole(primary.id, "reader");
+        invalidateOperatorRolePolicy(primary.id);
+        linkEmail("work@example.test", primary.id);
+      }
     },
   );
 
