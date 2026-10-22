@@ -4,15 +4,16 @@ import {
   errorShape,
   validateMcpAuthLoginParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import { operatorMcpOAuthIdentity } from "../../agents/mcp-oauth-identity.js";
+import {
+  mcpOAuthCliLoginSteps,
+  operatorMcpOAuthIdentity,
+} from "../../agents/mcp-oauth-identity.js";
 import type { McpOAuthLoginLifecycle } from "../../agents/mcp-oauth-provider.js";
 import {
   cancelMcpOAuthAuthorization,
   completeOAuthCallback,
   startMcpOAuthAuthorization,
 } from "../../agents/mcp-oauth.js";
-import { formatCliCommand } from "../../cli/command-format.js";
-import { quoteCliArg } from "../../cli/quote-cli-arg.js";
 import { getGatewayPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-state.js";
 import { resolveOperatorMcpOAuthConnection } from "../../plugins/mcp-auth-status.js";
 import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
@@ -58,15 +59,14 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    // `openclaw mcp login` reads only operator-authored `mcp.servers` and is
-    // offline-only, so the terminal path names the stop step; servers a plugin
-    // declares have no CLI sign-in path, so recovery points at the plugin.
-    const terminalLogin = Object.hasOwn(
-      context.getRuntimeConfig().mcp?.servers ?? {},
+    const { config } = connection;
+    const identity = operatorMcpOAuthIdentity(
       params.serverName,
-    )
-      ? `stop the Gateway with ${formatCliCommand("openclaw gateway stop")}, run ${formatCliCommand(`openclaw mcp login ${quoteCliArg(params.serverName)}`)}, then start the Gateway again`
-      : undefined;
+      config.url,
+      context.getRuntimeConfig(),
+    );
+    // Plugin-declared servers have no CLI sign-in path, so recovery points at the plugin.
+    const terminalLogin = mcpOAuthCliLoginSteps(identity);
     const settingsOwner = terminalLogin ? "MCP server" : "plugin";
     if (!client.browserOrigin) {
       reject(
@@ -76,9 +76,7 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { config } = connection;
     const initialServer = structuredClone(connection.server);
-    const identity = operatorMcpOAuthIdentity(params.serverName, config.url);
     const assertCurrent = () => {
       client.connectionSignal?.throwIfAborted();
       if (client.invalidated || !client.connect.scopes?.includes("operator.admin")) {
@@ -138,7 +136,7 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
                   ? `Authentication saved, but sign-in cleanup did not finish. Close this dialog and check the ${settingsOwner} before trying again.`
                   : terminalLogin
                     ? `Sign-in did not finish. Check the MCP server settings and try again, or sign in from this Gateway's terminal: ${terminalLogin}.`
-                    : "Sign-in did not finish. Check the plugin settings and try again.",
+                    : "Sign-in did not finish. Check the plugin settings, then select Connect to try again.",
               );
             try {
               try {

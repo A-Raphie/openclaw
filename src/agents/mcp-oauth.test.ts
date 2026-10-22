@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { OAuthClientProvider } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { McpServerConfig } from "../config/types.mcp.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { handleMcpOAuthCallback } from "../gateway/mcp-oauth-callback.js";
 import { createRequest, createResponse } from "../gateway/server-http.test-harness.js";
 import {
@@ -208,6 +209,21 @@ describe("MCP OAuth provider", () => {
     }, "openclaw-mcp-oauth-existing-session-");
   });
 
+  it("names terminal sign-in only for servers defined under mcp.servers", async () => {
+    await withTempHome(async () => {
+      const url = "https://mcp.example.com/mcp";
+      const missingToken = (cfg: OpenClawConfig) =>
+        resolveMcpOAuthAccessToken({ identity: operatorMcpOAuthIdentity("Remote Docs", url, cfg) });
+      await expect(missingToken({ mcp: { servers: { "Remote Docs": { url } } } })).rejects.toThrow(
+        `MCP server "Remote Docs" requires OAuth authorization. Sign in from Settings → MCP, or from the Gateway's terminal: stop the Gateway with openclaw gateway stop, run openclaw mcp login 'Remote Docs', then start the Gateway again.`,
+      );
+      // A plugin-declared server is absent from mcp.servers; the CLI cannot resolve it.
+      await expect(missingToken({})).rejects.toThrow(
+        `MCP server "Remote Docs" requires OAuth authorization. Select Connect on the plugin's page in Settings to sign in again.`,
+      );
+    }, "openclaw-mcp-oauth-sign-in-hint-");
+  });
+
   it("preserves insufficient scope and forces the next login through authorization", async () => {
     await withTempHome(async () => {
       await saveTokens(makeTokens("decoy-token", "test-auth-token"));
@@ -221,7 +237,7 @@ describe("MCP OAuth provider", () => {
           scope: "docs.write",
         }),
       ).rejects.toThrow(
-        'MCP server "Remote Docs" requires additional OAuth authorization. Run openclaw mcp login Remote Docs.',
+        `MCP server "Remote Docs" requires additional OAuth authorization. Sign in again from Settings: select Connect on the plugin's page, or Sign in on the MCP page.`,
       );
       expect(authMock).not.toHaveBeenCalled();
       expect(await withProvider(async (provider) => await provider.tokens())).toMatchObject({
@@ -425,7 +441,9 @@ describe("MCP OAuth provider", () => {
           resourceMetadataUrl,
           scope: "docs.read",
         }),
-      ).rejects.toThrow("Run openclaw mcp login Remote Docs.");
+      ).rejects.toThrow(
+        "Sign in again from Settings: select Connect on the plugin's page, or Sign in on the MCP page.",
+      );
       expect(authMock).not.toHaveBeenCalled();
       expect(await readStore()).toMatchObject({
         codeVerifier: "existing-verifier",
@@ -543,13 +561,17 @@ describe("MCP OAuth provider", () => {
   it("does not start hidden authorization flows without an authorization callback", async () => {
     await withTempHome(async () => {
       await withProvider(async (provider) => {
-        await expect(provider.state?.()).rejects.toThrow("Run openclaw mcp login Remote Docs.");
+        await expect(provider.state?.()).rejects.toThrow(
+          "Sign in again from Settings: select Connect on the plugin's page, or Sign in on the MCP page.",
+        );
         expect(() => provider.saveCodeVerifier?.("verifier")).toThrow(
-          "Run openclaw mcp login Remote Docs.",
+          "Sign in again from Settings: select Connect on the plugin's page, or Sign in on the MCP page.",
         );
         await expect(
           provider.redirectToAuthorization?.(new URL("https://auth.example.com/authorize")),
-        ).rejects.toThrow("Run openclaw mcp login Remote Docs.");
+        ).rejects.toThrow(
+          "Sign in again from Settings: select Connect on the plugin's page, or Sign in on the MCP page.",
+        );
       });
     }, "openclaw-mcp-oauth-noninteractive-");
   });

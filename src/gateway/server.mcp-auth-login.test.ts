@@ -455,7 +455,7 @@ describe("registered mcp.authLogin", () => {
         if (change !== "unchanged") {
           // The CLI cannot resolve plugin-declared servers, so recovery names the plugin.
           expect(result.error).toBe(
-            "Sign-in did not finish. Check the plugin settings and try again.",
+            "Sign-in did not finish. Check the plugin settings, then select Connect to try again.",
           );
         }
         const stored = await store();
