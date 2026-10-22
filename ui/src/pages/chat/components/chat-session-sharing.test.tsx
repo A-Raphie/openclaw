@@ -23,6 +23,7 @@ function sharingState(result: Partial<SharingResult> = {}, loading = false) {
       sessionKey: "agent:main:main",
       members: [],
       identities: [],
+      permissions: [],
       role: "owner",
       allowedVisibilities: ["shared"],
       ...result,
@@ -164,9 +165,15 @@ describe("chat session sharing menu", () => {
     const readAvatar = vi.fn(() => undefined);
     const sharing = (count: number, selected = false) =>
       renderSharing({
+        session: sharingSession({ visibility: "read-only" }),
         onOpen,
         state: sharingState({
           members: selected ? [{ identityId: "person-100", addedBy: "owner", addedAt: 1 }] : [],
+          permissions: Array.from({ length: count }, (_, index) => ({
+            identityId: `person-${index}`,
+            level: selected && index === 100 ? ("send" as const) : ("read" as const),
+            options: ["read", "send"] as ("read" | "send")[],
+          })),
           identities: Array.from({ length: count }, (_, index) => ({
             type: "human" as const,
             id: `person-${index}`,
@@ -189,20 +196,20 @@ describe("chat session sharing menu", () => {
     expect(onOpen).toHaveBeenCalledOnce();
     expect(readAvatar).toHaveBeenCalled();
     expect(root.querySelectorAll(".chat-pane__sharing-person")).toHaveLength(101);
-    const member = item(root, "member:person-100");
+    const member = root.querySelector<HTMLElement>('[data-value="member:person-100"]');
     const avatar = member?.querySelector("openclaw-session-owner-chip");
     expect(avatar).not.toBeNull();
     render({ ...sharing(102, true), memberRemoveDisabledReason: "Requires write" }, root);
-    expect(item(root, "member:person-100")).toBe(member);
+    expect(root.querySelector('[data-value="member:person-100"]')).toBe(member);
     expect(member?.querySelector("openclaw-session-owner-chip")).toBe(avatar);
-    expect(member).toMatchObject({ title: "Requires write" });
+    expect(item(root, "permission:person-100")).toMatchObject({ title: "Requires write" });
     expect(member && part(member, "sharing-member-label")?.textContent).toBe("Person 100 (102)");
-    expect(member?.querySelector('[aria-label="Member"]')).not.toBeNull();
+    expect(item(root, "permission:person-100")?.getAttribute("aria-label")).toContain("Can send");
     panel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     flush();
     expect(panel.matches(":popover-open")).toBe(false);
     await openMenu(root);
-    expect(item(root, "member:person-100")).toBe(member);
+    expect(root.querySelector('[data-value="member:person-100"]')).toBe(member);
     root.querySelector<HTMLButtonElement>('[aria-label="Search people…"]')!.click();
     flush();
     const search = root.querySelector<HTMLInputElement>("input[data-search]")!;
@@ -215,51 +222,94 @@ describe("chat session sharing menu", () => {
     expect(root.querySelectorAll(".chat-pane__sharing-person")).toHaveLength(1);
   });
 
-  it("shows explicit membership without inventing roles for other known people", async () => {
+  it("hides members in Shared and restores them when authoritative visibility changes", async () => {
+    const props = renderSharing({
+      state: sharingState({
+        owner,
+        identities: [human("alice", "Alice")],
+        permissions: [{ identityId: "alice", level: "read", options: ["read", "send"] }],
+      }),
+      onPublicShareChange: vi.fn(),
+    });
+    const root = await mount(props);
+    for (const visibility of [
+      undefined,
+      "read-only",
+      "shared",
+      "suggest",
+      "draft",
+      "shared",
+    ] as const) {
+      render({ ...props, session: sharingSession({ visibility }) }, root);
+      const visible = visibility === "read-only" || visibility === "suggest";
+      expect(Boolean(part(root, "sharing-permissions"))).toBe(visible);
+      expect(Boolean(item(root, "permission:alice"))).toBe(visible);
+      expect(Boolean(root.querySelector('[aria-label="Search people…"]'))).toBe(visible);
+      expect(root.textContent).toContain("Session access");
+      expect(root.textContent).toContain("Link sharing");
+    }
+    expect(props.onMemberChange).not.toHaveBeenCalled();
+    expect(props.onVisibilityChange).not.toHaveBeenCalled();
+    expect(props.onPublicShareChange).not.toHaveBeenCalled();
+  });
+
+  it("uses server choices for editable and inherited participation", async () => {
     const onMemberChange = vi.fn();
-    const directoryMember = human("directory-member", "Morgan Member");
-    const addedMember = human("added-member", "Alex Added");
     const result = {
       owner,
-      identities: [directoryMember, addedMember],
-      members: [{ identityId: addedMember.id, addedBy: owner.id, addedAt: 1 }],
+      identities: [
+        human("owner", "Owner"),
+        human("editable", "Alex"),
+        human("inherited", "Morgan"),
+      ],
+      permissions: [
+        { identityId: "owner", level: "send" as const, options: ["send"] as "send"[] },
+        {
+          identityId: "editable",
+          level: "read" as const,
+          options: ["read", "send"] as ("read" | "send")[],
+        },
+        { identityId: "inherited", level: "send" as const, options: ["send"] as "send"[] },
+      ],
     };
-    const props = renderSharing({ state: sharingState(result), onMemberChange });
+    const props = renderSharing({
+      session: sharingSession({ visibility: "read-only" }),
+      state: sharingState(result),
+      onMemberChange,
+    });
     const root = await mount(props);
-    const ownerRow = root.querySelector<HTMLElement>('[data-value="member:owner"]')!;
-    const addedRow = item(root, "member:added-member")!;
-    const directoryRow = item(root, "member:directory-member")!;
-    expect(part(ownerRow, "sharing-permission")?.textContent).toBe("Owner");
-    expect(part(addedRow, "sharing-permission")?.textContent).toBe("Member");
-    expect(addedRow.getAttribute("aria-checked")).toBe("true");
-    expect(part(directoryRow, "sharing-permission")?.textContent).toBe("Add");
-    expect(directoryRow.getAttribute("aria-checked")).toBe("false");
+    expect(root.querySelectorAll('[data-value="member:owner"]')).toHaveLength(1);
+    expect(item(root, "member:inherited")).toBeNull();
+    const inherited = root.querySelector<HTMLElement>('[data-value="member:inherited"]')!;
+    expect(part(inherited, "sharing-permission")?.textContent).toBe("Can send");
+    const editable = item(root, "permission:editable")!;
+    expect(editable.textContent).toBe("Can read");
     expect(onMemberChange).not.toHaveBeenCalled();
-
-    directoryRow.click();
-    expect(onMemberChange).toHaveBeenLastCalledWith(directoryMember.id, true);
-    expect(directoryRow.getAttribute("aria-checked")).toBe("false");
+    editable.click();
+    await waitForSolid(() => expect(item(root, "permission:send:editable")).not.toBeNull());
+    item(root, "permission:send:editable")!.click();
+    expect(onMemberChange).toHaveBeenLastCalledWith("editable", true);
     render(
       {
         ...props,
         state: sharingState({
           ...result,
-          members: [
-            ...result.members,
-            { identityId: directoryMember.id, addedBy: owner.id, addedAt: 2 },
+          permissions: [
+            { identityId: "editable", level: "send", options: ["read", "send"] },
+            result.permissions[2]!,
           ],
         }),
       },
       root,
     );
-    expect(item(root, "member:directory-member")).toBe(directoryRow);
-    expect(part(directoryRow, "sharing-permission")?.textContent).toBe("Member");
-    expect(directoryRow.getAttribute("aria-checked")).toBe("true");
-    directoryRow.click();
-    expect(onMemberChange).toHaveBeenLastCalledWith(directoryMember.id, false);
-    render(props, root);
-    expect(part(directoryRow, "sharing-permission")?.textContent).toBe("Add");
-    expect(directoryRow.getAttribute("aria-checked")).toBe("false");
+    expect(editable.textContent).toBe("Can send");
+    editable.click();
+    await waitForSolid(() => expect(item(root, "permission:read:editable")).not.toBeNull());
+    const readOption = item(root, "permission:read:editable")!;
+    readOption.click();
+    expect(onMemberChange).toHaveBeenLastCalledWith("editable", false);
+    render({ ...props, session: sharingSession({ visibility: "shared" }) }, root);
+    readOption.click();
     expect(onMemberChange).toHaveBeenCalledTimes(2);
   });
 
@@ -343,6 +393,7 @@ describe("chat session sharing menu", () => {
       state: sharingState({
         owner,
         identities: [human("owner", "Owner"), human("alice", "Alice")],
+        permissions: [{ identityId: "alice", level: "read", options: ["read", "send"] }],
         allowedVisibilities: ["shared", "read-only"],
       }),
       ownerViewing: false,
@@ -374,14 +425,14 @@ describe("chat session sharing menu", () => {
     await select(root, "visibility:shared");
     await backToOverview(root);
     const access = item(root, "access")!;
-    const member = item(root, "member:alice")!;
+    const member = item(root, "permission:alice")!;
     access.dispatchEvent(
       new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }),
     );
     await waitForSolid(() => expect(document.activeElement).toBe(member));
-    member.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
-    );
+    member.click();
+    await waitForSolid(() => expect(item(root, "permission:send:alice")).not.toBeNull());
+    item(root, "permission:send:alice")!.click();
     await waitForSolid(() => expect(onMemberChange).toHaveBeenCalledExactlyOnceWith("alice", true));
     expect(onVisibilityChange).toHaveBeenCalledWith("shared");
     expect(part(root, "sharing-panel")?.matches(":popover-open")).toBe(true);
@@ -389,6 +440,7 @@ describe("chat session sharing menu", () => {
 
   it("renders member presentation from identity.type, not from ID spelling", async () => {
     const root = await mount({
+      session: sharingSession({ visibility: "read-only" }),
       state: sharingState({
         identities: [
           human("profile-vyctor", "Vyctor Brzezowski"),
@@ -397,18 +449,20 @@ describe("chat session sharing menu", () => {
           { type: "agent", id: "discord:channel:operations", label: "Operations" },
           { type: "system", id: "channel:audit", label: "Audit" },
         ],
+        permissions: [
+          { identityId: "profile-vyctor", level: "read", options: ["read", "send"] },
+          { identityId: "channel:chn_design", level: "read", options: ["read", "send"] },
+        ],
       }),
     });
 
     for (const id of ["profile-vyctor", "channel:chn_design"]) {
       expect(
-        item(root, `member:${id}`)?.querySelector("openclaw-session-owner-chip"),
+        root.querySelector(`[data-value="member:${id}"] openclaw-session-owner-chip`),
       ).not.toBeNull();
     }
     for (const id of ["discord:channel:operations", "channel:audit"]) {
-      const nonHuman = item(root, `member:${id}`);
-      expect(nonHuman?.querySelector("openclaw-session-owner-chip")).toBeNull();
-      expect(nonHuman?.querySelector(".chat-pane__sharing-member-icon svg")).not.toBeNull();
+      expect(item(root, `member:${id}`)).toBeNull();
     }
   });
 
@@ -442,8 +496,13 @@ describe("chat session sharing menu", () => {
     const onVisibilityChange = vi.fn();
     const onMemberChange = vi.fn();
     const root = await mount({
+      session: sharingSession({ visibility: "read-only" }),
       state: sharingState({
         members: [{ identityId: "alice", addedBy: "owner", addedAt: 1 }],
+        permissions: [
+          { identityId: "alice", level: "send", options: ["read", "send"] },
+          { identityId: "bob", level: "read", options: ["read", "send"] },
+        ],
         identities: [
           human("alice", "Alice with a very long selected member display name"),
           human("bob", "Bob with a very long available member display name"),
@@ -462,15 +521,19 @@ describe("chat session sharing menu", () => {
     expect(item(root, "visibility:read-only")).toMatchObject({ title: "Requires write" });
     await backToOverview(root);
     for (const identityId of ["alice", "bob"]) {
-      const member = item(root, `member:${identityId}`)!;
+      const member = item(root, `permission:${identityId}`)!;
       expect(member).toMatchObject({ disabled: true, title: "Requires write" });
-      expect(part(member, "sharing-member-label")?.hasAttribute("title")).toBe(false);
+      expect(
+        root
+          .querySelector(`[data-value="member:${identityId}"] .chat-pane__sharing-member-label`)
+          ?.hasAttribute("title"),
+      ).toBe(false);
     }
 
     await select(root, "visibility:read-only");
     await backToOverview(root);
-    await select(root, "member:alice");
-    await select(root, "member:bob");
+    await select(root, "permission:alice");
+    await select(root, "permission:bob");
 
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onVisibilityChange).not.toHaveBeenCalled();
@@ -505,14 +568,14 @@ describe("chat session sharing menu", () => {
       false,
     );
     expect(part(root, "sharing-permissions")).toBeNull();
-    expect(root.textContent).not.toContain("Session members");
+    expect(root.textContent).not.toContain("Permissions");
     await openAccess(root);
     expect(item(root, "visibility:read-only")).not.toBeNull();
 
     await select(root, "visibility:read-only");
     await backToOverview(root);
     expect(part(root, "sharing-permissions")).toBeNull();
-    expect(root.textContent).not.toContain("Session members");
+    expect(root.textContent).not.toContain("Permissions");
 
     expect(onOpen).toHaveBeenCalledOnce();
     expect(onVisibilityChange).toHaveBeenCalledWith("read-only");

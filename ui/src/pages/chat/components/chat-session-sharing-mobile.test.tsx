@@ -3,6 +3,7 @@ import { createSignal, flush } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
 import { mountSolid } from "../../../test-helpers/mount-solid.ts";
+import { waitForSolid } from "../../../test-helpers/solid-settle.ts";
 import {
   createChatSessionSharingMobileAdapter,
   type ChatSessionSharingMobileAdapter,
@@ -34,6 +35,7 @@ function prepared(overrides: Partial<PreparedChatSessionSharing> = {}): Prepared
         owner: { type: "human", id: "owner", label: "Owner" },
         identities: [{ type: "human", id: "member", label: "Pat Member" }],
         members: [],
+        permissions: [{ identityId: "member", level: "read", options: ["read", "send"] }],
       },
     },
     onOpen: vi.fn(),
@@ -121,6 +123,40 @@ it.each(["destination", "session"] as const)(
   },
 );
 
+it("hides members in Shared and restores them when authoritative visibility changes", () => {
+  const initial = prepared();
+  const [source, setSource] = createSignal(initial);
+  const view = mountSolid(() => {
+    const adapter = createChatSessionSharingMobileAdapter(source, {
+      onOpenSharing: vi.fn(),
+      onOpenAccess: vi.fn(),
+      onApplied: vi.fn(),
+      accessTarget: () => undefined,
+    });
+    return <ChatSessionSharingMobile {...adapter.sharing} />;
+  });
+  for (const visibility of [
+    undefined,
+    "read-only",
+    "shared",
+    "suggest",
+    "draft",
+    "shared",
+  ] as const) {
+    setSource({ ...initial, session: { ...initial.session, visibility } });
+    flush();
+    const visible = visibility === "read-only" || visibility === "suggest";
+    expect(Boolean(view.queryByText("Permissions"))).toBe(visible);
+    expect(Boolean(view.queryByRole("button", { name: "Pat Member, Can read" }))).toBe(visible);
+    expect(Boolean(view.queryByRole("button", { name: "Search people…" }))).toBe(visible);
+    expect(view.getByText("Session access")).toBeDefined();
+    expect(view.getByText("Link sharing")).toBeDefined();
+  }
+  expect(initial.onMemberChange).not.toHaveBeenCalled();
+  expect(initial.onVisibilityChange).not.toHaveBeenCalled();
+  expect(initial.onPublicShareChange).not.toHaveBeenCalled();
+});
+
 it("keeps Public confirmed until its owner publishes and preserves membership focus while pending", async () => {
   const confirmation = createDeferred<ChatSessionSharingOutcome>();
   const publish = vi
@@ -137,6 +173,7 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
     onMemberChange: member,
     onCopyPublicLink: copy,
   });
+  initial.session.visibility = "read-only";
   const [source, setSource] = createSignal(initial);
   let adapter!: ChatSessionSharingMobileAdapter;
   const view = mountSolid(() => {
@@ -157,16 +194,16 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
   await confirmation.promise;
   await Promise.resolve();
   expect(toggle.checked).toBe(false);
-  expect(view.getByText("Session members")).toBeDefined();
-  const permission = view.getByRole("checkbox", { name: "Pat Member, Add" });
-  expect(permission.getAttribute("aria-checked")).toBe("false");
-  expect(permission.textContent?.trim()).toBe("Add");
+  expect(view.getByText("Permissions")).toBeDefined();
+  const permission = view.getByRole("button", { name: "Pat Member, Can read" });
+  expect(permission.textContent).toContain("Can read");
   expect(member).not.toHaveBeenCalled();
   permission.focus();
   setSource({ ...initial, state: { ...initial.state!, loading: true } });
   flush();
   expect(document.activeElement).toBe(permission);
   expect(permission.getAttribute("aria-disabled")).toBe("true");
+  expect(permission).toHaveProperty("disabled", false);
   permission.click();
   expect(member).not.toHaveBeenCalled();
   const url = "https://example.test/public/complete-session-link";
@@ -184,8 +221,10 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
   flush();
   expect(toggle.checked).toBe(true);
   permission.click();
+  await waitForSolid(() => expect(permission.getAttribute("aria-expanded")).toBe("true"));
+  view.getByRole("menuitemradio", { name: "Can send" }).click();
   expect(member).toHaveBeenCalledExactlyOnceWith("member", true);
-  expect(view.getByRole("checkbox", { name: /^Owner,/ }).hasAttribute("disabled")).toBe(true);
+  expect(view.queryByRole("button", { name: /^Owner,/ })).toBeNull();
   setSource((current) => ({
     ...current,
     state: {
@@ -193,21 +232,30 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
       result: {
         ...current.state!.result!,
         members: [{ identityId: "member", addedBy: "owner", addedAt: 1 }],
+        permissions: [{ identityId: "member", level: "send", options: ["read", "send"] }],
       },
     },
   }));
   flush();
-  expect(view.getByRole("checkbox", { name: "Pat Member, Member" })).toBe(permission);
-  expect(permission.getAttribute("aria-checked")).toBe("true");
+  expect(view.getByRole("button", { name: "Pat Member, Can send" })).toBe(permission);
   permission.click();
+  await waitForSolid(() => expect(permission.getAttribute("aria-expanded")).toBe("true"));
+  view.getByRole("menuitemradio", { name: "Can read" }).click();
   expect(member).toHaveBeenLastCalledWith("member", false);
   setSource((current) => ({
     ...current,
-    state: { ...current.state!, result: { ...current.state!.result!, members: [] } },
+    state: {
+      ...current.state!,
+      result: {
+        ...current.state!.result!,
+        members: [],
+        permissions: [{ identityId: "member", level: "read", options: ["read", "send"] }],
+      },
+    },
   }));
   flush();
-  expect(view.getByRole("checkbox", { name: "Pat Member, Add" })).toBe(permission);
-  expect(permission.getAttribute("aria-checked")).toBe("false");
+  expect(view.getByRole("button", { name: "Pat Member, Can read" })).toBe(permission);
+  expect(permission.textContent).toContain("Can read");
   const copyButton = view.getByRole("button", { name: "Copy public link" });
   expect(copyButton.textContent).toContain(url);
   copyButton.click();
@@ -222,7 +270,11 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
 
 it("replaces initial permission loading with people and retains them through refresh and failure", () => {
   const initial = prepared();
-  const [source, setSource] = createSignal(prepared({ state: { loading: true } }));
+  initial.session.visibility = "read-only";
+  const [source, setSource] = createSignal<PreparedChatSessionSharing>({
+    ...initial,
+    state: { loading: true },
+  });
   const view = mountSolid(() => {
     const adapter = createChatSessionSharingMobileAdapter(source, {
       onOpenSharing: vi.fn(),
@@ -233,14 +285,14 @@ it("replaces initial permission loading with people and retains them through ref
     return <ChatSessionSharingMobile {...adapter.sharing} />;
   });
   expect(view.getByRole("status", { name: "Loading…" }).getAttribute("aria-busy")).toBe("true");
-  expect(view.queryByRole("checkbox", { name: "Pat Member, Add" })).toBeNull();
+  expect(view.queryByRole("button", { name: "Pat Member, Can read" })).toBeNull();
   setSource(initial);
   flush();
-  const person = view.getByRole("checkbox", { name: "Pat Member, Add" });
+  const person = view.getByRole("button", { name: "Pat Member, Can read" });
   expect(view.queryByRole("status", { name: "Loading…" })).toBeNull();
   setSource({ ...initial, state: { ...initial.state!, loading: true } });
   flush();
-  expect(view.getByRole("checkbox", { name: "Pat Member, Add" })).toBe(person);
+  expect(view.getByRole("button", { name: "Pat Member, Can read" })).toBe(person);
   expect(person.getAttribute("aria-disabled")).toBe("true");
   expect(view.queryByRole("status", { name: "Loading…" })).toBeNull();
   setSource({
@@ -249,5 +301,5 @@ it("replaces initial permission loading with people and retains them through ref
   });
   flush();
   expect(view.getByRole("alert").textContent).toContain("Permission refresh failed");
-  expect(view.getByRole("checkbox", { name: "Pat Member, Add" })).toBe(person);
+  expect(view.getByRole("button", { name: "Pat Member, Can read" })).toBe(person);
 });

@@ -340,6 +340,10 @@
   cursor: default;
 }
 
+.chat-sharing-mobile__permission > .oc-menu-item__label {
+  display: contents;
+}
+
 .chat-sharing-mobile__check {
   display: flex;
   flex: none;

@@ -520,7 +520,7 @@ function ChatHeaderSessionMenuContent(
     }
     if (
       value.startsWith("visibility:") ||
-      value.startsWith("member:") ||
+      value.startsWith("permission:") ||
       value.startsWith("public:")
     ) {
       if (props.sharing) {

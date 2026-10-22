@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 import { SESSION_VISIBILITY_VALUES } from "../../../../../packages/gateway-protocol/src/schema/sessions-sharing-constants.js";
+import type { SessionMemberPermissionLevel } from "../../../../../packages/gateway-protocol/src/schema/sessions-sharing.js";
 import type {
   GatewaySessionRow,
   SessionMembersListEvidenceResult,
@@ -92,7 +93,6 @@ export function selectChatSessionSharingItem(
     }
     return;
   }
-  const members = new Set(props.state?.result?.members.map((member) => member.identityId) ?? []);
   if (value?.startsWith("visibility:")) {
     const visibility = SESSION_VISIBILITY_VALUES.find((option) => value === `visibility:${option}`);
     if (
@@ -108,16 +108,26 @@ export function selectChatSessionSharingItem(
     }
     return;
   }
-  if (!value?.startsWith("member:")) {
+  if (!value?.startsWith("permission:")) {
     return;
   }
-  const identityId = value.slice("member:".length);
-  if (identityId === props.state?.result?.owner?.id) {
+  if (props.session.visibility !== "read-only" && props.session.visibility !== "suggest") {
     return { status: "unavailable" };
   }
-  const member = !members.has(identityId);
-  const disabledReason = member ? props.memberAddDisabledReason : props.memberRemoveDisabledReason;
-  if (!disabledReason) {
+  const separator = value.indexOf(":", "permission:".length);
+  const level = value.slice("permission:".length, separator);
+  const identityId = value.slice(separator + 1);
+  const permission = props.state?.result?.permissions?.find((row) => row.identityId === identityId);
+  if (
+    !permission ||
+    permission.level === level ||
+    !permission.options.some((option) => option === level)
+  ) {
+    return { status: "unavailable" };
+  }
+  const member = level === "send";
+  const reason = member ? props.memberAddDisabledReason : props.memberRemoveDisabledReason;
+  if (!reason) {
     return props.onMemberChange(identityId, member);
   }
 }
@@ -182,33 +192,65 @@ export const CHAT_SESSION_SHARING_DESCRIPTION_KEYS: Record<SessionVisibility, st
   draft: "chat.sessionSharing.draftDescription",
 };
 
-export function projectChatSessionSharingRoster(props: ChatSessionSharingProps) {
-  const result = props.state?.result;
-  const creator = result?.owner;
-  const members = new Set(result?.members.map((member) => member.identityId));
-  const others = (result?.identities ?? [])
-    .filter((person) => person.id !== creator?.id)
-    .toSorted((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id));
-  // Only explicit session membership is known here; an absent grant says nothing about account roles.
-  return (creator ? [creator, ...others] : others).map((identity) => {
-    const fixed = identity.id === creator?.id;
-    const selected = fixed || members.has(identity.id);
-    return {
-      identity,
-      fixed,
-      selected,
-      controlLabel: fixed
-        ? t("chat.sessionSharing.owner")
-        : selected
-          ? t("chat.sessionSharing.member")
-          : t("chat.sessionSharing.addMember"),
-      disabledReason: fixed
-        ? t("chat.sessionSharing.owner")
-        : props.state?.loading
-          ? t("common.loading")
-          : selected
-            ? props.memberRemoveDisabledReason
-            : props.memberAddDisabledReason,
-    };
-  });
+export function chatSessionPermissionLabel(level: SessionMemberPermissionLevel) {
+  return t(
+    level === "send"
+      ? "chat.sessionSharing.canSend"
+      : level === "suggest"
+        ? "chat.sessionSharing.canSuggest"
+        : "chat.sessionSharing.canRead",
+  );
+}
+
+export type ChatSessionSharingRosterRow = {
+  identity: NonNullable<SessionMembersListEvidenceResult["owner"]>;
+  owner: boolean;
+  fixed: boolean;
+  level?: SessionMemberPermissionLevel;
+  options: readonly SessionMemberPermissionLevel[];
+  controlLabel: string;
+  disabledReason?: string;
+};
+
+export function projectChatSessionSharingRoster(
+  input: ChatSessionSharingProps,
+): ChatSessionSharingRosterRow[] {
+  const result = input.state?.result;
+  const identities = new Map(result?.identities.map((identity) => [identity.id, identity]));
+  const rows: ChatSessionSharingRosterRow[] = (result?.permissions ?? [])
+    .flatMap((permission) => {
+      const identity = identities.get(permission.identityId);
+      return identity && identity.id !== result?.owner?.id
+        ? [
+            {
+              identity,
+              owner: false,
+              fixed: permission.options.length < 2,
+              level: permission.level,
+              options: permission.options,
+              controlLabel: chatSessionPermissionLabel(permission.level),
+              disabledReason: input.state?.loading
+                ? t("common.loading")
+                : permission.level === "send"
+                  ? input.memberRemoveDisabledReason
+                  : input.memberAddDisabledReason,
+            },
+          ]
+        : [];
+    })
+    .toSorted((a, b) =>
+      (a.identity.label ?? a.identity.id).localeCompare(b.identity.label ?? b.identity.id),
+    );
+  return result?.owner
+    ? [
+        {
+          identity: result.owner,
+          owner: true,
+          fixed: true,
+          options: [],
+          controlLabel: t("chat.sessionSharing.owner"),
+        },
+        ...rows,
+      ]
+    : rows;
 }

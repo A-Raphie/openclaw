@@ -92,8 +92,8 @@ export function createChatSessionSharingMobileAdapter(
     get anyoneWithLink() {
       return t("chat.sessionSharing.anyoneWithLink");
     },
-    get sessionMembers() {
-      return t("chat.sessionSharing.sessionMembers");
+    get permissions() {
+      return t("chat.sessionSharing.permissions");
     },
     get showSearch() {
       return t("chat.sessionSharing.searchPeople");
@@ -165,7 +165,7 @@ export function createChatSessionSharingMobileAdapter(
     get personActivity() {
       return source()?.personActivity;
     },
-    onMemberChange: (identityId, member) => {
+    onPermissionChange: (identityId, level) => {
       const current = source();
       const row = rows().find((candidate) => candidate.identity.id === identityId);
       if (
@@ -174,9 +174,10 @@ export function createChatSessionSharingMobileAdapter(
         row &&
         !row.fixed &&
         !row.disabledReason &&
-        row.selected !== member
+        row.level !== level &&
+        row.options.includes(level)
       ) {
-        void selectChatSessionSharingItem(current, `member:${identityId}`);
+        void selectChatSessionSharingItem(current, `permission:${level}:${identityId}`);
       }
     },
   };
@@ -220,7 +221,9 @@ export function createChatSessionSharingMobileAdapter(
       },
       get permissions() {
         const current = source();
-        return current &&
+        return visibility() !== "shared" &&
+          visibility() !== "draft" &&
+          current &&
           current.membersAvailable !== false &&
           (!current.state?.result || pending() || current.state?.error || rows().length > 0)
           ? permissions

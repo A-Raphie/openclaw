@@ -14,6 +14,7 @@ import {
   type MenuControls,
   type MenuEntry,
   type MenuHandle,
+  type MenuItem,
 } from "../../../components/solid/menu.tsx";
 import { PanelLoadingSkeleton } from "../../../components/solid/panel-loading-skeleton.tsx";
 import { useScrollState } from "../../../components/solid/scroll-state.ts";
@@ -29,6 +30,7 @@ import {
   canManageChatSessionSharing,
   ChatSessionSharingModeIcon,
   projectChatSessionSharingRoster,
+  chatSessionPermissionLabel,
 } from "./chat-session-sharing-shared.tsx";
 
 registerEnglishCatalog(registerChatSessionEnglish);
@@ -182,8 +184,7 @@ function useDesktopSharing(props: ChatSessionSharingProps, controls: MenuControl
         matches,
         (row) => {
           const person = () => row().identity;
-          const isCreator = () => row().fixed;
-          const selected = () => row().selected;
+          const isCreator = () => row().owner;
           const reason = () => row().disabledReason;
           const activity = () =>
             personActivityLink(
@@ -225,77 +226,88 @@ function useDesktopSharing(props: ChatSessionSharingProps, controls: MenuControl
                   class="chat-pane__sharing-member-label"
                 />
               </Show>
-              <span class="chat-pane__sharing-permission">{row().controlLabel}</span>
-              <span
-                class="chat-pane__sharing-member-check"
-                aria-label={selected() ? t("chat.sessionSharing.selected") : undefined}
-              >
-                <Show when={selected()}>
-                  <Icon name="check" />
-                </Show>
-              </span>
             </>
           );
-          return createMemo(
-            (): MenuEntry =>
-              isCreator()
-                ? {
-                    kind: "content",
-                    id: `member:${person().id}`,
-                    content: (
-                      <div
-                        class="chat-pane__sharing-person chat-pane__sharing-person--creator"
-                        data-value={`member:${person().id}`}
-                      >
-                        <Content />
-                      </div>
-                    ),
+          const branch: MenuEntry = {
+            id: `permission:${person().id}`,
+            get label() {
+              return `${person().label ?? person().id}, ${row().controlLabel}`;
+            },
+            class: "chat-pane__sharing-permission",
+            get disabled() {
+              return !props.state?.loading && Boolean(reason());
+            },
+            get attributes(): MenuItem["attributes"] {
+              return {
+                title: reason(),
+                "aria-disabled": props.state?.loading ? "true" : undefined,
+              };
+            },
+            get trigger() {
+              return row().controlLabel;
+            },
+            onBeforeShow(event) {
+              if (props.state?.loading) {
+                event.preventDefault();
+              }
+            },
+            get children() {
+              return row().options.map((level) => ({
+                id: `permission:${level}:${person().id}`,
+                label: chatSessionPermissionLabel(level),
+                type: "radio" as const,
+                checked: row().level === level,
+                closeOnSelect: false,
+              }));
+            },
+          };
+          return {
+            kind: "group",
+            id: `member:${person().id}`,
+            get items() {
+              return row().fixed ? [] : [branch];
+            },
+            render: (renderItems) => (
+              <div
+                class={[
+                  "chat-pane__sharing-person",
+                  { "chat-pane__sharing-person--creator": isCreator() },
+                ]}
+                data-value={`member:${person().id}`}
+              >
+                <Content />
+                <Show
+                  when={row().fixed}
+                  fallback={
+                    <div class="chat-pane__sharing-permission-control">
+                      {renderItems(() => [branch])}
+                    </div>
                   }
-                : {
-                    get id() {
-                      return `member:${person().id}`;
-                    },
-                    get label() {
-                      return person().label ?? person().id;
-                    },
-                    type: "checkbox",
-                    get checked() {
-                      return selected();
-                    },
-                    get disabled() {
-                      return Boolean(reason() || props.state?.loading);
-                    },
-                    closeOnSelect: false,
-                    render: (attributes) => (
-                      <button
-                        {...attributes}
-                        type="button"
-                        class="chat-pane__sharing-person"
-                        disabled={Boolean(reason() || props.state?.loading)}
-                        title={reason()}
-                      >
-                        <Content />
-                      </button>
-                    ),
-                  },
-            { lazy: true },
-          );
+                >
+                  <span class="chat-pane__sharing-permission">{row().controlLabel}</span>
+                  <span class="chat-pane__sharing-member-check" aria-hidden="true" />
+                </Show>
+              </div>
+            ),
+          } satisfies MenuEntry;
         },
         { keyed: (row) => row.identity.id },
       ),
     { lazy: true },
   );
   const showPermissions = () =>
+    visibility() !== "shared" &&
+    visibility() !== "draft" &&
     props.membersAvailable !== false &&
     (!result() || props.state?.loading || Boolean(props.state?.error) || people().length > 0);
-  const permissionItems = () => (showPermissions() ? rosterItems()().map((item) => item()) : []);
+  const permissionItems = () => (showPermissions() ? rosterItems()() : []);
   // The observer and its ref share the mounted permissions subtree's lifetime.
   const SharingPermissions = (view: { children: JSX.Element }) => {
     const scroll = useScrollState();
     return (
       <section class="chat-pane__sharing-section chat-pane__sharing-permissions">
         <div class="chat-pane__sharing-section-label chat-pane__sharing-search-heading">
-          <span>{t("chat.sessionSharing.sessionMembers")}</span>
+          <span>{t("chat.sessionSharing.permissions")}</span>
           <Show when={people().length > 0}>
             <button
               ref={[
