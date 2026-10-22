@@ -7,6 +7,7 @@ import type { AgentsListResult } from "../../api/types.ts";
 import { createNativeDeviceSettingsCapability } from "../../app/native-device-settings.ts";
 import { createNativeDeviceSettingsSnapshot } from "../../test-helpers/native-device-settings.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
+import { waitForFast } from "../../test-helpers/wait-for.ts";
 import type { SetupAutoResult } from "./custodian-auto-setup.ts";
 import { createContext, mountPage } from "./custodian-page.test-harness.ts";
 import { CustodianSessionStore } from "./custodian-session-store.ts";
@@ -120,6 +121,60 @@ it.each([true, false])("activates alternatives only on success (%s)", async (ok)
     alertText(page).toContain("Local model is offline");
   }
   expect(request.mock.calls.filter(([method]) => method === "openclaw.setup.auto")).toHaveLength(1);
+});
+
+it.each([true, false])("presents a held activation and its outcome (success=%s)", async (ok) => {
+  const activation = createDeferred<{ ok: boolean; error?: string }>();
+  const request = setupRequest(() => result(), {
+    "openclaw.setup.activate": () => activation.promise,
+  });
+  const { page } = await mountSetup(request);
+  const button = [...page.querySelectorAll("button")].find(
+    (entry) => entry.textContent?.trim() === "Local model",
+  )!;
+  button.click();
+  button.click();
+  await waitForFast(() => expect(page.querySelector(".custodian-setup__progress")).not.toBeNull());
+  expect(
+    request.mock.calls.filter(([method]) => method === "openclaw.setup.activate"),
+  ).toHaveLength(1);
+  expect(page.store.autoSetup.result?.selected).toEqual(selected);
+  expect(
+    [...page.querySelectorAll<HTMLButtonElement>(".custodian-setup__alternatives button")].every(
+      (entry) => entry.disabled,
+    ),
+  ).toBe(true);
+  activation.resolve(ok ? { ok } : { ok, error: "Local model is offline" });
+  await settled(page);
+  text(page).toContain(ok ? "Using Local model" : "Using ChatGPT");
+  if (!ok) {
+    alertText(page).toContain("Local model is offline");
+  }
+});
+
+it("retires a held activation when the visible store is replaced", async () => {
+  const activation = createDeferred<{ ok: boolean; error: string }>();
+  const request = setupRequest(() => result(), {
+    "openclaw.setup.activate": () => activation.promise,
+  });
+  const { page } = await mountSetup(request);
+  [...page.querySelectorAll("button")]
+    .find((entry) => entry.textContent?.trim() === "Local model")!
+    .click();
+  await waitForFast(() => expect(page.store.autoSetup.pending).toBe(true));
+  page.store = new CustodianSessionStore();
+  await settled(page, () => page.store.autoSetup.ready);
+  text(page).toContain("Using ChatGPT");
+  expect(page.querySelector(".custodian-setup__progress")).toBeNull();
+  expect(
+    [...page.querySelectorAll<HTMLButtonElement>(".custodian-setup__alternatives button")].every(
+      (entry) => !entry.disabled,
+    ),
+  ).toBe(true);
+  activation.resolve({ ok: false, error: "Retired activation failed" });
+  await activation.promise;
+  await page.updateComplete;
+  text(page).not.toContain("Retired activation failed");
 });
 
 it("follows a replacement store without accepting the old store's dismissal", async () => {
