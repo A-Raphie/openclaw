@@ -1329,7 +1329,21 @@ jobs:
           OPENCLAW_VITEST_RUNTIME: ${{ inputs.test_runtime }}
         run: |
           set -euo pipefail
-          timeout --foreground --kill-after=30s 8m pnpm test:live:cache
+          mkdir -p .artifacts/live-cache
+          timeout --foreground --kill-after=30s 8m pnpm test:live:cache -- \
+            --reporter=default \
+            --reporter=json \
+            --outputFile.json=.artifacts/live-cache/cache-floors.vitest.json \
+            2>&1 | tee .artifacts/live-cache/cache-floors.log
+
+      - name: Upload live cache diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: live-cache-${{ needs.validate_selected_ref.outputs.selected_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/live-cache/
+          retention-days: 14
+          if-no-files-found: warn
 
   validate_repo_e2e_gateway:
     name: Gateway E2E${{ inputs.test_runtime == 'bun' && ' (Bun advisory)' || '' }}
