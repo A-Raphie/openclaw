@@ -21,14 +21,13 @@ import { racePromiseWithAbortSignal } from "../../infra/abort-signal.js";
 import { toErrorObject } from "../../infra/errors.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import { isCronSessionKey } from "../../sessions/session-key-utils.js";
-import { CronSessionLifecycleClaimError } from "../run-authority.js";
-export { CronSessionLifecycleClaimError } from "../run-authority.js";
 import {
   beginSessionWorkAdmission,
   getCompetingSessionWorkAdmissionRelease,
   getSessionWorkAdmissionOwnerRelease,
   isSessionWorkAdmissionActive,
 } from "../../sessions/session-lifecycle-admission.js";
+import { CronSessionLifecycleClaimError } from "../run-authority.js";
 import {
   normalizeCronScheduledToolCallerOrigin,
   normalizeCronScheduledToolPolicy,
@@ -45,6 +44,8 @@ import type {
 import { setSessionRuntimeModel } from "./run.runtime.js";
 import type { CronLaneWaitCallback } from "./run.types.js";
 import { loadCronSessionEntryLatest, type resolveCronSession } from "./session.js";
+
+export { CronSessionLifecycleClaimError } from "../run-authority.js";
 
 const CRON_SESSION_PREPARATION_OWNER = Symbol.for("openclaw.cronSessionPreparation");
 

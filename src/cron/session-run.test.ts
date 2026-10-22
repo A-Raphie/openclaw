@@ -5,11 +5,14 @@ import type {
   SessionEventOptions,
   SessionEventOutcome,
 } from "../auto-reply/reply/session-event-contract.js";
-import type { RestoredGatewayOperatorAuthority } from "../gateway/operator-run-recovery.js";
 import { makeCronJob } from "./delivery.test-helpers.js";
 import { resolveCronSourceDeliveryPlan } from "./isolated-agent/source-delivery-plan.js";
 import { createCronAgentWatchdog } from "./service/agent-watchdog.js";
 import { runCronSessionTurn } from "./session-run.js";
+
+type RestoredGatewayOperatorAuthority = NonNullable<
+  Awaited<ReturnType<typeof import("../gateway/cron-operator-source.js").restoreCronOperatorSource>>
+>;
 
 const fixture = vi.hoisted(() => ({
   config: {},
@@ -126,14 +129,6 @@ function restoredSource(): RestoredGatewayOperatorAuthority {
   };
   return {
     authority,
-    assertPolicyCurrent: vi.fn(),
-    authenticatedUserProfile: {
-      profileId: "requester",
-      displayName: null,
-      avatarRevision: "0",
-      hasAvatar: false,
-      updatedAt: 0,
-    },
     controlUiAdmin: true,
     release: vi.fn(),
   };

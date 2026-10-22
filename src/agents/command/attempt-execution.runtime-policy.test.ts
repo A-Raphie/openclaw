@@ -4,7 +4,7 @@ import { resolveCompletionToolPolicy } from "./attempt-execution.helpers.js";
 describe("attempt execution runtime policy", () => {
   const resolvePolicy = (isCliExecutionProvider: boolean, forceRestartSafeTools?: boolean) =>
     resolveCompletionToolPolicy({
-      run: { sessionEntry: undefined, opts: { forceRestartSafeTools } },
+      run: { sessionEntry: undefined, opts: { message: "test", forceRestartSafeTools } },
       trustedSubagentAnnounceHandoff: false,
       isSubagentAnnounceHandoff: false,
       isRawModelRun: false,

@@ -509,15 +509,15 @@ async function persistPreparedGatewaySessionLifecycleEvent(
           lifecycleGeneration:
             params.event.lifecycleGeneration ?? getAgentEventLifecycleGeneration(),
         });
-        if (
-          !entry.mainRestartRecovery &&
-          isAgentRunResumableToolTimeout(resolveSettledLifecycleTerminalOutcome(params.event))
-        ) {
-          patch.mainRestartRecovery = {
-            cycleId: randomUUID(),
-            revision: 1,
-            chargedAttempts: 0,
-          };
+        if (isAgentRunResumableToolTimeout(resolveSettledLifecycleTerminalOutcome(params.event))) {
+          patch.mainRestartRecovery = entry.mainRestartRecovery
+            ? { ...entry.mainRestartRecovery, safeToolsRequired: true }
+            : {
+                cycleId: randomUUID(),
+                revision: 1,
+                chargedAttempts: 0,
+                safeToolsRequired: true,
+              };
         }
       }
       if (providerReview && Object.keys(patch).length > 0) {

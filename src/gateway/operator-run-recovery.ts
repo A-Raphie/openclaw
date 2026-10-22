@@ -71,7 +71,9 @@ export async function restoreGatewayOperatorSource(params: {
   const releaseHold = () => {
     let released = false;
     return () => {
-      if (released) return;
+      if (released) {
+        return;
+      }
       released = true;
       if (--references === 0) {
         subscriptions.splice(0).forEach((dispose) => dispose());
@@ -136,8 +138,11 @@ export async function restoreGatewayOperatorSource(params: {
     };
     subscriptions.push(
       onOperatorRolePolicyChanged((change) => {
-        if (change.kind === "assignment" && change.profileId === snapshot.profileId) revoke();
-        else if (change.kind === "config" && change.context === gatewayOwner) recheck();
+        if (change.kind === "assignment" && change.profileId === snapshot.profileId) {
+          revoke();
+        } else if (change.kind === "config" && change.context === gatewayOwner) {
+          recheck();
+        }
       }),
       onUserProfilesChanged(recheck),
     );
@@ -148,7 +153,9 @@ export async function restoreGatewayOperatorSource(params: {
     );
     subscriptions.push(device.release);
     const releaseDeviceNotification = onGatewayDeviceSourceRevoked(device.isCurrent, revoke);
-    if (releaseDeviceNotification) subscriptions.push(releaseDeviceNotification);
+    if (releaseDeviceNotification) {
+      subscriptions.push(releaseDeviceNotification);
+    }
     if (snapshot.device) {
       const paired = await loadPairedDevicePairingStoreRecordReadOnly(snapshot.device.deviceId);
       if (

@@ -275,7 +275,7 @@ export abstract class CodexTurnProjection {
     const projectedUsage =
       aborted && usage ? { ...usage, contextUsage: { state: "unavailable" } as const } : usage;
     const storedMissingToolResultError = synthesizedMissingToolResultError;
-    let promptErrorSource = initialPromptErrorSource;
+    const promptErrorSource = initialPromptErrorSource;
     const assistantMessageOptions = {
       tokenUsage: projectedUsage,
       aborted,

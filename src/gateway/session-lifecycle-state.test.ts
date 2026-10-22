@@ -490,6 +490,7 @@ describe("session lifecycle state", () => {
         cycleId: expect.any(String),
         revision: 1,
         chargedAttempts: 0,
+        safeToolsRequired: true,
       },
       restartRecoveryRuns: [
         { runId: "tool-run", lifecycleGeneration: getAgentEventLifecycleGeneration() },
@@ -518,6 +519,37 @@ describe("session lifecycle state", () => {
       },
     });
     expect(replayed).toEqual(settled);
+  });
+
+  it("requires safe tools when a tool timeout joins an existing recovery cycle", async () => {
+    const interrupted = await persistLifecycle(
+      {
+        sessionId: "session-id",
+        updatedAt: 1_000,
+        lifecycleRunId: "tool-run",
+        mainRestartRecovery: { cycleId: "existing-cycle", revision: 3, chargedAttempts: 2 },
+      },
+      {
+        ts: 2_000,
+        sessionId: "session-id",
+        runId: "tool-run",
+        data: {
+          phase: "error",
+          startedAt: 1_000,
+          endedAt: 2_000,
+          status: "timed_out",
+          timeoutPhase: "tool_execution",
+          providerStarted: true,
+        },
+      },
+    );
+
+    expect(interrupted.mainRestartRecovery).toEqual({
+      cycleId: "existing-cycle",
+      revision: 3,
+      chargedAttempts: 2,
+      safeToolsRequired: true,
+    });
   });
 
   it.each([
