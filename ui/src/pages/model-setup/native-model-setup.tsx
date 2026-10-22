@@ -207,7 +207,7 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
     request,
     setSelected: setNativeModel,
     blocked: options.blocked,
-    useModel: () => void useNativeModel(),
+    useModel: () => useNativeModel(),
     retry: () => loadNativeModels(true),
     open: () => {
       if (!nativeModelsAbort) {
