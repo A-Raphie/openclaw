@@ -208,17 +208,27 @@ function MermaidContent(props: MermaidProps, host: MermaidElement) {
           when={sourceVisible()}
           fallback={
             <Show when={imageUrl()}>
-              <div class="preview">
+              <button
+                class="preview"
+                type="button"
+                aria-label={image().value()?.title
+                  ? t("chat.mermaid.expandNamed", { title: imageTitle() })
+                  : t("chat.mermaid.expand")}
+                aria-describedby={descriptionId}
+                aria-haspopup="dialog"
+                title={t("chat.mermaid.expand")}
+                onClick={() => setExpanded(true)}
+              >
                 <img
                   src={imageUrl()}
                   alt={imageTitle()}
                   aria-describedby={descriptionId}
                   onError={() => image().fail()}
                 />
-                <p class="description" id={descriptionId}>
+                <span class="description" id={descriptionId}>
                   {imageDescription()}
-                </p>
-              </div>
+                </span>
+              </button>
             </Show>
           }
         >
