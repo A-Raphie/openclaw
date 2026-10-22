@@ -6,7 +6,7 @@ import {
   Errored,
   isPending,
   Loading,
-  onSettled,
+  onCleanup,
   Show,
 } from "solid-js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
@@ -191,7 +191,8 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
     setRequest(read);
   }
 
-  onSettled(() => () => {
+  // open() admits resources synchronously, including before the first settle.
+  onCleanup(() => {
     saving.retire();
     generation += 1;
     nativeModelsAbort?.abort();
