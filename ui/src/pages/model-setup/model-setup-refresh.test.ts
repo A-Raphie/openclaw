@@ -165,10 +165,10 @@ describe("Model setup refresh continuity", () => {
         completion: ownedCompletion,
         dispose,
       } = createRoot((disposeRoot) => {
-        const saving = createModelSetupSaving(() => null);
+        const presentation = createModelSetupSaving(() => null);
         return {
-          saving,
-          completion: owned ? saving.present(Promise.resolve(), () => false) : undefined,
+          saving: presentation,
+          completion: owned ? presentation.present(Promise.resolve(), () => false) : undefined,
           dispose: disposeRoot,
         };
       });
