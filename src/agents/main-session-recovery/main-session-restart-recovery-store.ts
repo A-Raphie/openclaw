@@ -601,7 +601,7 @@ export async function recoverStore(params: {
         };
       } else {
         const retainedSafeTools =
-          replaySafeCheckpoint || (entry.restartRecoveryForceSafeTools === true && !fullAccess);
+          replaySafeCheckpoint || entry.restartRecoveryForceSafeTools === true;
         const resumePolicy = resolveMainSessionResumePolicy(
           messages,
           retainedSafeTools,

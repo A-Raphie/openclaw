@@ -4353,7 +4353,7 @@ describe("main-session-restart-recovery", () => {
       safeTools: "required",
     },
     {
-      name: "ends prior replay restrictions at a new full-access user turn",
+      name: "honors an authoritative replay restriction clear for a new full-access user turn",
       messages: [
         { role: "user", content: "the earlier request" },
         codeModeCheckpointMessage(),
@@ -4367,7 +4367,7 @@ describe("main-session-restart-recovery", () => {
         { role: "user", content: "a later request" },
         makeAssistantTextMessage("Finished the later request."),
       ],
-      entry: { permissionMode: "full", restartRecoveryForceSafeTools: true },
+      entry: { permissionMode: "full" },
       safeTools: "absent",
     },
     {
@@ -4429,7 +4429,7 @@ describe("main-session-restart-recovery", () => {
       ],
       safeTools: "required",
       promptIncludes: [
-        "interrupted by a gateway restart",
+        "interrupted while OpenClaw was waiting",
         "marked interrupted, missing, or aborted",
         "unknown outcome",
         "not proof of tool failure",
@@ -4639,7 +4639,7 @@ describe("main-session-restart-recovery", () => {
   );
 
   it.each([
-    { label: "inherited full access", mode: "full", permissionMode: undefined, restricted: false },
+    { label: "inherited full access", mode: "full", permissionMode: undefined, restricted: true },
     { label: "explicit guarded access", mode: "full", permissionMode: "guarded", restricted: true },
   ] as const)(
     "continues interrupted work with $label",

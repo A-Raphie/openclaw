@@ -251,7 +251,7 @@ async function runCronIsolatedAgentTurnInTrace(
                 agentId: prepared.context.agentId,
                 lifecycleGeneration: runLifecycleGeneration,
                 cronRunsByJobId: new Map([
-                  [params.job.id, { pacingEnabled: params.job.pacing !== undefined }],
+                  [params.job.id, { nextCheckEnabled: params.job.pacing !== undefined }],
                 ]),
               },
               {

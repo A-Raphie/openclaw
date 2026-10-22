@@ -21,6 +21,8 @@ import { racePromiseWithAbortSignal } from "../../infra/abort-signal.js";
 import { toErrorObject } from "../../infra/errors.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import { isCronSessionKey } from "../../sessions/session-key-utils.js";
+import { CronSessionLifecycleClaimError } from "../run-authority.js";
+export { CronSessionLifecycleClaimError } from "../run-authority.js";
 import {
   beginSessionWorkAdmission,
   getCompetingSessionWorkAdmissionRelease,
@@ -153,18 +155,6 @@ export type CronRunContinuationSession = {
   ) => Promise<void>;
   seal: (options?: { basePersisted?: boolean }) => Promise<void>;
 };
-
-export class CronSessionLifecycleClaimError extends Error {
-  readonly admissionDisposition = "session-conflict" as const;
-
-  constructor(
-    sessionKey: string,
-    message = `Session "${sessionKey}" changed while starting work. Retry.`,
-  ) {
-    super(message);
-    this.name = "CronSessionLifecycleClaimError";
-  }
-}
 
 function resolveCronLifecycleRevisionIdentity(lifecycleRevision: string): string {
   return `cron-lifecycle-revision:${lifecycleRevision}`;

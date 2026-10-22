@@ -202,6 +202,7 @@ export function createCronPromptExecutor(
           });
     pendingUserTurn = { promptText, recorder: userTurnTranscriptRecorder };
     const cronAdmission = prepareCronRunAdmission({
+      operatorAuthority: params.operatorAuthority,
       admissionSource: params.admissionSource,
       deliveryAttemptFence: params.deliveryAttemptFence,
       cfg: params.cfgWithAgentDefaults,

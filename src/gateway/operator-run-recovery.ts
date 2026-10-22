@@ -27,7 +27,10 @@ import {
   captureChannelOperatorRunAuthority,
   intersectOperatorRunModelPolicy,
 } from "./operator-run-authority.js";
-import { decodeGatewayOperatorRecoverySource } from "./operator-run-recovery-source.js";
+import {
+  decodeGatewayOperatorRecoverySource,
+  type OperatorRunRecoverySnapshot,
+} from "./operator-run-recovery-source.js";
 import type { GatewayRequestContext } from "./server-methods/shared-types.js";
 
 export type OperatorRecoveryTarget = {
@@ -38,6 +41,156 @@ export type OperatorRecoveryTarget = {
   sourceRunId: string;
   recoveryRunId: string;
 };
+
+/** Re-admit a captured source under current identity, role, auth, and session policy. */
+export async function restoreGatewayOperatorSource(params: {
+  snapshot: OperatorRunRecoverySnapshot;
+  target: Pick<OperatorRecoveryTarget, "agentId" | "sessionKey" | "sessionId">;
+  context: GatewayRequestContext;
+  assertCurrent: () => void;
+  prepareCurrent?: () => Promise<void>;
+}) {
+  const snapshot = params.snapshot;
+  const gatewayOwner = params.context.resolveGatewayContext?.() ?? params.context;
+  const getConfig = params.context.getCommittedRuntimeConfig ?? params.context.getRuntimeConfig;
+  const signal = new AbortController();
+  let references = 1;
+  let identity: Awaited<ReturnType<typeof prepareUserProfileIdentity>> | undefined;
+  const subscriptions: Array<() => void> = [];
+  const revoke = (cause?: unknown) =>
+    signal.abort(
+      new Error("Operator continuation authority changed; start a new user turn.", { cause }),
+    );
+  const assertOwner = () => {
+    if (references === 0) {
+      throw new Error("Operator continuation authority is no longer active.");
+    }
+    signal.signal.throwIfAborted();
+    params.assertCurrent();
+  };
+  const releaseHold = () => {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (--references === 0) {
+        subscriptions.splice(0).forEach((dispose) => dispose());
+        identity?.release();
+      }
+    };
+  };
+  const release = releaseHold();
+  try {
+    subscriptions.push(
+      onSessionIdentityMutation((mutation) => {
+        if (
+          mutation.agentId === params.target.agentId &&
+          (mutation.previous.sessionId === params.target.sessionId ||
+            mutation.previous.sessionKeys.includes(params.target.sessionKey))
+        ) {
+          revoke();
+        }
+      }),
+    );
+    await params.prepareCurrent?.();
+    assertOwner();
+    identity = await prepareUserProfileIdentity(snapshot.profileId);
+    let githubAccountIds: readonly number[] | undefined;
+    let accessAuthority: ReturnType<typeof resumeGatewayOperatorAccessGrant>;
+    const assertPolicy = () => {
+      assertOwner();
+      const cfg = getConfig();
+      const profile = identity!.readCurrentFacts(snapshot.aliasBindingIds).profile;
+      const role = resolveOperatorRolePolicyForAssignment(
+        snapshot.profileId,
+        snapshot.assignedRole,
+        cfg,
+        snapshot.githubLogin,
+      );
+      if (
+        profile.profileId !== snapshot.profileId ||
+        profile.assignedRole !== snapshot.assignedRole ||
+        (profile.githubLogin ?? null) !== snapshot.githubLogin ||
+        githubAccountIds?.some((id) => !profile.githubAccountIds?.includes(id)) ||
+        !isDeepStrictEqual(sourceRolePolicy(role), snapshot.rolePolicy) ||
+        !isGatewayAuthGrantCurrent(snapshot.authPolicy, cfg)
+      ) {
+        throw new Error("Operator continuation source policy changed.");
+      }
+      githubAccountIds ??= profile.githubAccountIds ?? [];
+      accessAuthority = resumeGatewayOperatorAccessGrant(
+        profile,
+        cfg,
+        snapshot.grant,
+        accessAuthority,
+      );
+      accessAuthority?.signal.throwIfAborted();
+      return cfg;
+    };
+    const recheck = () => {
+      try {
+        assertPolicy();
+      } catch (error) {
+        revoke(error);
+      }
+    };
+    subscriptions.push(
+      onOperatorRolePolicyChanged((change) => {
+        if (change.kind === "assignment" && change.profileId === snapshot.profileId) revoke();
+        else if (change.kind === "config" && change.context === gatewayOwner) recheck();
+      }),
+      onUserProfilesChanged(recheck),
+    );
+    const device = captureGatewayDeviceRevocation(
+      gatewayOwner,
+      { deviceId: snapshot.device?.deviceId, role: "operator" },
+      () => !signal.signal.aborted,
+    );
+    subscriptions.push(device.release);
+    const releaseDeviceNotification = onGatewayDeviceSourceRevoked(device.isCurrent, revoke);
+    if (releaseDeviceNotification) subscriptions.push(releaseDeviceNotification);
+    if (snapshot.device) {
+      const paired = await loadPairedDevicePairingStoreRecordReadOnly(snapshot.device.deviceId);
+      if (
+        !isPairedDeviceTokenIdentityCurrent(paired, "operator", snapshot.device, snapshot.scopes)
+      ) {
+        revoke();
+      }
+    }
+    assertPolicy();
+    const live = captureChannelOperatorRunAuthority({
+      profileId: snapshot.profileId,
+      assignedRole: snapshot.assignedRole,
+      githubLogin: snapshot.githubLogin,
+      scopes: snapshot.scopes,
+      gatewayAccessGrant: snapshot.grant,
+      getRuntimeConfig: getConfig,
+      assertCurrent: assertPolicy,
+      signal: signal.signal,
+    });
+    const originalModels = snapshot.modelPolicy
+      ? restoreOperatorModelPolicySnapshot(snapshot.modelPolicy)
+      : undefined;
+    const authority = createAdmittedRunOperatorAuthority({
+      ...live,
+      signal: signal.signal,
+      recoverySnapshot: snapshot,
+      retain: () => {
+        assertPolicy();
+        references += 1;
+        return releaseHold();
+      },
+      get modelPolicy() {
+        return intersectOperatorRunModelPolicy(originalModels, live.modelPolicy);
+      },
+    });
+    authority.assertCurrent();
+    return { authority, controlUiAdmin: snapshot.controlUiAdmin, release };
+  } catch (error) {
+    release();
+    throw error;
+  }
+}
 
 type RecoverySource = Readonly<{ controlUiAdmin: boolean; localOperator: boolean }>;
 const recoverySources = new WeakMap<
