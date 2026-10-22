@@ -489,7 +489,9 @@ if (${JSON.stringify(options.candidateOwned ?? false)} && args[0] === "api" && a
 } else if (args[0] === "api" && /\\/actions\\/workflows\\/(?:17|full-release-validation.yml)\\/runs$/.test(endpoint)) {
   const concurrencyInventory = fields.has("status");
   const requestDirectory = require("node:path").join(process.cwd(), ".artifacts", "full-release-validation");
-  const requestFile = fs.readdirSync(requestDirectory).find((name) => name.endsWith(".json"));
+  const requestFile = fs.existsSync(requestDirectory)
+    ? fs.readdirSync(requestDirectory).find((name) => name.endsWith(".json"))
+    : undefined;
   const request = requestFile
     ? JSON.parse(fs.readFileSync(require("node:path").join(requestDirectory, requestFile), "utf8"))
     : null;
