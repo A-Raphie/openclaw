@@ -54,6 +54,8 @@ export type CodexPluginInventoryDiagnostic = {
 };
 
 export type CodexPluginOwnedApp = {
+  toolNamePrefix?: string;
+  toolSummaries?: CodexAppInventorySnapshot["apps"][number]["toolSummaries"];
   id: string;
   name: string;
   accessible: boolean;
@@ -517,6 +519,7 @@ export function toCodexPluginOwnedAccountApp(
     // Modern plugin summaries carry no auth bit; account-authorized
     // app/read metadata is the canonical connector access proof.
     needsAuth: false,
+    ...(app.toolSummaries ? { toolNamePrefix: app.name, toolSummaries: app.toolSummaries } : {}),
     ...resolveOwnedAppApprovalOverrideKeys(app),
   };
 }

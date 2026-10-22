@@ -48,7 +48,7 @@ export function resolveCodexPluginThreadAppCacheKey(params: {
     : params.appCacheKey;
 }
 
-function createCodexPluginThreadAppInventoryRequest(
+export function createCodexPluginThreadAppInventoryRequest(
   params: CodexPluginThreadAppAdmissionParams,
 ): CodexAppInventoryRequest {
   return async (method, requestParams) =>

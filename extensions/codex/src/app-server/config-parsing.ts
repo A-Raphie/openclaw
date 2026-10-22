@@ -75,6 +75,7 @@ const codexPluginEntryConfigSchema = z.strictObject({
   enabled: z.boolean().optional(),
   marketplaceName: z.string().regex(CODEX_PLUGIN_MARKETPLACE_NAME_PATTERN).optional(),
   pluginName: z.string().trim().min(1).optional(),
+  read_only: z.boolean().optional(),
   allow_destructive_actions: codexPluginDestructivePolicySchema.optional(),
 });
 
@@ -274,6 +275,7 @@ export function resolveCodexPluginsPolicy(pluginConfig?: unknown): ResolvedCodex
           marketplaceName: entry.marketplaceName,
           pluginName: entry.pluginName,
           enabled: enabled && entry.enabled !== false,
+          ...(entry.read_only === true ? { readOnly: true } : {}),
           allowDestructiveActions: entryDestructivePolicy.allowDestructiveActions,
           destructiveApprovalMode: entryDestructivePolicy.destructiveApprovalMode,
         },

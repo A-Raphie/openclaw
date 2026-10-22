@@ -24,6 +24,10 @@ import {
   type CodexPluginMetadataCache,
 } from "./plugin-metadata-cache.js";
 import {
+  createCodexPluginThreadAppInventoryRequest,
+  resolveCodexPluginThreadAppCacheKey,
+} from "./plugin-thread-app-admission.js";
+import {
   buildCodexPluginThreadConfig,
   buildCodexPluginThreadConfigTimeoutFallback,
   shouldBuildCodexPluginThreadConfig,
@@ -233,6 +237,18 @@ export function createCodexPluginThreadConfigStartupProvider(params: {
                   request,
                   configCwd: params.configCwd,
                   threadId: buildOptions?.threadId,
+                  appInventory: (appCache ?? defaultCodexAppInventoryCache).read({
+                    key: resolveCodexPluginThreadAppCacheKey({
+                      appCacheKey: params.appCacheKey,
+                      threadId: buildOptions?.threadId,
+                    }),
+                    request: createCodexPluginThreadAppInventoryRequest({
+                      appCacheKey: params.appCacheKey,
+                      request,
+                      threadId: buildOptions?.threadId,
+                    }),
+                    suppressRefresh: true,
+                  }).snapshot?.apps,
                 }),
                 nativeToolSurfaceEnabled,
               )
