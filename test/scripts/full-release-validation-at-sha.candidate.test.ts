@@ -335,7 +335,7 @@ describe("candidate-owned full release dispatch entry point", () => {
         "Release candidate actor candidate-signer lacks maintain/admin access",
       );
       expect(dispatches(f)).toEqual([P]);
-      expect(readRequestRecord(f).refs).toEqual({ workflow: "intended" });
+      expect(f.record().refs).toEqual({ workflow: "intended" });
       expect(f.refs()).toEqual([]);
     } finally {
       f.cleanup();
