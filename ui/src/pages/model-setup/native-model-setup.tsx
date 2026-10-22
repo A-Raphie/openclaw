@@ -1,5 +1,14 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, createSignal, createStore, onSettled, reconcile } from "solid-js";
+import {
+  createMemo,
+  createSignal,
+  createStore,
+  Errored,
+  Loading,
+  onSettled,
+  reconcile,
+  Show,
+} from "solid-js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ModelCatalogEntry, ModelCatalogResult } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
@@ -32,7 +41,7 @@ export type NativeModelSetup = ReturnType<typeof createNativeModelSetup>;
 export function createNativeModelSetup(options: NativeModelSetupOptions) {
   const [nativeModels, setNativeModels] = createStore<ModelCatalogEntry[]>([]);
   const [nativeModel, setNativeModel] = createSignal("");
-  const [nativeModelError, setNativeModelError] = createSignal<string | null>(null);
+  const [nativeMutation, setNativeMutation] = createSignal<{ completion: Promise<null> }>();
   const [nativeCatalogError, setNativeCatalogError] = createSignal<string | null>(null);
   const saving = createModelSetupSaving(options.getConnection);
   const [requestPending, setRequestPending] = createSignal(false);
@@ -52,7 +61,7 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
       models.length = 0;
     });
     setNativeModel("");
-    setNativeModelError(null);
+    setNativeMutation(undefined);
     setNativeCatalogError(null);
     setRequestPending(false);
     nativeModelsAbort?.abort();
@@ -61,7 +70,7 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
     nativeModelsUnsubscribe = null;
     setNativeModelsStatus("idle");
   }
-  async function useNativeModel(): Promise<void> {
+  function useNativeModel(): void {
     const connection = options.getConnection();
     const requestGeneration = generation;
     const isCurrent = () =>
@@ -81,7 +90,6 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
       return;
     }
     mutationActive = true;
-    setNativeModelError(null);
     options.onChange();
     const modelRef = `${model.provider}/${model.id}`;
     const pending = (async () => {
@@ -102,8 +110,7 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
         }
         const result = mutation.ok ? mutation.refresh : mutation;
         if (!result.ok) {
-          setNativeModelError(result.error);
-          return;
+          throw new Error(result.error);
         }
         await context.agents.refreshList();
         if (isCurrent()) {
@@ -111,7 +118,7 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
         }
       } catch (error) {
         if (isCurrent()) {
-          setNativeModelError(formatModelSetupError(error));
+          throw error;
         }
       } finally {
         if (isCurrent()) {
@@ -120,13 +127,10 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
         }
       }
     })();
-    try {
-      await saving.present(pending, isCurrent);
-    } catch (error) {
-      if (isCurrent()) {
-        setNativeModelError(formatModelSetupError(error));
-      }
-    }
+    const completion = saving.present(pending, isCurrent).then(() => null);
+    // The error boundary observes this completion; a retired view may no longer read it.
+    void completion.catch(() => {});
+    setNativeMutation({ completion });
   }
 
   function applyNativeCatalog(catalog: ModelCatalogResult): void {
@@ -204,7 +208,7 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
     reset,
     models: () => nativeModels,
     selected: nativeModel,
-    modelError: nativeModelError,
+    mutation: nativeMutation,
     catalogError: nativeCatalogError,
     catalogStatus: nativeModelsStatus,
     setSelected: setNativeModel,
@@ -276,11 +280,9 @@ export function NativeModelSetupView(props: { owner: NativeModelSetup }) {
       >
         {t(props.owner.saving ? "modelSetup.nativeModels.saving" : "modelSetup.nativeModels.use")}
       </button>
-      {props.owner.modelError() ? (
-        <div class="callout danger" role="alert">
-          {props.owner.modelError()}
-        </div>
-      ) : undefined}
+      <Show when={props.owner.mutation()} keyed>
+        {(mutation) => <NativeModelMutationStatus completion={mutation.completion} />}
+      </Show>
       {props.owner.catalogError() ? (
         <div class="callout danger" role="alert">
           {props.owner.catalogError()}
@@ -295,6 +297,21 @@ export function NativeModelSetupView(props: { owner: NativeModelSetup }) {
         </div>
       ) : undefined}
     </>,
+  );
+}
+
+function NativeModelMutationStatus(props: { completion: Promise<null> }) {
+  const completion = createMemo(() => props.completion);
+  return (
+    <Errored
+      fallback={(error) => (
+        <div class="callout danger" role="alert">
+          {formatModelSetupError(error())}
+        </div>
+      )}
+    >
+      <Loading>{completion()}</Loading>
+    </Errored>
   );
 }
 

@@ -136,6 +136,8 @@ export function createModelSetup(
     getClient: () => context.gateway.snapshot.client,
     getAgentId: () => agentSelection().state.selectedId,
     onChange: (next) => {
+      // Show the next server step while the admitted write still reconciles config.
+      wizardSaving.retire();
       if (next.phase !== "starting" && next.phase !== "done") {
         state.activationState = { phase: "idle" };
       }
@@ -562,7 +564,10 @@ export function createModelSetup(
       activation: state.activationState,
       verify: state.verifyState,
       connection: props.embedded ? undefined : login.pageActions,
-      wizard: state.wizardState,
+      wizard:
+        state.wizardState.phase === "step" && wizardMutationActive
+          ? { ...state.wizardState, busy: true }
+          : state.wizardState,
       wizardMode: state.wizardMode,
       wizardValue: state.wizardDraft.value,
       canAdmin,
