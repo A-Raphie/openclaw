@@ -2102,24 +2102,6 @@ async function main() {
     toolingTrackedStatus: gitTrackedStatus(TOOLING_ROOT),
     workflowRef: options.workflowRef,
   });
-  validateReleaseScenarioCatalogCompatibility({
-    candidateCatalog: run("git", ["show", `${targetSha}:${UPGRADE_SURVIVOR_CATALOG_PATH}`], {
-      capture: true,
-      cwd: targetRoot,
-    }),
-    toolingCatalog: run("git", ["show", `${toolingSha}:${UPGRADE_SURVIVOR_CATALOG_PATH}`], {
-      capture: true,
-      cwd: targetRoot,
-    }),
-    latestTrustedToolingCatalog: run(
-      "git",
-      ["show", `${latestTrustedToolingSha}:${UPGRADE_SURVIVOR_CATALOG_PATH}`],
-      { capture: true, cwd: targetRoot },
-    ),
-    toolingSha,
-    latestTrustedToolingSha,
-    workflowRef: options.workflowRef,
-  });
   // Publication may use repaired tooling while the prepared tarball retains its original producer.
   const statePath = join(options.outputDir, RELEASE_CANDIDATE_STATE_FILE);
   const hasRetainedRequest = existsSync(join(options.outputDir, "frv-request.json"));
@@ -2212,6 +2194,26 @@ async function main() {
   // A new dispatch is gated by the local check; consuming existing evidence
   // defers it until the SDK acknowledgement has been checked.
   const dispatchesValidation = !options.fullReleaseRunId && !options.skipDispatch;
+  if (dispatchesValidation) {
+    validateReleaseScenarioCatalogCompatibility({
+      candidateCatalog: run("git", ["show", `${targetSha}:${UPGRADE_SURVIVOR_CATALOG_PATH}`], {
+        capture: true,
+        cwd: targetRoot,
+      }),
+      toolingCatalog: run("git", ["show", `${toolingSha}:${UPGRADE_SURVIVOR_CATALOG_PATH}`], {
+        capture: true,
+        cwd: targetRoot,
+      }),
+      latestTrustedToolingCatalog: run(
+        "git",
+        ["show", `${latestTrustedToolingSha}:${UPGRADE_SURVIVOR_CATALOG_PATH}`],
+        { capture: true, cwd: targetRoot },
+      ),
+      toolingSha,
+      latestTrustedToolingSha,
+      workflowRef: options.workflowRef,
+    });
+  }
   let localGeneratedCheck = dispatchesValidation
     ? runLocalGeneratedCheckIfNeeded(options)
     : undefined;
