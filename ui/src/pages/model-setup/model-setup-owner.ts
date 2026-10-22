@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onSettled } from "solid-js";
+import { createEffect, createSignal, latest, onSettled } from "solid-js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type {
   SystemAgentSetupActivateParams,
@@ -48,6 +48,8 @@ export function createModelSetup(
   props: ModelSetupPageProps & { host: HTMLElement },
   context: ApplicationContext,
 ) {
+  // Leaving setup retires its owner even while a saving action holds the displayed frame.
+  const routeData = () => latest(() => props.routeData);
   const projection = observeState(createModelSetupState());
   const state = projection.state;
   let connected = false;
@@ -68,7 +70,7 @@ export function createModelSetup(
       state.wizardState.phase !== "cancelled");
 
   function agentSelection() {
-    return modelSetupAgentSelection(context, props.routeData?.firstRun === true);
+    return modelSetupAgentSelection(context, routeData()?.firstRun === true);
   }
 
   let observedConnection: ReturnType<typeof captureModelSetupConnection> | null = null;
@@ -87,7 +89,7 @@ export function createModelSetup(
   const wizardSaving = createModelSetupSaving(readConnection);
   const firstRun = new FirstRunSetup({
     context: () => context,
-    routeData: () => props.routeData,
+    routeData,
     pageState: () => state.pageState,
     activationState: () => state.activationState,
     actionsDisabled: () => actionsDisabled() || state.detectionRequest !== null,
@@ -230,15 +232,15 @@ export function createModelSetup(
     firstRun.start();
   }
 
-  function synchronizeGateway(routeData: ModelSetupPageProps["routeData"]): void {
-    if (!connected || !routeData) {
+  function synchronizeGateway(currentRoute: ModelSetupPageProps["routeData"]): void {
+    if (!connected || !currentRoute) {
       return;
     }
     const snapshot = context.gateway.snapshot;
     const previous = observedConnection;
     const observation = reconcileModelSetupConnection(
       previous,
-      captureModelSetupConnection(context, routeData.firstRun, previous?.recoveryScope),
+      captureModelSetupConnection(context, currentRoute.firstRun, previous?.recoveryScope),
     );
     if (observation.kind === "unchanged") {
       return;
@@ -312,7 +314,7 @@ export function createModelSetup(
     const snapshot = context.gateway.snapshot;
     return Boolean(
       client &&
-      (props.routeData?.firstRun === true || agentSelection().state.selectedId !== null) &&
+      (routeData()?.firstRun === true || agentSelection().state.selectedId !== null) &&
       snapshot.phase === "connected" &&
       hasOperatorAdminAccess(snapshot.hello?.auth ?? null) &&
       isGatewayMethodAdvertised(snapshot, "openclaw.setup.detect") === true,
@@ -597,7 +599,7 @@ export function createModelSetup(
       onNativeSessionCatalogsChange: (enabled: boolean) => {
         state.nativeSessionCatalogsEnabled = enabled;
       },
-      firstRun: props.routeData?.firstRun === true,
+      firstRun: routeData()?.firstRun === true,
       iconUrls: state.iconUrls,
       onDetect: () => {
         if (!state.detectionRequest && firstRun.retryDetection()) {
@@ -658,16 +660,16 @@ export function createModelSetup(
     };
   };
   const synchronizeCurrentGateway = () => {
-    synchronizeGateway(props.routeData);
+    synchronizeGateway(routeData());
     login.synchronizePresentation();
     notify();
   };
   createEffect(
-    () => [props.routeData, agentSelection()],
-    ([routeData, selection]) => {
+    () => [routeData(), agentSelection()],
+    ([currentRoute, selection]) => {
       // Selection receipts retire wizard ownership before another setup action can run.
       const stop = selection.subscribe(synchronizeCurrentGateway);
-      synchronizeGateway(routeData);
+      synchronizeGateway(currentRoute);
       notify();
       return stop;
     },
