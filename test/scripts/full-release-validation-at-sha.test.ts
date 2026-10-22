@@ -212,11 +212,13 @@ describe("full-release-validation-at-sha", () => {
     expect(fixture.dispatches()).toHaveLength(2);
   });
 
-  it("rejects a candidate that is an open same-repository PR head", () => {
+  it("rejects a main-ancestor candidate that is an open same-repository PR head", () => {
     const fixture = createDispatchFixture({
       candidateOwned: true,
       candidateOpenPrHead: true,
+      includeTargetRef: false,
     });
+    runGit(fixture.checkout, ["push", "origin", `${fixture.targetSha}:refs/heads/main`]);
     const result = fixture.run([
       "--workflow-sha",
       fixture.targetSha,

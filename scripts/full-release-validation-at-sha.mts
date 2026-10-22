@@ -676,7 +676,7 @@ function preflightTargetShaFetch(targetSha: string) {
   }
 }
 
-export function validateCandidateSigningProvenance(targetSha: string, metadata: unknown) {
+function candidateCommitMetadata(targetSha: string, metadata: unknown) {
   requireDispatch(isJsonRecord(metadata), `Candidate ${targetSha} signing metadata is missing`);
   const repository = metadata.data;
   const object =
@@ -687,6 +687,18 @@ export function validateCandidateSigningProvenance(targetSha: string, metadata: 
     isJsonRecord(object) && object.oid === targetSha,
     `Candidate ${targetSha} signing metadata does not match the requested commit`,
   );
+  const associatedPullRequests = isJsonRecord(object.associatedPullRequests)
+    ? object.associatedPullRequests.nodes
+    : undefined;
+  requireDispatch(
+    Array.isArray(associatedPullRequests),
+    `Candidate ${targetSha} merged pull request metadata is missing`,
+  );
+  return { object, associatedPullRequests };
+}
+
+export function validateCandidateSigningProvenance(targetSha: string, metadata: unknown) {
+  const { object, associatedPullRequests } = candidateCommitMetadata(targetSha, metadata);
   const signature = object.signature;
   const signer =
     isJsonRecord(signature) && isJsonRecord(signature.signer) ? signature.signer.login : undefined;
@@ -700,13 +712,6 @@ export function validateCandidateSigningProvenance(targetSha: string, metadata: 
       `Release candidate ${targetSha} has an invalid commit signature`,
     );
   }
-  const associatedPullRequests = isJsonRecord(object.associatedPullRequests)
-    ? object.associatedPullRequests.nodes
-    : undefined;
-  requireDispatch(
-    Array.isArray(associatedPullRequests),
-    `Candidate ${targetSha} merged pull request metadata is missing`,
-  );
   return {
     signatureStatus: signature === null ? ("missing" as const) : ("valid" as const),
     signer: typeof signer === "string" ? signer : "",
@@ -819,10 +824,6 @@ function preflightCandidateSigningProvenance(
 ): string | undefined {
   const trustReason = candidateTrustReason(targetSha, targetContextRef);
   requireDispatch(trustReason, `Release candidate ${targetSha} is not trusted release provenance`);
-  if (trustReason === "main-ancestor") {
-    console.log(`Release candidate provenance verified for ${targetSha} (main-ancestor)`);
-    return undefined;
-  }
   const [owner, name] = REPOSITORY.split("/");
   const metadata: unknown = JSON.parse(
     runGh([
@@ -840,10 +841,9 @@ function preflightCandidateSigningProvenance(
       `oid=${targetSha}`,
     ]),
   );
-  const provenance = validateCandidateSigningProvenance(targetSha, metadata);
-  let actor = provenance.signer;
+  const { associatedPullRequests } = candidateCommitMetadata(targetSha, metadata);
   requireDispatch(
-    !provenance.associatedPullRequests.some(
+    !associatedPullRequests.some(
       (pullRequest) =>
         isJsonRecord(pullRequest) &&
         pullRequest.state === "OPEN" &&
@@ -853,6 +853,12 @@ function preflightCandidateSigningProvenance(
     ),
     `Release candidate ${targetSha} is an open same-repository PR head`,
   );
+  if (trustReason === "main-ancestor") {
+    console.log(`Release candidate provenance verified for ${targetSha} (main-ancestor)`);
+    return undefined;
+  }
+  const provenance = validateCandidateSigningProvenance(targetSha, metadata);
+  let actor = provenance.signer;
   if (provenance.signatureStatus === "missing" || actor === "web-flow") {
     requireDispatch(
       trustReason === "release-branch",
