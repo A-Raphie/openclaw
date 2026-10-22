@@ -131,9 +131,9 @@ export function createNativeModelSetup(options: NativeModelSetupOptions) {
         if (!isCurrent()) {
           return;
         }
-        const result = mutation.ok ? mutation.refresh : mutation;
-        if (!result.ok) {
-          throw new Error(result.error);
+        const outcome = mutation.ok ? mutation.refresh : mutation;
+        if (!outcome.ok) {
+          throw new Error(outcome.error);
         }
         await context.agents.refreshList();
         if (isCurrent()) {

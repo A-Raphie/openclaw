@@ -30,7 +30,9 @@ export function createModelSetupSaving(getConnection: () => ModelSetupConnection
       const view = presentation();
       const retired = lifetime.promise;
       // Let the admitted owner's controls mount before joining the transition.
-      await new Promise<void>((resolve) => onSettled(resolve));
+      await new Promise<void>((resolve) => {
+        onSettled(resolve);
+      });
       await present(view, pending, retired, isCurrent);
     },
   };
