@@ -1,5 +1,5 @@
-import { RastermillUnavailableError } from "rastermill";
 import { describe, expect, it } from "vitest";
+import { isImageProcessorUnavailableError } from "../media/image-ops.js";
 import { normalizeImageDescriptionInput } from "./image-input-normalize.js";
 
 // Real 1x1 AVIF and HEIC attachments (generated with macOS sips). These exercise
@@ -21,13 +21,14 @@ function assertJpeg(buffer: Buffer): void {
 }
 
 // HEIC/AVIF decoding goes through native OS codecs, so these tests only run on
-// codec-equipped runtimes; Rastermill reports the format as unavailable elsewhere.
+// codec-equipped runtimes; encodeImage surfaces backend-missing cases as the
+// repo's unavailable error (which also covers the raw Rastermill signal).
 async function codecConverts(buffer: Buffer, mime: string): Promise<boolean> {
   try {
     await normalizeImageDescriptionInput({ buffer, mime });
     return true;
   } catch (error) {
-    if (error instanceof RastermillUnavailableError) {
+    if (isImageProcessorUnavailableError(error)) {
       return false;
     }
     throw error;
