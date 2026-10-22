@@ -182,6 +182,35 @@ describe("full-release-validation-at-sha", () => {
     expect(fixture.dispatches()).toEqual([]);
   });
 
+  it("discovers release-tag provenance for a signed SHA-only candidate", () => {
+    const fixture = createDispatchFixture({
+      candidateOwned: true,
+      includeTargetRef: false,
+    });
+    runGit(fixture.checkout, ["tag", "v2026.8.1", fixture.targetSha]);
+    runGit(fixture.checkout, ["push", "origin", "refs/tags/v2026.8.1"]);
+    const result = fixture.run([
+      "--workflow-sha",
+      fixture.targetSha,
+      "-f",
+      "validation_purpose=publish",
+      "-f",
+      `publication_selection_json=${JSON.stringify({
+        route: "normal",
+        npmDistTag: "latest",
+        publishOpenclawNpm: true,
+        pluginPublishScope: "all-publishable",
+        plugins: [],
+      })}`,
+    ]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      `Release candidate provenance verified for ${fixture.targetSha}`,
+    );
+    expect(fixture.dispatches()).toHaveLength(2);
+  });
+
   it("rejects an unsigned publication candidate without exact merge attribution", () => {
     const fixture = createDispatchFixture({
       candidateOwned: true,

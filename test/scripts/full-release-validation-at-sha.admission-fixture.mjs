@@ -135,6 +135,7 @@ export async function respond(args, config) {
           : config.options.admissionRevokedActor && !active
             ? "read"
             : "write",
+        role_name: config.options.admissionRevokedActor && !active ? "write" : "maintain",
         user: actor,
       });
     }

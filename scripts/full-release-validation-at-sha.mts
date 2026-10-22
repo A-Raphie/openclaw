@@ -736,6 +736,22 @@ function exactCandidateMergeActors(targetSha: string, values: unknown[]) {
 
 type CandidateTrustReason = "main-ancestor" | "release-branch" | "release-tag";
 
+function assertCandidateActorPermission(actor: string): void {
+  const permission: unknown = JSON.parse(
+    runGh([
+      "api",
+      "-H",
+      GH_NO_CACHE_HEADER,
+      `repos/${REPOSITORY}/collaborators/${encodeURIComponent(actor)}/permission`,
+    ]),
+  );
+  requireDispatch(
+    isJsonRecord(permission) &&
+      (permission.permission === "admin" || permission.role_name === "maintain"),
+    `Release candidate actor ${actor} lacks maintain/admin access`,
+  );
+}
+
 function candidateTrustReason(
   targetSha: string,
   targetContextRef: string,
@@ -780,15 +796,31 @@ function candidateTrustReason(
   if (branches.length === 1) {
     return "release-branch";
   }
+  const matchingTags = run("git", ["ls-remote", "--tags", "origin", "refs/tags/v*"])
+    .split("\n")
+    .flatMap((line) => {
+      const match = /^([a-f0-9]{40})\s+refs\/tags\/(v[^\s]+?)(?:\^\{\})?$/u.exec(line);
+      if (!match || match[1] !== targetSha) {
+        return [];
+      }
+      const context = parseReleaseContextRef(match[2]);
+      return context?.kind === "release tag" ? [context.ref] : [];
+    });
+  if (new Set(matchingTags).size === 1) {
+    return "release-tag";
+  }
   return undefined;
 }
 
-function preflightCandidateSigningProvenance(targetSha: string, targetContextRef: string): void {
+function preflightCandidateSigningProvenance(
+  targetSha: string,
+  targetContextRef: string,
+): string | undefined {
   const trustReason = candidateTrustReason(targetSha, targetContextRef);
   requireDispatch(trustReason, `Release candidate ${targetSha} is not trusted release provenance`);
   if (trustReason === "main-ancestor") {
     console.log(`Release candidate provenance verified for ${targetSha} (main-ancestor)`);
-    return;
+    return undefined;
   }
   const [owner, name] = REPOSITORY.split("/");
   const metadata: unknown = JSON.parse(
@@ -846,20 +878,9 @@ function preflightCandidateSigningProvenance(targetSha: string, targetContextRef
     );
     actor = actors[0]!;
   }
-  const permission: unknown = JSON.parse(
-    runGh([
-      "api",
-      "-H",
-      GH_NO_CACHE_HEADER,
-      `repos/${REPOSITORY}/collaborators/${encodeURIComponent(actor)}/permission`,
-    ]),
-  );
-  requireDispatch(
-    isJsonRecord(permission) &&
-      (permission.permission === "admin" || permission.role_name === "maintain"),
-    `Release candidate actor ${actor} lacks maintain/admin access`,
-  );
+  assertCandidateActorPermission(actor);
   console.log(`Release candidate provenance verified for ${targetSha}`);
+  return actor;
 }
 
 // pnpm release:candidate applies these gates after validation finishes; check
@@ -1981,9 +2002,10 @@ async function main() {
       }),
     );
   }
-  if (args.inputs.validation_purpose === "publish") {
-    preflightCandidateSigningProvenance(targetSha, targetContextRef);
-  }
+  const candidateAuthorityActor =
+    args.inputs.validation_purpose === "publish"
+      ? preflightCandidateSigningProvenance(targetSha, targetContextRef)
+      : undefined;
   // Read target blobs with trusted tooling before creating the workflow ref.
   validatePackageSourceRef(targetSha, {
     allowUnreleasedChangelog: args.inputs.allow_unreleased_changelog === "true",
@@ -2102,6 +2124,7 @@ async function main() {
     workflowSha,
     branch,
     selection,
+    candidateAuthorityActor,
     admissionWorkflowSha,
   });
 }
@@ -2113,9 +2136,11 @@ async function executeFrozenDispatch(options: {
   workflowSha: string;
   branch: string;
   selection: ReturnType<typeof resolveDispatchSelection>;
+  candidateAuthorityActor?: string;
   admissionWorkflowSha?: string;
 }) {
-  const { args, requestPath, workflowSha, branch, admissionWorkflowSha } = options;
+  const { args, requestPath, workflowSha, branch, admissionWorkflowSha, candidateAuthorityActor } =
+    options;
   let { record, selection } = options;
   console.log(
     formatDispatchSelection(
@@ -2180,6 +2205,9 @@ async function executeFrozenDispatch(options: {
             pinned.object.sha === workflowSha,
           "Candidate qualification transport ref moved before dispatch",
         );
+        if (!args.dryRun && candidateAuthorityActor) {
+          assertCandidateActorPermission(candidateAuthorityActor);
+        }
       }
       if (record) {
         retain({ ...record, phase: "attempted", refs: { workflow: "created" } });
