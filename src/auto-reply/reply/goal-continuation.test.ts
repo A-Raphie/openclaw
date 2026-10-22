@@ -304,6 +304,12 @@ describe("Goal queue custody", () => {
     expect(await enqueueGoalContinuation(f.params)).toBe(false);
     expect(enqueueFollowupRun).not.toHaveBeenCalled();
   });
+  it("does not fail the completed turn when fresh session state cannot be read", async () => {
+    const f = fixture();
+    vi.mocked(readSessionEntryInWorker).mockRejectedValue(new Error("session read failed"));
+    await expect(enqueueGoalContinuation(f.params)).resolves.toBe(false);
+    expect(enqueueFollowupRun).not.toHaveBeenCalled();
+  });
   it.each(["stop", "new input", "goal replacement"])(
     "rechecks %s after the worker read yields",
     async (change) => {

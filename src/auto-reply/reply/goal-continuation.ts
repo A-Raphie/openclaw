@@ -4,11 +4,15 @@ import { accountSessionGoalUsage } from "../../config/sessions/goals-transitions
 import { readSessionEntryInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { resolveSessionWorkerPlacementContext } from "../../gateway/session-worker-placement-context.js";
+import { formatErrorMessage } from "../../infra/errors.js";
+import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { formatSystemTurnPrompt } from "../../sessions/system-turn-prompt.js";
 import { SkillLibraryError } from "../../skills/library/errors.js";
 import { enqueueFollowupRun, getFollowupQueueDepth } from "./queue/enqueue.js";
 import { isFollowupRunAborted, type FollowupRun, type QueueSettings } from "./queue/types.js";
 import { runAfterReplyOperationClear, type ReplyOperation } from "./reply-run-registry.js";
+
+const log = createSubsystemLogger("auto-reply/goal-continuation");
 
 export type GoalContinuation = Pick<SessionEntry, "sessionId" | "lifecycleRevision"> & {
   goalId: string;
@@ -107,7 +111,7 @@ function isGoalContinuationOutcome(result: EmbeddedAgentRunResult): boolean {
 }
 
 /** Queue custody, not a second scheduler, owns every automatic Goal turn. */
-export async function enqueueGoalContinuation(params: {
+type EnqueueGoalContinuationParams = {
   base: FollowupRun;
   result: EmbeddedAgentRunResult;
   initialGoalId?: string;
@@ -119,7 +123,11 @@ export async function enqueueGoalContinuation(params: {
   sourceRunId: string;
   operation: ReplyOperation;
   runFollowup: (run: FollowupRun) => Promise<void>;
-}): Promise<boolean> {
+};
+
+async function enqueueGoalContinuationUnsafe(
+  params: EnqueueGoalContinuationParams,
+): Promise<boolean> {
   const eligible = () =>
     !params.operation.abortSignal.aborted &&
     params.operation.result?.kind !== "failed" &&
@@ -241,4 +249,16 @@ export async function enqueueGoalContinuation(params: {
     });
   }
   return enqueued;
+}
+
+/** Goal scheduling is optional and must not change the completed source turn's outcome. */
+export async function enqueueGoalContinuation(
+  params: EnqueueGoalContinuationParams,
+): Promise<boolean> {
+  try {
+    return await enqueueGoalContinuationUnsafe(params);
+  } catch (error) {
+    log.warn(`goal continuation scheduling failed: ${formatErrorMessage(error)}`);
+    return false;
+  }
 }
