@@ -38,7 +38,7 @@ export type ChatSessionSharingModePresentation = Record<
 
 type ChatSessionSharingPermissionRow = {
   identity: SessionSharingIdentity;
-  membershipLabel: string;
+  controlLabel: string;
   selected: boolean;
   /** Fixed creator/admin rows remain visible, subdued and non-editable. */
   fixed?: boolean;
@@ -307,7 +307,7 @@ function SharingPermissionRow(props: {
         class="chat-sharing-mobile__permission"
         role="checkbox"
         aria-checked={props.row.selected ? "true" : "false"}
-        aria-label={`${name()}, ${props.row.membershipLabel}`}
+        aria-label={`${name()}, ${props.row.controlLabel}`}
         aria-disabled={unavailable() ? "true" : undefined}
         aria-description={
           props.row.disabledReason ?? (props.data.loading ? t("common.loading") : undefined)
@@ -320,7 +320,7 @@ function SharingPermissionRow(props: {
           }
         }}
       >
-        <span>{props.row.membershipLabel}</span>
+        <span>{props.row.controlLabel}</span>
         <span class="chat-sharing-mobile__check" aria-hidden="true">
           <Show when={props.row.selected}>
             <Icon name="check" />

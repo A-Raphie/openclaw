@@ -215,6 +215,54 @@ describe("chat session sharing menu", () => {
     expect(root.querySelectorAll(".chat-pane__sharing-person")).toHaveLength(1);
   });
 
+  it("shows explicit membership without inventing roles for other known people", async () => {
+    const onMemberChange = vi.fn();
+    const directoryMember = human("directory-member", "Morgan Member");
+    const addedMember = human("added-member", "Alex Added");
+    const result = {
+      owner,
+      identities: [directoryMember, addedMember],
+      members: [{ identityId: addedMember.id, addedBy: owner.id, addedAt: 1 }],
+    };
+    const props = renderSharing({ state: sharingState(result), onMemberChange });
+    const root = await mount(props);
+    const ownerRow = root.querySelector<HTMLElement>('[data-value="member:owner"]')!;
+    const addedRow = item(root, "member:added-member")!;
+    const directoryRow = item(root, "member:directory-member")!;
+    expect(part(ownerRow, "sharing-permission")?.textContent).toBe("Owner");
+    expect(part(addedRow, "sharing-permission")?.textContent).toBe("Member");
+    expect(addedRow.getAttribute("aria-checked")).toBe("true");
+    expect(part(directoryRow, "sharing-permission")?.textContent).toBe("Add");
+    expect(directoryRow.getAttribute("aria-checked")).toBe("false");
+    expect(onMemberChange).not.toHaveBeenCalled();
+
+    directoryRow.click();
+    expect(onMemberChange).toHaveBeenLastCalledWith(directoryMember.id, true);
+    expect(directoryRow.getAttribute("aria-checked")).toBe("false");
+    render(
+      {
+        ...props,
+        state: sharingState({
+          ...result,
+          members: [
+            ...result.members,
+            { identityId: directoryMember.id, addedBy: owner.id, addedAt: 2 },
+          ],
+        }),
+      },
+      root,
+    );
+    expect(item(root, "member:directory-member")).toBe(directoryRow);
+    expect(part(directoryRow, "sharing-permission")?.textContent).toBe("Member");
+    expect(directoryRow.getAttribute("aria-checked")).toBe("true");
+    directoryRow.click();
+    expect(onMemberChange).toHaveBeenLastCalledWith(directoryMember.id, false);
+    render(props, root);
+    expect(part(directoryRow, "sharing-permission")?.textContent).toBe("Add");
+    expect(directoryRow.getAttribute("aria-checked")).toBe("false");
+    expect(onMemberChange).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps a world-readable draft session visibly public after its menu closes", async () => {
     const session = sharingSession({ visibility: "draft" });
     const state = sharingState({

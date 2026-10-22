@@ -158,7 +158,10 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
   await Promise.resolve();
   expect(toggle.checked).toBe(false);
   expect(view.getByText("Session members")).toBeDefined();
-  const permission = view.getByRole("checkbox", { name: "Pat Member, Visitor" });
+  const permission = view.getByRole("checkbox", { name: "Pat Member, Add" });
+  expect(permission.getAttribute("aria-checked")).toBe("false");
+  expect(permission.textContent?.trim()).toBe("Add");
+  expect(member).not.toHaveBeenCalled();
   permission.focus();
   setSource({ ...initial, state: { ...initial.state!, loading: true } });
   flush();
@@ -183,6 +186,28 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
   permission.click();
   expect(member).toHaveBeenCalledExactlyOnceWith("member", true);
   expect(view.getByRole("checkbox", { name: /^Owner,/ }).hasAttribute("disabled")).toBe(true);
+  setSource((current) => ({
+    ...current,
+    state: {
+      ...current.state!,
+      result: {
+        ...current.state!.result!,
+        members: [{ identityId: "member", addedBy: "owner", addedAt: 1 }],
+      },
+    },
+  }));
+  flush();
+  expect(view.getByRole("checkbox", { name: "Pat Member, Member" })).toBe(permission);
+  expect(permission.getAttribute("aria-checked")).toBe("true");
+  permission.click();
+  expect(member).toHaveBeenLastCalledWith("member", false);
+  setSource((current) => ({
+    ...current,
+    state: { ...current.state!, result: { ...current.state!.result!, members: [] } },
+  }));
+  flush();
+  expect(view.getByRole("checkbox", { name: "Pat Member, Add" })).toBe(permission);
+  expect(permission.getAttribute("aria-checked")).toBe("false");
   const copyButton = view.getByRole("button", { name: "Copy public link" });
   expect(copyButton.textContent).toContain(url);
   copyButton.click();
@@ -192,7 +217,7 @@ it("keeps Public confirmed until its owner publishes and preserves membership fo
   expect(adapter.available).toBe(false);
   expect(toggle.disabled).toBe(true);
   permission.click();
-  expect(member).toHaveBeenCalledTimes(1);
+  expect(member).toHaveBeenCalledTimes(2);
 });
 
 it("replaces initial permission loading with people and retains them through refresh and failure", () => {
@@ -208,14 +233,14 @@ it("replaces initial permission loading with people and retains them through ref
     return <ChatSessionSharingMobile {...adapter.sharing} />;
   });
   expect(view.getByRole("status", { name: "Loading…" }).getAttribute("aria-busy")).toBe("true");
-  expect(view.queryByRole("checkbox", { name: /^Pat Member,/ })).toBeNull();
+  expect(view.queryByRole("checkbox", { name: "Pat Member, Add" })).toBeNull();
   setSource(initial);
   flush();
-  const person = view.getByRole("checkbox", { name: /^Pat Member,/ });
+  const person = view.getByRole("checkbox", { name: "Pat Member, Add" });
   expect(view.queryByRole("status", { name: "Loading…" })).toBeNull();
   setSource({ ...initial, state: { ...initial.state!, loading: true } });
   flush();
-  expect(view.getByRole("checkbox", { name: /^Pat Member,/ })).toBe(person);
+  expect(view.getByRole("checkbox", { name: "Pat Member, Add" })).toBe(person);
   expect(person.getAttribute("aria-disabled")).toBe("true");
   expect(view.queryByRole("status", { name: "Loading…" })).toBeNull();
   setSource({
@@ -224,5 +249,5 @@ it("replaces initial permission loading with people and retains them through ref
   });
   flush();
   expect(view.getByRole("alert").textContent).toContain("Permission refresh failed");
-  expect(view.getByRole("checkbox", { name: /^Pat Member,/ })).toBe(person);
+  expect(view.getByRole("checkbox", { name: "Pat Member, Add" })).toBe(person);
 });

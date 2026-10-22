@@ -182,16 +182,6 @@ export const CHAT_SESSION_SHARING_DESCRIPTION_KEYS: Record<SessionVisibility, st
   draft: "chat.sessionSharing.draftDescription",
 };
 
-export function chatSessionMembershipLabel(owner: boolean, member: boolean) {
-  return t(
-    owner
-      ? "chat.sessionSharing.owner"
-      : member
-        ? "chat.sessionSharing.member"
-        : "chat.sessionSharing.visitor",
-  );
-}
-
 export function projectChatSessionSharingRoster(props: ChatSessionSharingProps) {
   const result = props.state?.result;
   const creator = result?.owner;
@@ -199,7 +189,7 @@ export function projectChatSessionSharingRoster(props: ChatSessionSharingProps) 
   const others = (result?.identities ?? [])
     .filter((person) => person.id !== creator?.id)
     .toSorted((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id));
-  // Membership is not effective permission. The Gateway does not yet project that fact.
+  // Only explicit session membership is known here; an absent grant says nothing about account roles.
   return (creator ? [creator, ...others] : others).map((identity) => {
     const fixed = identity.id === creator?.id;
     const selected = fixed || members.has(identity.id);
@@ -207,7 +197,11 @@ export function projectChatSessionSharingRoster(props: ChatSessionSharingProps) 
       identity,
       fixed,
       selected,
-      membershipLabel: chatSessionMembershipLabel(fixed, selected),
+      controlLabel: fixed
+        ? t("chat.sessionSharing.owner")
+        : selected
+          ? t("chat.sessionSharing.member")
+          : t("chat.sessionSharing.addMember"),
       disabledReason: fixed
         ? t("chat.sessionSharing.owner")
         : props.state?.loading

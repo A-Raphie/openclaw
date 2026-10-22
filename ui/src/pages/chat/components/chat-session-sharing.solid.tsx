@@ -29,7 +29,6 @@ import {
   canManageChatSessionSharing,
   ChatSessionSharingModeIcon,
   projectChatSessionSharingRoster,
-  chatSessionMembershipLabel,
 } from "./chat-session-sharing-shared.tsx";
 
 registerEnglishCatalog(registerChatSessionEnglish);
@@ -99,15 +98,14 @@ function useDesktopSharing(props: ChatSessionSharingProps, controls: MenuControl
   const visibility = () => props.session?.visibility ?? "shared";
   const result = () => props.state?.result;
   const creator = () => result()?.owner;
-  const members = createMemo(() => new Set(result()?.members.map((member) => member.identityId)));
-  const people = createMemo(() =>
-    projectChatSessionSharingRoster(props).map((row) => row.identity),
-  );
+  const people = createMemo(() => projectChatSessionSharingRoster(props));
   const matches = createMemo(() => {
     const terms = query().trim().toLocaleLowerCase().split(/\s+/u);
-    return people().filter((person) =>
+    return people().filter(({ identity }) =>
       terms.every((term) =>
-        `${person.label ?? ""} ${person.id} ${person.type}`.toLocaleLowerCase().includes(term),
+        `${identity.label ?? ""} ${identity.id} ${identity.type}`
+          .toLocaleLowerCase()
+          .includes(term),
       ),
     );
   });
@@ -182,11 +180,11 @@ function useDesktopSharing(props: ChatSessionSharingProps, controls: MenuControl
     () =>
       mapArray(
         matches,
-        (person) => {
-          const isCreator = () => person().id === creator()?.id;
-          const selected = () => isCreator() || members().has(person().id);
-          const reason = () =>
-            selected() ? props.memberRemoveDisabledReason : props.memberAddDisabledReason;
+        (row) => {
+          const person = () => row().identity;
+          const isCreator = () => row().fixed;
+          const selected = () => row().selected;
+          const reason = () => row().disabledReason;
           const activity = () =>
             personActivityLink(
               creator()?.identity?.type === "profile" ? creator()?.identity?.id : undefined,
@@ -227,9 +225,7 @@ function useDesktopSharing(props: ChatSessionSharingProps, controls: MenuControl
                   class="chat-pane__sharing-member-label"
                 />
               </Show>
-              <span class="chat-pane__sharing-permission">
-                {chatSessionMembershipLabel(isCreator(), selected())}
-              </span>
+              <span class="chat-pane__sharing-permission">{row().controlLabel}</span>
               <span
                 class="chat-pane__sharing-member-check"
                 aria-label={selected() ? t("chat.sessionSharing.selected") : undefined}
@@ -285,7 +281,7 @@ function useDesktopSharing(props: ChatSessionSharingProps, controls: MenuControl
             { lazy: true },
           );
         },
-        { keyed: (person) => person.id },
+        { keyed: (row) => row.identity.id },
       ),
     { lazy: true },
   );

@@ -269,7 +269,7 @@ const enChatSession = {
       sessionMembers: "Session members",
       creator: "Creator",
       member: "Member",
-      visitor: "Visitor",
+      addMember: "Add",
       searchPeople: "Search people…",
       closeSearch: "Close search",
       noPeopleFound: "No people found",
