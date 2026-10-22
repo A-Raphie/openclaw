@@ -493,7 +493,8 @@ export async function recoverInterruptedSubagentRow(
           sessionEntry.restartRecoveryDisableMessageTool !== true &&
           sessionEntry.restartRecoverySuppressTextDelivery !== true;
         const retainedSafeTools =
-          sessionEntry.restartRecoveryForceSafeTools === true && !fullAccess;
+          sessionEntry.mainRestartRecovery?.safeToolsRequired === true ||
+          (sessionEntry.restartRecoveryForceSafeTools === true && !fullAccess);
         const policy = resolveMainSessionResumePolicy(
           messages,
           retainedSafeTools,
