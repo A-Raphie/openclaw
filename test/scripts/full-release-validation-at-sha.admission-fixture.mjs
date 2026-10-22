@@ -110,7 +110,11 @@ export async function respond(args, config) {
     }
     if (route === "collaborators/release-operator/permission") {
       return JSON.stringify({
-        permission: config.options.admissionRevokedActor && !active ? "read" : "write",
+        permission: config.options.candidateSignature
+          ? "admin"
+          : config.options.admissionRevokedActor && !active
+            ? "read"
+            : "write",
         user: actor,
       });
     }

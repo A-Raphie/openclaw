@@ -676,7 +676,7 @@ function preflightTargetShaFetch(targetSha: string) {
   }
 }
 
-export function validateCandidateSigningProvenance(targetSha: string, metadata: unknown): void {
+export function validateCandidateSigningProvenance(targetSha: string, metadata: unknown) {
   requireDispatch(isJsonRecord(metadata), `Candidate ${targetSha} signing metadata is missing`);
   const repository = metadata.data;
   const object =
@@ -690,18 +690,51 @@ export function validateCandidateSigningProvenance(targetSha: string, metadata: 
   const signature = object.signature;
   const signer =
     isJsonRecord(signature) && isJsonRecord(signature.signer) ? signature.signer.login : undefined;
+  if (signature !== null) {
+    requireDispatch(
+      isJsonRecord(signature) &&
+        signature.isValid === true &&
+        signature.state === "VALID" &&
+        typeof signer === "string" &&
+        signer.length > 0,
+      `Release candidate ${targetSha} has an invalid commit signature`,
+    );
+  }
+  const associatedPullRequests = isJsonRecord(object.associatedPullRequests)
+    ? object.associatedPullRequests.nodes
+    : undefined;
   requireDispatch(
-    isJsonRecord(signature) &&
-      signature.isValid === true &&
-      signature.state === "VALID" &&
-      typeof signer === "string" &&
-      signer.length > 0,
-    `Release candidate ${targetSha} requires a valid GitHub-verifiable commit signature before qualification dispatch`,
+    Array.isArray(associatedPullRequests),
+    `Candidate ${targetSha} merged pull request metadata is missing`,
   );
-  console.log(`Release candidate signature verified for ${targetSha}`);
+  return {
+    signatureStatus: signature === null ? ("missing" as const) : ("valid" as const),
+    signer: typeof signer === "string" ? signer : "",
+    subject: stringValue(object.messageHeadline),
+    associatedPullRequests,
+  };
 }
 
-function preflightCandidateSigningProvenance(targetSha: string): void {
+function exactCandidateMergeActors(targetSha: string, values: unknown[]) {
+  return values.flatMap((value) => {
+    if (
+      !isJsonRecord(value) ||
+      value.state !== "MERGED" ||
+      !isJsonRecord(value.baseRepository) ||
+      value.baseRepository.nameWithOwner !== REPOSITORY ||
+      !isJsonRecord(value.mergeCommit) ||
+      value.mergeCommit.oid !== targetSha ||
+      !isJsonRecord(value.mergedBy) ||
+      typeof value.mergedBy.login !== "string" ||
+      !value.mergedBy.login
+    ) {
+      return [];
+    }
+    return [value.mergedBy.login];
+  });
+}
+
+function preflightCandidateSigningProvenance(targetSha: string, targetContextRef: string): void {
   const [owner, name] = REPOSITORY.split("/");
   const metadata: unknown = JSON.parse(
     runGh([
@@ -710,7 +743,7 @@ function preflightCandidateSigningProvenance(targetSha: string): void {
       "-H",
       GH_NO_CACHE_HEADER,
       "-f",
-      "query=query($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){... on Commit{oid signature{isValid state signer{login}}}}}}",
+      "query=query($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){... on Commit{oid messageHeadline signature{isValid state signer{login}} associatedPullRequests(first:100){nodes{state baseRepository{nameWithOwner} mergeCommit{oid} mergedBy{login}}}}}}}",
       "-f",
       `owner=${owner}`,
       "-f",
@@ -719,7 +752,60 @@ function preflightCandidateSigningProvenance(targetSha: string): void {
       `oid=${targetSha}`,
     ]),
   );
-  validateCandidateSigningProvenance(targetSha, metadata);
+  const provenance = validateCandidateSigningProvenance(targetSha, metadata);
+  let actor = provenance.signer;
+  if (provenance.signatureStatus === "missing" || actor === "web-flow") {
+    requireDispatch(
+      /^release\/[0-9]{4}\.[1-9][0-9]*\.[1-9][0-9]*$/u.test(targetContextRef) ||
+        /^extended-stable\/[0-9]{4}\.[1-9][0-9]*\.33$/u.test(targetContextRef),
+      `Unsigned or GitHub web-flow candidate ${targetSha} requires canonical release branch provenance`,
+    );
+    let actors = exactCandidateMergeActors(targetSha, provenance.associatedPullRequests);
+    const match = provenance.subject.match(/\(#([1-9][0-9]*)\)$/u);
+    if (actors.length === 0 && match) {
+      const direct: unknown = JSON.parse(
+        runGh([
+          "api",
+          "graphql",
+          "-H",
+          GH_NO_CACHE_HEADER,
+          "-f",
+          "query=query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){state baseRepository{nameWithOwner} mergeCommit{oid} mergedBy{login}}}}",
+          "-f",
+          `owner=${owner}`,
+          "-f",
+          `name=${name}`,
+          "-F",
+          `number=${match[1]}`,
+        ]),
+      );
+      const repository = isJsonRecord(direct) ? direct.data : undefined;
+      const pullRequest =
+        isJsonRecord(repository) && isJsonRecord(repository.repository)
+          ? repository.repository.pullRequest
+          : undefined;
+      actors = exactCandidateMergeActors(targetSha, [pullRequest]);
+    }
+    requireDispatch(
+      actors.length === 1,
+      `Unsigned or GitHub web-flow candidate ${targetSha} requires one exact merged same-repository PR`,
+    );
+    actor = actors[0]!;
+  }
+  const permission: unknown = JSON.parse(
+    runGh([
+      "api",
+      "-H",
+      GH_NO_CACHE_HEADER,
+      `repos/${REPOSITORY}/collaborators/${encodeURIComponent(actor)}/permission`,
+    ]),
+  );
+  requireDispatch(
+    isJsonRecord(permission) &&
+      (permission.permission === "admin" || permission.role_name === "maintain"),
+    `Release candidate actor ${actor} lacks maintain/admin access`,
+  );
+  console.log(`Release candidate provenance verified for ${targetSha}`);
 }
 
 // pnpm release:candidate applies these gates after validation finishes; check
@@ -1842,7 +1928,7 @@ async function main() {
     );
   }
   if (args.inputs.validation_purpose === "publish") {
-    preflightCandidateSigningProvenance(targetSha);
+    preflightCandidateSigningProvenance(targetSha, targetContextRef);
   }
   // Read target blobs with trusted tooling before creating the workflow ref.
   validatePackageSourceRef(targetSha, {

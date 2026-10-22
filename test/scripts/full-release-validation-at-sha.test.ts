@@ -39,21 +39,31 @@ import {
 } from "./full-release-validation-at-sha.test-support.js";
 
 describe("full-release-validation-at-sha", () => {
-  it("rejects unsigned release candidates before qualification dispatch", () => {
+  it("distinguishes missing signatures from invalid signatures", () => {
     const candidateSha = "a".repeat(40);
     const metadata = (signature: unknown) => ({
-      data: { repository: { object: { oid: candidateSha, signature } } },
+      data: {
+        repository: {
+          object: {
+            oid: candidateSha,
+            signature,
+            messageHeadline: "fixture candidate",
+            associatedPullRequests: { nodes: [] },
+          },
+        },
+      },
     });
 
-    expect(() => validateCandidateSigningProvenance(candidateSha, metadata(null))).toThrow(
-      "requires a valid GitHub-verifiable commit signature",
-    );
+    expect(validateCandidateSigningProvenance(candidateSha, metadata(null))).toMatchObject({
+      signatureStatus: "missing",
+      signer: "",
+    });
     expect(() =>
       validateCandidateSigningProvenance(
         candidateSha,
         metadata({ isValid: false, state: "INVALID", signer: { login: "maintainer" } }),
       ),
-    ).toThrow("requires a valid GitHub-verifiable commit signature");
+    ).toThrow("has an invalid commit signature");
     expect(() =>
       validateCandidateSigningProvenance(
         candidateSha,
@@ -62,7 +72,7 @@ describe("full-release-validation-at-sha", () => {
     ).not.toThrow();
   });
 
-  it("rejects an unsigned publication candidate before remote mutation", () => {
+  it("accepts an unsigned publication candidate with exact maintainer merge attribution", () => {
     const fixture = createDispatchFixture({ candidateOwned: true, candidateSignature: "missing" });
     const result = fixture.run([
       "--workflow-sha",
@@ -79,10 +89,37 @@ describe("full-release-validation-at-sha", () => {
       })}`,
     ]);
 
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain(
+      `Release candidate provenance verified for ${fixture.targetSha}`,
+    );
+    expect(fixture.dispatches()).toHaveLength(2);
+  });
+
+  it("rejects an unsigned publication candidate without exact merge attribution", () => {
+    const fixture = createDispatchFixture({
+      candidateOwned: true,
+      candidateMergeAttribution: false,
+      candidateSignature: "missing",
+    });
+    const result = fixture.run([
+      "--workflow-sha",
+      fixture.targetSha,
+      "-f",
+      "validation_purpose=publish",
+      "-f",
+      `publication_selection_json=${JSON.stringify({
+        route: "normal",
+        npmDistTag: "latest",
+        publishOpenclawNpm: true,
+        pluginPublishScope: "all-publishable",
+        plugins: [],
+      })}`,
+    ]);
+
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("requires a valid GitHub-verifiable commit signature");
+    expect(result.stderr).toContain("requires one exact merged same-repository PR");
     expect(fixture.dispatches()).toEqual([]);
-    expect(fixture.gitCalls().filter((args) => args[0] === "push")).toEqual([]);
   });
 
   it("rejects a missing purpose before remote creation on supporting tooling", () => {

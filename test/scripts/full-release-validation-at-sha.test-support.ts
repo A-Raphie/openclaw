@@ -94,6 +94,7 @@ export function createDispatchFixture(
     targetSource?: Record<string, string>;
     omitPurpose?: boolean;
     unreachableContributionRecord?: boolean;
+    candidateMergeAttribution?: boolean;
     candidateSignature?: "valid" | "missing" | "invalid";
   } = {},
 ) {
@@ -396,11 +397,13 @@ if (args[0] === "api" && args[1] === "graphql" && fields.has("oid")) {
   const signature = ${JSON.stringify(options.candidateSignature ?? "valid")};
   console.log(JSON.stringify({ data: { repository: { object: {
     oid: fields.get("oid"),
+    messageHeadline: ${JSON.stringify(options.candidateMergeAttribution === false ? "fixture candidate" : "fix(release): fixture candidate (#123)")},
     signature: signature === "missing" ? null : {
       isValid: signature === "valid",
       state: signature === "valid" ? "VALID" : "INVALID",
       signer: { login: "release-operator" },
     },
+    associatedPullRequests: { nodes: ${JSON.stringify(options.candidateMergeAttribution === false ? [] : [{ state: "MERGED", baseRepository: { nameWithOwner: "openclaw/openclaw" }, mergeCommit: { oid: targetSha }, mergedBy: { login: "release-operator" } }])} },
   } } } }));
 } else if (${JSON.stringify(options.candidateOwned ?? false)} && args[0] === "api" && admissionEndpoint) {
   import(${JSON.stringify(admissionFixturePath)}).then(({ respond }) => respond(args,
