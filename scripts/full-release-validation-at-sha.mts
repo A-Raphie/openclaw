@@ -1034,32 +1034,85 @@ function readDispatchRuns(request: DispatchRequest) {
   throw new Error("Dispatch run inventory exceeded its page bound");
 }
 
+function readActiveConcurrencyRuns(request: DispatchRequest) {
+  const runs: Record<string, unknown>[] = [];
+  for (const status of ACTIVE_RUN_STATUSES) {
+    let total: number | undefined;
+    let statusCount = 0;
+    for (let page = 1; page <= MAX_RUN_PAGES; page += 1) {
+      const response = parseGhHttpResponse(
+        readGhApi(`repos/${REPOSITORY}/actions/workflows/${request.workflowId}/runs`, [
+          "--include",
+          "-f",
+          "event=workflow_dispatch",
+          "-f",
+          `status=${status}`,
+          "-f",
+          `per_page=${RUN_PAGE_SIZE}`,
+          "-f",
+          `page=${page}`,
+        ]),
+      );
+      requireDispatch(
+        response.status === 200,
+        "Active run inventory returned a non-success response",
+      );
+      const value: unknown = JSON.parse(response.body);
+      requireDispatch(
+        isJsonRecord(value) &&
+          Array.isArray(value.workflow_runs) &&
+          Number.isSafeInteger(value.total_count) &&
+          Number(value.total_count) >= 0 &&
+          Number(value.total_count) <= RUN_PAGE_SIZE * MAX_RUN_PAGES,
+        "Active run inventory is incomplete or exceeds its bound",
+      );
+      total ??= Number(value.total_count);
+      requireDispatch(
+        value.total_count === total &&
+          value.workflow_runs.length === Math.min(RUN_PAGE_SIZE, total - statusCount),
+        "Active run pagination changed or is incomplete",
+      );
+      for (const item of value.workflow_runs) {
+        requireDispatch(
+          isJsonRecord(item) &&
+            item.status === status &&
+            Number.isSafeInteger(item.id) &&
+            Number(item.id) > 0 &&
+            !runs.some((other) => other.id === item.id),
+          "Active run inventory contains invalid or repeated runs",
+        );
+        runs.push(item);
+        statusCount += 1;
+      }
+      const next = response.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/u)?.[1];
+      if (statusCount === total) {
+        requireDispatch(!next, "Active run pagination is uncertain");
+        break;
+      }
+      requireDispatch(next, "Active run inventory omitted its next page");
+      const url = new URL(next);
+      requireDispatch(
+        url.origin === "https://api.github.com" &&
+          url.pathname === `/repos/${REPOSITORY}/actions/workflows/${request.workflowId}/runs` &&
+          url.searchParams.get("page") === String(page + 1) &&
+          url.searchParams.get("event") === "workflow_dispatch" &&
+          url.searchParams.get("status") === status &&
+          url.searchParams.get("per_page") === String(RUN_PAGE_SIZE),
+        "Active run pagination changed scope",
+      );
+    }
+    requireDispatch(statusCount === total, "Active run inventory exceeded its page bound");
+  }
+  return runs;
+}
+
 function assertNoActiveConcurrencyRun(request: DispatchRequest) {
   const branchPrefix = fullReleaseConcurrencyBranchPrefix(request.workflowSha, {
     inputs: request.inputs,
     effectiveSoak: request.effectiveSoak,
   });
-  const value: unknown = JSON.parse(
-    readGhApi(`repos/${REPOSITORY}/actions/workflows/${request.workflowId}/runs`, [
-      "-f",
-      "event=workflow_dispatch",
-      "-f",
-      "per_page=100",
-    ]),
-  );
-  requireDispatch(
-    isJsonRecord(value) &&
-      Array.isArray(value.workflow_runs) &&
-      Number.isSafeInteger(value.total_count) &&
-      value.total_count === value.workflow_runs.length &&
-      value.total_count <= 100,
-    "Same-concurrency-group run inventory is incomplete",
-  );
-  const active = value.workflow_runs.filter(
-    (workflowRun) =>
-      isJsonRecord(workflowRun) &&
-      ACTIVE_RUN_STATUSES.has(stringValue(workflowRun.status)) &&
-      stringValue(workflowRun.head_branch).startsWith(branchPrefix),
+  const active = readActiveConcurrencyRuns(request).filter((workflowRun) =>
+    stringValue(workflowRun.head_branch).startsWith(branchPrefix),
   );
   for (const workflowRun of active) {
     const headBranch = isJsonRecord(workflowRun) ? stringValue(workflowRun.head_branch) : "";
@@ -1083,7 +1136,10 @@ function assertNoActiveConcurrencyRun(request: DispatchRequest) {
   }
   if (active.length > 0) {
     const runs = active
-      .map((workflowRun) => `${workflowRun.html_url} (${workflowRun.status})`)
+      .map(
+        (workflowRun) =>
+          `${stringValue(workflowRun.html_url)} (${stringValue(workflowRun.status)})`,
+      )
       .join(", ");
     throw new Error(
       `Same-concurrency-group Full Release Validation is already active: ${runs}. Refusing a replacement that would wait behind it; wait for completion or cancel that exact run explicitly.`,

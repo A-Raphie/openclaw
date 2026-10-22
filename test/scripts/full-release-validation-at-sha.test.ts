@@ -138,6 +138,14 @@ describe("full-release-validation-at-sha", () => {
     expect(fixture.gitCalls().some((args) => args.includes("update-ref"))).toBe(false);
   });
 
+  it("ignores completed workflow history when checking active concurrency", () => {
+    const fixture = createDispatchFixture({ completedConcurrencyHistory: 2500 });
+    const result = fixture.run();
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(fixture.dispatches()).toHaveLength(1);
+  });
+
   it("parses release validation dispatch args", () => {
     expect(
       parseArgs([
@@ -446,7 +454,8 @@ describe("full-release-validation-at-sha", () => {
       calls.filter(
         (args) =>
           ghApiEndpoint(args).endsWith("/actions/workflows/17/runs") &&
-          args.includes("per_page=20"),
+          args.includes("per_page=20") &&
+          args.some((arg) => arg.startsWith("branch=")),
       ),
     ).toHaveLength(4);
   });
