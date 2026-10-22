@@ -1586,6 +1586,7 @@ export const en: TranslationMap & {
     linksLabel: "Community and resources",
     linkWebsite: "Website",
     linkDocs: "Docs",
+    linkSupport: "Support",
     linkGitHub: "GitHub",
     linkDiscord: "Discord",
     linkX: "X (Twitter)",
