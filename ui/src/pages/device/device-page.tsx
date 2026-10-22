@@ -1,11 +1,12 @@
-import { createSignal, onCleanup } from "@solidjs/signals";
-import { For, Show } from "solid-js";
+import { createSignal } from "@solidjs/signals";
+import { For, onSettled, Show } from "solid-js";
 import { deviceSettingsGroupLabelKey } from "../../app-navigation.ts";
 import type {
   NativeDeviceSettingsCapability,
   NativeDeviceSettingsSnapshot,
   SettingKey,
 } from "../../app/native-device-settings.ts";
+import { NativeChromeSetup } from "../../components/native-chrome-setup.tsx";
 import {
   LearnMoreLink,
   SettingsEmpty,
@@ -24,16 +25,7 @@ import { projectNativeDeviceSettings } from "../../lib/reactive/application-nati
 import { useApplication } from "../../lib/reactive/context.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import { liveValue } from "../../lib/reactive/live-value.ts";
-import "../../components/native-chrome-setup.tsx";
 import "./device.css";
-
-declare module "@solidjs/web" {
-  namespace JSX {
-    interface IntrinsicElements {
-      "openclaw-native-chrome-setup": HTMLAttributes<HTMLElement>;
-    }
-  }
-}
 
 registerEnglishCatalog(registerAppsEnglish);
 registerEnglishCatalog(registerSettingsEnglish);
@@ -80,7 +72,6 @@ export function DevicePage() {
     pending: boolean;
     error?: Error;
   } | null>(null);
-  let gatewayHostingRequest = 0;
   let targetProfileTimer: ReturnType<typeof setTimeout> | null = null;
 
   const pendingEdits = () => {
@@ -89,7 +80,7 @@ export function DevicePage() {
     return capability ? pendingCookieSyncEdits.get(capability) : undefined;
   };
   let disposed = false;
-  onCleanup(() => {
+  onSettled(() => () => {
     disposed = true;
     flushTargetProfile();
   });
@@ -233,10 +224,9 @@ export function DevicePage() {
             if (!capability) {
               return;
             }
-            const request = ++gatewayHostingRequest;
             setGatewayHostingEdit({ pending: true });
             capability.set("app.keepGatewayRunning", value, (error) => {
-              if (!disposed && gatewayHostingRequest === request) {
+              if (!disposed) {
                 setGatewayHostingEdit({ pending: false, error });
               }
             });
@@ -258,7 +248,7 @@ export function DevicePage() {
             stacked
             control={
               <div class="device-extension-setup">
-                <openclaw-native-chrome-setup />
+                <NativeChromeSetup />
                 <div class="device-extension-setup__actions">
                   <a
                     href="https://chromewebstore.google.com/detail/openclaw/kcdjddhmeafeomebliikmbpblkmkfoig"

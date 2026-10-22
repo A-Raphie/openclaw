@@ -2,10 +2,25 @@ import { vi } from "vitest";
 import { createEmptyCostUsageTotals } from "../../../../src/infra/session-cost-usage-totals.js";
 import { createUsageAggregateAccumulator } from "../../../../src/shared/usage-aggregates.js";
 import { buildUsageOverview } from "../../../../src/shared/usage-overview.js";
-import type { UsageFilterOptions } from "./query.ts";
+import type { SessionsUsageOverview } from "../../../../src/shared/usage-types.js";
 import type { UsageProps, UsageSessionEntry, UsageTotals, UsageAggregates } from "./types.ts";
 
 const noop = vi.fn();
+
+export function usageTotals(
+  input: number,
+  cost: number,
+  overrides: Partial<UsageTotals> = {},
+): UsageTotals {
+  return {
+    ...createEmptyCostUsageTotals(),
+    input,
+    totalTokens: input,
+    totalCost: cost,
+    inputCost: cost,
+    ...overrides,
+  };
+}
 
 export function usageSession(
   key: string,
@@ -130,6 +145,19 @@ export function createUsageProps(overrides: Partial<UsageProps> = {}): UsageProp
   return props;
 }
 
+export function usageFixture(
+  data: Partial<UsageProps["data"]> = {},
+  filters: Partial<UsageProps["filters"]> = {},
+  display: Partial<UsageProps["display"]> = {},
+): UsageProps {
+  const base = createUsageProps();
+  return createUsageProps({
+    data: { ...base.data, ...data },
+    filters: { ...base.filters, ...filters },
+    display: { ...base.display, ...display },
+  });
+}
+
 export function createUsageOverview(
   overrides: Partial<NonNullable<UsageProps["data"]["overview"]>> = {},
 ): NonNullable<UsageProps["data"]["overview"]> {
@@ -177,7 +205,7 @@ function filterValues(values: (string | undefined)[], limit = 12): string[] {
 export function buildUsageFilterOptions(
   sessions: readonly UsageSessionEntry[],
   aggregates?: UsageAggregates | null,
-): UsageFilterOptions {
+): SessionsUsageOverview["filterOptions"] {
   return {
     agent: filterValues(
       sessions.map((session) => session.agentId),
