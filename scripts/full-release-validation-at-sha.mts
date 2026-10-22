@@ -154,6 +154,38 @@ function requiredPositiveInteger(value: unknown, label: string): number {
   return normalized;
 }
 
+export function fullReleaseConcurrencyBranch(
+  workflowSha: string,
+  selection: { inputs: DispatchInputs; effectiveSoak: boolean },
+): string {
+  const target = String(selection.inputs.expected_sha || selection.inputs.ref || "");
+  const rerunGroup = String(selection.inputs.rerun_group || "");
+  const selectedProfile = String(selection.inputs.release_profile || "");
+  const profile = selectedProfile === "minimum" ? "beta" : selectedProfile;
+  requireDispatch(
+    SHA_PATTERN.test(workflowSha),
+    "Concurrency identity requires an exact Tooling SHA",
+  );
+  requireDispatch(
+    SHA_PATTERN.test(target),
+    "Concurrency identity requires an exact Validation SHA",
+  );
+  requireDispatch(RERUN_GROUPS.has(rerunGroup), "Concurrency identity requires a rerun group");
+  requireDispatch(
+    ["beta", "stable", "full"].includes(profile),
+    "Concurrency identity requires a release profile",
+  );
+  const identity = JSON.stringify({
+    target,
+    workflowSha,
+    rerunGroup,
+    profile,
+    soak: selection.effectiveSoak,
+  });
+  const suffix = BigInt(`0x${createHash("sha256").update(identity).digest("hex").slice(0, 15)}`);
+  return `release-ci/${workflowSha.slice(0, 12)}-${suffix}`;
+}
+
 function usage() {
   console.error(`Usage: node scripts/full-release-validation-at-sha.mjs [--sha <target-sha>] [--target-ref <canonical-release-branch-or-tag>] [--workflow-sha <candidate-sha>] [--trusted-workflow-ref <candidate|main|release-publish-tag>] [--admission-workflow-sha <P-sha>] [--admission-workflow-ref <main|release-publish-tag>] [--request-file <path>] [--keep-branch] [--dry-run] [-- -f key=value ...]
        node scripts/full-release-validation-at-sha.mjs --reconcile-request <path>
@@ -1000,6 +1032,57 @@ function readDispatchRuns(request: DispatchRequest) {
   throw new Error("Dispatch run inventory exceeded its page bound");
 }
 
+function assertNoActiveConcurrencyRun(request: DispatchRequest) {
+  const value: unknown = JSON.parse(
+    readGhApi(`repos/${REPOSITORY}/actions/workflows/${request.workflowId}/runs`, [
+      "-f",
+      `branch=${request.workflowRef}`,
+      "-f",
+      "event=workflow_dispatch",
+      "-f",
+      "per_page=100",
+    ]),
+  );
+  requireDispatch(
+    isJsonRecord(value) &&
+      Array.isArray(value.workflow_runs) &&
+      Number.isSafeInteger(value.total_count) &&
+      value.total_count === value.workflow_runs.length &&
+      value.total_count <= 100,
+    "Same-concurrency-group run inventory is incomplete",
+  );
+  const active = value.workflow_runs.filter(
+    (workflowRun) =>
+      isJsonRecord(workflowRun) && ACTIVE_RUN_STATUSES.has(stringValue(workflowRun.status)),
+  );
+  for (const workflowRun of active) {
+    requireDispatch(
+      isJsonRecord(workflowRun) &&
+        Number.isSafeInteger(workflowRun.id) &&
+        Number(workflowRun.id) > 0 &&
+        workflowRun.workflow_id === request.workflowId &&
+        workflowRun.head_sha === request.workflowSha &&
+        workflowRun.head_branch === request.workflowRef &&
+        workflowRun.event === request.event &&
+        [
+          request.workflowPath,
+          `${request.workflowPath}@${request.workflowRef}`,
+          `${request.workflowPath}@refs/heads/${request.workflowRef}`,
+        ].includes(stringValue(workflowRun.path)) &&
+        workflowRun.html_url === `https://github.com/${REPOSITORY}/actions/runs/${workflowRun.id}`,
+      "Same-concurrency-group run identity is invalid",
+    );
+  }
+  if (active.length > 0) {
+    const runs = active
+      .map((workflowRun) => `${workflowRun.html_url} (${workflowRun.status})`)
+      .join(", ");
+    throw new Error(
+      `Same-concurrency-group Full Release Validation is already active: ${runs}. Refusing a replacement that would wait behind it; wait for completion or cancel that exact run explicitly.`,
+    );
+  }
+}
+
 function assertDispatchRun(workflowRun: unknown, request: DispatchRequest, expected: DispatchRun) {
   requireDispatch(
     isJsonRecord(workflowRun) &&
@@ -1805,8 +1888,14 @@ async function main() {
   if (trustedWorkflowHarness.contract === "1") {
     args.inputs.reuse_evidence = "false";
   }
-  const shortSha = workflowSha.slice(0, 12);
-  const branch = `release-ci/${shortSha}-${Date.now()}`;
+  const concurrencyInputs = { ref: targetSha, expected_sha: targetSha, ...args.inputs };
+  const branch = fullReleaseConcurrencyBranch(workflowSha, {
+    inputs: concurrencyInputs,
+    effectiveSoak:
+      String(concurrencyInputs.run_release_soak) === "true" ||
+      concurrencyInputs.release_profile === "stable" ||
+      concurrencyInputs.release_profile === "full",
+  });
   const remoteBranchRef = `refs/heads/${branch}`;
   const dispatchInputs = {
     ref: targetSha,
@@ -1946,6 +2035,9 @@ async function executeFrozenDispatch(options: {
     record = next;
   };
   try {
+    if (record) {
+      assertNoActiveConcurrencyRun(record.request);
+    }
     if (record?.admission) {
       record = await qualifyAdmission(record, retain, qualificationDispatchClient);
       selection = {
