@@ -188,7 +188,8 @@ describe("full-release-validation-at-sha", () => {
       includeTargetRef: false,
     });
     runGit(fixture.checkout, ["tag", "v2026.8.1", fixture.targetSha]);
-    runGit(fixture.checkout, ["push", "origin", "refs/tags/v2026.8.1"]);
+    runGit(fixture.checkout, ["tag", "v2026.8.1-1", fixture.targetSha]);
+    runGit(fixture.checkout, ["push", "origin", "refs/tags/v2026.8.1", "refs/tags/v2026.8.1-1"]);
     const result = fixture.run([
       "--workflow-sha",
       fixture.targetSha,
@@ -209,6 +210,31 @@ describe("full-release-validation-at-sha", () => {
       `Release candidate provenance verified for ${fixture.targetSha}`,
     );
     expect(fixture.dispatches()).toHaveLength(2);
+  });
+
+  it("rejects a candidate that is an open same-repository PR head", () => {
+    const fixture = createDispatchFixture({
+      candidateOwned: true,
+      candidateOpenPrHead: true,
+    });
+    const result = fixture.run([
+      "--workflow-sha",
+      fixture.targetSha,
+      "-f",
+      "validation_purpose=publish",
+      "-f",
+      `publication_selection_json=${JSON.stringify({
+        route: "normal",
+        npmDistTag: "latest",
+        publishOpenclawNpm: true,
+        pluginPublishScope: "all-publishable",
+        plugins: [],
+      })}`,
+    ]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("is an open same-repository PR head");
+    expect(fixture.dispatches()).toEqual([]);
   });
 
   it("rejects an unsigned publication candidate without exact merge attribution", () => {

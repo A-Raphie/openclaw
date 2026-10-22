@@ -807,7 +807,7 @@ function candidateTrustReason(
       const context = parseReleaseContextRef(contextRef);
       return context?.kind === "release tag" ? [context.ref] : [];
     });
-  if (new Set(matchingTags).size === 1) {
+  if (matchingTags.length > 0) {
     return "release-tag";
   }
   return undefined;
@@ -831,7 +831,7 @@ function preflightCandidateSigningProvenance(
       "-H",
       GH_NO_CACHE_HEADER,
       "-f",
-      "query=query($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){... on Commit{oid messageHeadline signature{isValid state signer{login}} associatedPullRequests(first:100){nodes{state baseRepository{nameWithOwner} mergeCommit{oid} mergedBy{login}}}}}}}",
+      "query=query($owner:String!,$name:String!,$oid:GitObjectID!){repository(owner:$owner,name:$name){object(oid:$oid){... on Commit{oid messageHeadline signature{isValid state signer{login}} associatedPullRequests(first:100){nodes{state headRefOid headRepository{nameWithOwner} baseRepository{nameWithOwner} mergeCommit{oid} mergedBy{login}}}}}}}",
       "-f",
       `owner=${owner}`,
       "-f",
@@ -842,6 +842,17 @@ function preflightCandidateSigningProvenance(
   );
   const provenance = validateCandidateSigningProvenance(targetSha, metadata);
   let actor = provenance.signer;
+  requireDispatch(
+    !provenance.associatedPullRequests.some(
+      (pullRequest) =>
+        isJsonRecord(pullRequest) &&
+        pullRequest.state === "OPEN" &&
+        pullRequest.headRefOid === targetSha &&
+        isJsonRecord(pullRequest.headRepository) &&
+        pullRequest.headRepository.nameWithOwner === REPOSITORY,
+    ),
+    `Release candidate ${targetSha} is an open same-repository PR head`,
+  );
   if (provenance.signatureStatus === "missing" || actor === "web-flow") {
     requireDispatch(
       trustReason === "release-branch",
@@ -1920,6 +1931,13 @@ async function main() {
     );
     args.trustedWorkflowRef = "candidate";
     args.admissionWorkflowRef = retained.admission!.workflowRef;
+    const candidateAuthorityActor =
+      retained.request.inputs.validation_purpose === "publish"
+        ? preflightCandidateSigningProvenance(
+            retained.request.targetSha,
+            retained.request.targetContextRef,
+          )
+        : undefined;
     await executeFrozenDispatch({
       args,
       record: retained,
@@ -1932,6 +1950,7 @@ async function main() {
         effectiveSoak: retained.request.effectiveSoak,
       },
       admissionWorkflowSha: retained.admission!.workflowSha,
+      candidateAuthorityActor,
     });
     return;
   }
@@ -2192,6 +2211,9 @@ async function executeFrozenDispatch(options: {
       if (record) {
         retain({ ...record, refs: { workflow: "uncertain" } });
       }
+      if (!args.dryRun && candidateOwned && candidateAuthorityActor) {
+        assertCandidateActorPermission(candidateAuthorityActor);
+      }
       createTemporaryRef(remoteBranchRef, workflowSha, args.dryRun);
       workflowRefCreated = true;
       if (!args.dryRun && candidateOwned) {
@@ -2206,9 +2228,6 @@ async function executeFrozenDispatch(options: {
             pinned.object.sha === workflowSha,
           "Candidate qualification transport ref moved before dispatch",
         );
-        if (!args.dryRun && candidateAuthorityActor) {
-          assertCandidateActorPermission(candidateAuthorityActor);
-        }
       }
       if (record) {
         retain({ ...record, phase: "attempted", refs: { workflow: "created" } });

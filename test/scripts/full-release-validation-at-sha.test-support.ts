@@ -95,6 +95,7 @@ export function createDispatchFixture(
     omitPurpose?: boolean;
     unreachableContributionRecord?: boolean;
     candidateMergeAttribution?: boolean;
+    candidateOpenPrHead?: boolean;
     candidateSignature?: "valid" | "missing" | "invalid";
   } = {},
 ) {
@@ -404,7 +405,27 @@ if (args[0] === "api" && args[1] === "graphql" && fields.has("oid")) {
       state: signature === "valid" ? "VALID" : "INVALID",
       signer: { login: "release-operator" },
     },
-    associatedPullRequests: { nodes: ${JSON.stringify(options.candidateMergeAttribution === false ? [] : [{ state: "MERGED", baseRepository: { nameWithOwner: "openclaw/openclaw" }, mergeCommit: { oid: targetSha }, mergedBy: { login: "release-operator" } }])} },
+    associatedPullRequests: { nodes: ${JSON.stringify([
+      ...(options.candidateMergeAttribution === false
+        ? []
+        : [
+            {
+              state: "MERGED",
+              baseRepository: { nameWithOwner: "openclaw/openclaw" },
+              mergeCommit: { oid: targetSha },
+              mergedBy: { login: "release-operator" },
+            },
+          ]),
+      ...(options.candidateOpenPrHead
+        ? [
+            {
+              state: "OPEN",
+              headRefOid: targetSha,
+              headRepository: { nameWithOwner: "openclaw/openclaw" },
+            },
+          ]
+        : []),
+    ])} },
   } } } }));
 } else if (${JSON.stringify(options.candidateOwned ?? false)} && args[0] === "api" && admissionEndpoint) {
   import(${JSON.stringify(admissionFixturePath)}).then(({ respond }) => respond(args,
