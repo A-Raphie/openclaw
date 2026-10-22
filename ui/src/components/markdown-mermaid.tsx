@@ -211,9 +211,11 @@ function MermaidContent(props: MermaidProps, host: MermaidElement) {
               <button
                 class="preview"
                 type="button"
-                aria-label={image().value()?.title
-                  ? t("chat.mermaid.expandNamed", { title: imageTitle() })
-                  : t("chat.mermaid.expand")}
+                aria-label={
+                  image().value()?.title
+                    ? t("chat.mermaid.expandNamed", { title: imageTitle() })
+                    : t("chat.mermaid.expand")
+                }
                 aria-describedby={descriptionId}
                 aria-haspopup="dialog"
                 title={t("chat.mermaid.expand")}

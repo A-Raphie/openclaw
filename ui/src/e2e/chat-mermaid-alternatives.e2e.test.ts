@@ -56,8 +56,13 @@ suite.define(() => {
           const image = diagram.locator(".preview img");
           await image.waitFor();
           await image.evaluate((element: HTMLImageElement) => element.decode());
-          const preview = diagram.getByRole("button", { name: "Expand diagram: " + title, exact: true });
-          expect(await preview.getAttribute("aria-describedby")).toBe(await image.getAttribute("aria-describedby"));
+          const preview = diagram.getByRole("button", {
+            name: "Expand diagram: " + title,
+            exact: true,
+          });
+          expect(await preview.getAttribute("aria-describedby")).toBe(
+            await image.getAttribute("aria-describedby"),
+          );
           const inline = await image.evaluate((element) => ({
             title: element.getAttribute("alt"),
             description: document
