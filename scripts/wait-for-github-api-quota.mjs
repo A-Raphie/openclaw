@@ -1,6 +1,8 @@
 import { isDirectRunUrl } from "./lib/direct-run.mjs";
 
-const DEFAULT_MINIMUM_REMAINING = 3;
+// Dispatch setup reads the ref and workflow twice (the anchor and gh), posts the
+// dispatch, then reads the created run identity. Keep one request in reserve.
+const DEFAULT_MINIMUM_REMAINING = 6;
 const DEFAULT_MAX_WAIT_SECONDS = 5 * 60 * 60;
 
 function positiveInteger(value, name) {

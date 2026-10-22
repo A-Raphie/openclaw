@@ -2214,7 +2214,7 @@ jobs:
 
       - name: Wait for candidate acquisition GitHub API quota
         if: github.run_attempt == 1
-        run: node scripts/wait-for-github-api-quota.mjs --minimum-remaining 3 --max-wait-seconds 18000
+        run: node scripts/wait-for-github-api-quota.mjs --minimum-remaining 6 --max-wait-seconds 18000
       - name: Dispatch immutable validation candidate producer
         id: dispatch
         if: github.run_attempt == 1

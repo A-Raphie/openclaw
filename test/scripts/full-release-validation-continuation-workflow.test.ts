@@ -496,7 +496,7 @@ else console.log(JSON.stringify({id:202,workflow_id:88,head_branch:'main',event:
     expect(dispatchIndex).toBeGreaterThan(quotaIndex);
     expect(String(candidateSteps[quotaIndex]?.if)).toContain("github.run_attempt == 1");
     expect(String(candidateSteps[quotaIndex]?.run)).toContain(
-      "wait-for-github-api-quota.mjs --minimum-remaining 3 --max-wait-seconds 18000",
+      "wait-for-github-api-quota.mjs --minimum-remaining 6 --max-wait-seconds 18000",
     );
   });
 

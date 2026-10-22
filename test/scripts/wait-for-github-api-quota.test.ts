@@ -4,7 +4,19 @@ import {
   waitForGithubApiQuota,
 } from "../../scripts/wait-for-github-api-quota.mjs";
 
-function quotaResponse({ remaining, reset, requestId = "REQ-1", status = 200 }) {
+type QuotaResponseOptions = {
+  remaining: number;
+  reset: number;
+  requestId?: string;
+  status?: number;
+};
+
+function quotaResponse({
+  remaining,
+  reset,
+  requestId = "REQ-1",
+  status = 200,
+}: QuotaResponseOptions) {
   return new Response(JSON.stringify({ resources: { core: { remaining, limit: 5_000, reset } } }), {
     status,
     headers: { "x-github-request-id": requestId },
@@ -39,6 +51,30 @@ describe("candidate acquisition GitHub API quota wait", () => {
     expect(log.mock.calls.flat().join("\n")).toContain(
       "0/5000 remaining; request ID EXHAUSTED; reset 2033-05-18T03:34:20Z",
     );
+  });
+
+  it("waits when a positive quota cannot cover dispatch setup and identity reads", async () => {
+    let epoch = 2_000_000_000_000;
+    const reset = epoch / 1_000 + 60;
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(quotaResponse({ remaining: 3, reset }))
+      .mockResolvedValueOnce(quotaResponse({ remaining: 6, reset }));
+    const sleep = vi.fn(async (milliseconds: number) => {
+      epoch += milliseconds;
+    });
+
+    await expect(
+      waitForGithubApiQuota({
+        token: "fixture-token",
+        fetchImpl,
+        now: () => epoch,
+        sleep,
+        log: vi.fn(),
+        maxWaitMs: 120_000,
+      }),
+    ).resolves.toMatchObject({ remaining: 6 });
+    expect(sleep).toHaveBeenCalledWith(65_000);
   });
 
   it("refuses a reset beyond the bounded acquisition wait", async () => {
