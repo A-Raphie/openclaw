@@ -28,6 +28,35 @@ function readRequestRecord(fixture: ReturnType<typeof createDispatchFixture>) {
 }
 
 describe("candidate-owned full release dispatch entry point", () => {
+  it("rejects an invalid candidate signature before publication dispatch", () => {
+    const f = createDispatchFixture({
+      candidateOwned: true,
+      candidateSignature: "invalid",
+    });
+    try {
+      const result = f.run([
+        "--workflow-sha",
+        f.targetSha,
+        "-f",
+        "validation_purpose=publish",
+        "-f",
+        `publication_selection_json=${JSON.stringify({
+          route: "normal",
+          npmDistTag: "latest",
+          publishOpenclawNpm: true,
+          pluginPublishScope: "all-publishable",
+          plugins: [],
+        })}`,
+      ]);
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("has an invalid commit signature");
+      expect(dispatches(f)).toEqual([]);
+    } finally {
+      f.cleanup();
+    }
+  });
+
   it.each(["main", "protected"])("rejects fresh %s publication before remote mutation", (route) => {
     const f = createDispatchFixture();
     try {
@@ -324,6 +353,40 @@ describe("candidate-owned full release dispatch entry point", () => {
       expect(resumed.stderr).toContain(error);
       expect(dispatches(f)).toEqual([P]);
       expect(f.refs()).toEqual([]);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it("resumes when the retained release branch advances to a remote-only descendant", () => {
+    const f = createDispatchFixture({ candidateOwned: true, stopAfterAccepted: "admission" });
+    try {
+      expect(f.run().status).toBe(78);
+      expect(dispatches(f)).toEqual([P]);
+      const descendant = runGit(f.origin, [
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.com",
+        "commit-tree",
+        `${f.targetSha}^{tree}`,
+        "-p",
+        f.targetSha,
+        "-m",
+        "advance release branch",
+      ]);
+      runGit(f.origin, ["update-ref", `refs/heads/${f.releaseRef}`, descendant]);
+      expect(() => runGit(f.checkout, ["cat-file", "-e", `${descendant}^{commit}`])).toThrow();
+
+      const resumed = f.run(["--resume-request", f.requestPath()], true);
+      expect(resumed.status, resumed.stderr).toBe(0);
+      expect(dispatches(f)).toEqual([P, Q]);
+      expect(f.gitCalls()).toContainEqual([
+        "fetch",
+        "--no-tags",
+        "origin",
+        `refs/heads/${f.releaseRef}`,
+      ]);
     } finally {
       f.cleanup();
     }

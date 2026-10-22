@@ -697,7 +697,7 @@ function candidateCommitMetadata(targetSha: string, metadata: unknown) {
   return { object, associatedPullRequests };
 }
 
-export function validateCandidateSigningProvenance(targetSha: string, metadata: unknown) {
+function validateCandidateSigningProvenance(targetSha: string, metadata: unknown) {
   const { object, associatedPullRequests } = candidateCommitMetadata(targetSha, metadata);
   const signature = object.signature;
   const signer =
@@ -1938,6 +1938,7 @@ async function main() {
     args.trustedWorkflowRef = "candidate";
     args.admissionWorkflowRef = retained.admission!.workflowRef;
     if (retained.request.targetContextRef !== retained.request.targetSha) {
+      fetchTargetRef(retained.request.targetContextRef);
       verifyTargetRef(
         retained.request.targetContextRef,
         retained.request.targetSha,

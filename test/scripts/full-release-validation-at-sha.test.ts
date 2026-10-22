@@ -21,7 +21,6 @@ import {
   resolveRemoteTargetRefSha,
   shouldDeleteTemporaryWorkflowRef,
   tryReadReleaseDecision,
-  validateCandidateSigningProvenance,
   validateReleaseDecisionPayload,
   verifyTargetRef,
   verifyTrustedWorkflowRef,
@@ -39,39 +38,6 @@ import {
 } from "./full-release-validation-at-sha.test-support.js";
 
 describe("full-release-validation-at-sha", () => {
-  it("distinguishes missing signatures from invalid signatures", () => {
-    const candidateSha = "a".repeat(40);
-    const metadata = (signature: unknown) => ({
-      data: {
-        repository: {
-          object: {
-            oid: candidateSha,
-            signature,
-            messageHeadline: "fixture candidate",
-            associatedPullRequests: { nodes: [] },
-          },
-        },
-      },
-    });
-
-    expect(validateCandidateSigningProvenance(candidateSha, metadata(null))).toMatchObject({
-      signatureStatus: "missing",
-      signer: "",
-    });
-    expect(() =>
-      validateCandidateSigningProvenance(
-        candidateSha,
-        metadata({ isValid: false, state: "INVALID", signer: { login: "maintainer" } }),
-      ),
-    ).toThrow("has an invalid commit signature");
-    expect(() =>
-      validateCandidateSigningProvenance(
-        candidateSha,
-        metadata({ isValid: true, state: "VALID", signer: { login: "maintainer" } }),
-      ),
-    ).not.toThrow();
-  });
-
   it("accepts an unsigned publication candidate with exact maintainer merge attribution", () => {
     const fixture = createDispatchFixture({ candidateOwned: true, candidateSignature: "missing" });
     const result = fixture.run([
