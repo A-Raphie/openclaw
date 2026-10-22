@@ -11,6 +11,8 @@ import {
   completeOAuthCallback,
   startMcpOAuthAuthorization,
 } from "../../agents/mcp-oauth.js";
+import { formatCliCommand } from "../../cli/command-format.js";
+import { quoteCliArg } from "../../cli/quote-cli-arg.js";
 import { getGatewayPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-state.js";
 import { resolveOperatorMcpOAuthConnection } from "../../plugins/mcp-auth-status.js";
 import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
@@ -32,7 +34,7 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
     const reject = (message: string) =>
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, message));
     if (!client || !client.connect.scopes?.includes("operator.admin")) {
-      reject("Connector sign-in requires an administrator connection.");
+      reject("Sign-in requires an administrator connection.");
       return;
     }
     if (rejectExistingSetupWizardSession({ sessionId: params.sessionId, context, respond })) {
@@ -52,13 +54,25 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
       getPluginRuntimeGatewayRequestScope()?.pluginRegistry === methodRegistry?.pluginRegistry;
     if (!connection || !isOperatorOwned()) {
       reject(
-        "This connector cannot use operator browser sign-in. Check its existing account settings.",
+        "This MCP server cannot use operator browser sign-in. Check its existing account settings.",
       );
       return;
     }
+    // `openclaw mcp login` reads only operator-authored `mcp.servers` and is
+    // offline-only, so the terminal path names the stop step; servers a plugin
+    // declares have no CLI sign-in path, so recovery points at the plugin.
+    const terminalLogin = Object.hasOwn(
+      context.getRuntimeConfig().mcp?.servers ?? {},
+      params.serverName,
+    )
+      ? `stop the Gateway with ${formatCliCommand("openclaw gateway stop")}, run ${formatCliCommand(`openclaw mcp login ${quoteCliArg(params.serverName)}`)}, then start the Gateway again`
+      : undefined;
+    const settingsOwner = terminalLogin ? "MCP server" : "plugin";
     if (!client.browserOrigin) {
       reject(
-        "Open Settings on this Gateway to sign in, or use openclaw mcp login in its terminal.",
+        terminalLogin
+          ? `Open Settings on this Gateway to sign in, or sign in from its terminal: ${terminalLogin}.`
+          : "Open Settings on this Gateway to sign in.",
       );
       return;
     }
@@ -68,7 +82,7 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
     const assertCurrent = () => {
       client.connectionSignal?.throwIfAborted();
       if (client.invalidated || !client.connect.scopes?.includes("operator.admin")) {
-        throw new Error("Connector sign-in authority is no longer active.");
+        throw new Error("Sign-in authority is no longer active.");
       }
       if (
         context.getGatewayMethodRegistry?.() !== methodRegistry ||
@@ -76,7 +90,7 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
         !isOperatorOwned()
       ) {
         throw new Error(
-          "This connector changed. Close this dialog and review its settings before signing in again.",
+          "This MCP server changed. Close this dialog and review its settings before signing in again.",
         );
       }
     };
@@ -121,8 +135,10 @@ export const mcpAuthLoginHandlers: GatewayRequestHandlers = {
             const failure = () =>
               new Error(
                 saved
-                  ? "Authentication saved, but sign-in cleanup did not finish. Close this dialog and check the connector before trying again."
-                  : "Sign-in did not finish. Check the connector settings and try again, or run openclaw mcp login with this connector's name in this Gateway's terminal.",
+                  ? `Authentication saved, but sign-in cleanup did not finish. Close this dialog and check the ${settingsOwner} before trying again.`
+                  : terminalLogin
+                    ? `Sign-in did not finish. Check the MCP server settings and try again, or sign in from this Gateway's terminal: ${terminalLogin}.`
+                    : "Sign-in did not finish. Check the plugin settings and try again.",
               );
             try {
               try {
