@@ -128,15 +128,26 @@ export async function respond(args, config) {
       }
       return JSON.stringify({ ref, object: { type: "commit", sha } });
     }
-    if (route === "collaborators/release-operator/permission") {
+    if (route?.startsWith("collaborators/") && route.endsWith("/permission")) {
+      const permissionActor = decodeURIComponent(route.slice(14, -11));
+      const revokedCandidate =
+        config.options.candidateAuthorityRevoked &&
+        existsSync(config.admissionCapturePath) &&
+        permissionActor === config.options.candidateAuthorityActor;
+      const revokedOperator = config.options.admissionRevokedActor && !active;
       return JSON.stringify({
-        permission: !existsSync(config.admissionCapturePath)
-          ? "admin"
-          : config.options.admissionRevokedActor && !active
-            ? "read"
-            : "write",
-        role_name: config.options.admissionRevokedActor && !active ? "write" : "maintain",
-        user: actor,
+        permission: revokedCandidate
+          ? "read"
+          : !existsSync(config.admissionCapturePath)
+            ? "admin"
+            : revokedOperator
+              ? "read"
+              : "write",
+        role_name: revokedCandidate || revokedOperator ? "write" : "maintain",
+        user:
+          permissionActor === actor.login
+            ? actor
+            : { id: 92, login: permissionActor, type: "User" },
       });
     }
     if (route === "actions/runs/321/attempts/1") {

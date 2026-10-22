@@ -304,6 +304,43 @@ describe("candidate-owned full release dispatch entry point", () => {
     }
   });
 
+  it("refuses publication resume when the retained candidate actor lost authority", () => {
+    const f = createDispatchFixture({
+      candidateOwned: true,
+      candidateAuthorityActor: "candidate-signer",
+      candidateAuthorityRevoked: true,
+      stopAfterAccepted: "admission",
+    });
+    try {
+      const prepared = f.run([
+        "--workflow-sha",
+        f.targetSha,
+        "-f",
+        "validation_purpose=publish",
+        "-f",
+        `publication_selection_json=${JSON.stringify({
+          route: "normal",
+          npmDistTag: "latest",
+          publishOpenclawNpm: true,
+          pluginPublishScope: "all-publishable",
+          plugins: [],
+        })}`,
+      ]);
+      expect(prepared.status, prepared.stderr).toBe(78);
+      expect(dispatches(f)).toEqual([P]);
+
+      const resumed = f.run(["--resume-request", f.requestPath()], true);
+      expect(resumed.status).toBe(1);
+      expect(resumed.stderr).toContain(
+        "Release candidate actor candidate-signer lacks maintain/admin access",
+      );
+      expect(dispatches(f)).toEqual([P]);
+      expect(f.refs()).toEqual([]);
+    } finally {
+      f.cleanup();
+    }
+  });
+
   it.each([
     {
       name: "release branch moved off the candidate",

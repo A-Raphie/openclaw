@@ -1945,8 +1945,11 @@ async function main() {
         retained.request.targetVersion,
       );
     }
+    const retainedIntent = decodePublicationDispatchEnvelope(
+      retained.request.inputs.trusted_workflow_json,
+    );
     const candidateAuthorityActor =
-      retained.request.inputs.validation_purpose === "publish"
+      retainedIntent.validationPurpose === "publish"
         ? preflightCandidateSigningProvenance(
             retained.request.targetSha,
             retained.request.targetContextRef,

@@ -97,6 +97,8 @@ export function createDispatchFixture(
     candidateMergeAttribution?: boolean;
     candidateOpenPrHead?: boolean;
     candidateSignature?: "valid" | "missing" | "invalid";
+    candidateAuthorityActor?: string;
+    candidateAuthorityRevoked?: boolean;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "openclaw-release-dispatch-"));
@@ -394,7 +396,8 @@ const admissionEndpoint = endpoint.includes("/actions/workflows/openclaw-release
   endpoint.includes("/actions/artifacts/9002") || endpoint.includes("/contents/") ||
   endpoint.includes("/compare/") || endpoint.includes("/branches-where-head") ||
   endpoint.includes("/git/ref/") ||
-  endpoint === "repos/openclaw/openclaw/collaborators/release-operator/permission";
+  (endpoint.startsWith("repos/openclaw/openclaw/collaborators/") &&
+    endpoint.endsWith("/permission"));
 if (args[0] === "api" && args[1] === "graphql" && fields.has("oid")) {
   const signature = ${JSON.stringify(options.candidateSignature ?? "valid")};
   console.log(JSON.stringify({ data: { repository: { object: {
@@ -403,7 +406,7 @@ if (args[0] === "api" && args[1] === "graphql" && fields.has("oid")) {
     signature: signature === "missing" ? null : {
       isValid: signature === "valid",
       state: signature === "valid" ? "VALID" : "INVALID",
-      signer: { login: "release-operator" },
+      signer: { login: ${JSON.stringify(options.candidateAuthorityActor ?? "release-operator")} },
     },
     associatedPullRequests: { nodes: ${JSON.stringify([
       ...(options.candidateMergeAttribution === false
@@ -413,7 +416,7 @@ if (args[0] === "api" && args[1] === "graphql" && fields.has("oid")) {
               state: "MERGED",
               baseRepository: { nameWithOwner: "openclaw/openclaw" },
               mergeCommit: { oid: targetSha },
-              mergedBy: { login: "release-operator" },
+              mergedBy: { login: options.candidateAuthorityActor ?? "release-operator" },
             },
           ]),
       ...(options.candidateOpenPrHead
