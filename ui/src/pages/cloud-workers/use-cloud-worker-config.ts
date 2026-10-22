@@ -37,14 +37,14 @@ export function useCloudWorkerConfig(reset: () => void) {
     revision();
     return save.state;
   };
-  const scope = createMemo(() => {
+  const presentationLifetime = createMemo(() => {
     revision();
     // Capability changes retire presentation even without a transport epoch change.
     void gateway.snapshot;
     return lifetime;
   });
   const presentation = createMemo(() => {
-    const retired = scope().promise;
+    const retired = presentationLifetime().promise;
     const [saving, setSaving] = createOptimistic(false);
     return { retired, saving, setSaving };
   });
