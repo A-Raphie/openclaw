@@ -2225,11 +2225,11 @@ async function executeFrozenDispatch(options: {
         payloadPath = join(payloadDirectory, "dispatch.json");
         writeFileSync(payloadPath, payload, { flag: "wx", mode: 0o600 });
       }
-      if (record) {
-        retain({ ...record, refs: { workflow: "uncertain" } });
-      }
       if (!args.dryRun && candidateOwned && candidateAuthorityActor) {
         assertCandidateActorPermission(candidateAuthorityActor);
+      }
+      if (record) {
+        retain({ ...record, refs: { workflow: "uncertain" } });
       }
       createTemporaryRef(remoteBranchRef, workflowSha, args.dryRun);
       workflowRefCreated = true;
