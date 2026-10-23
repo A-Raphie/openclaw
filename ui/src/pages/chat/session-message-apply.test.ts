@@ -130,7 +130,12 @@ it.each([
     currentUser,
     {
       ...persistedRow,
-      __openclaw: { ...persistedRow.__openclaw, runId: "cli-run-1" },
+      __openclaw: {
+        id: "cli-row-1",
+        seq: 2,
+        idempotencyKey: "cli-assistant:cli-run-1",
+        runId: "cli-run-1",
+      },
     },
   ]);
 });
