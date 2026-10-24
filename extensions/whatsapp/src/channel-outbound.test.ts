@@ -631,7 +631,57 @@ describe("whatsappChannelOutbound", () => {
         messageSendingHooks: () => {
           expect(whatsappMessageAdapter.send.text).toBeTypeOf("function");
         },
+        media: async () => {
+          const result = await whatsappMessageAdapter.send.media?.({
+            cfg: {} as never,
+            to: "5511999999999@c.us",
+            text: undefined,
+            mediaUrl: "/tmp/report.pdf",
+            deps: { whatsapp: sendWhatsApp },
+          } as Parameters<NonNullable<typeof whatsappMessageAdapter.send.media>>[0] & {
+            deps: { whatsapp: typeof sendWhatsApp };
+          });
+          expect(result?.receipt.platformMessageIds).toEqual(["wa-1"]);
+        },
       },
     });
+  });
+
+  it("keeps provider JID aliases out of media send results so source-reply matching sees the same identity as text", async () => {
+    // gh-182297: the legacy bridge copied the transport's toJid (the recipient's
+    // LID alias) into media tool results, which then failed source-reply target
+    // matching and turned a delivered media send into a false failure notice.
+    // The adapter media path must return the same sanitized shape as text:
+    // no top-level toJid, and receipt evidence without provider aliases.
+    const sendWhatsApp = vi.fn(async () => ({
+      messageId: "wa-media-1",
+      toJid: "551186123456789@lid",
+    }));
+
+    const result = await whatsappMessageAdapter.send.media?.({
+      cfg: {} as never,
+      to: "5511999999999@c.us",
+      text: undefined,
+      mediaUrl: "/tmp/report.pdf",
+      deps: { whatsapp: sendWhatsApp },
+    } as Parameters<NonNullable<typeof whatsappMessageAdapter.send.media>>[0] & {
+      deps: { whatsapp: typeof sendWhatsApp };
+    });
+
+    expect(result?.receipt.platformMessageIds).toEqual(["wa-media-1"]);
+    const asRecord = result as unknown as Record<string, unknown>;
+    expect(asRecord.toJid).toBeUndefined();
+    // No provider JID alias may survive anywhere the delivery-fact reader walks
+    // (result top level, receipt raw, parts raw, sourceResults).
+    const receipt = (result?.receipt ?? {}) as Record<string, unknown>;
+    const rawEntries = [
+      ...((receipt.raw ?? []) as Array<Record<string, unknown>>),
+      ...((receipt.parts ?? []) as Array<Record<string, unknown>>).flatMap((part) =>
+        part.raw ? [part.raw as Record<string, unknown>] : [],
+      ),
+      ...((receipt.sourceResults ?? []) as Array<Record<string, unknown>>),
+    ];
+    expect(rawEntries.length).toBeGreaterThan(0);
+    expect(rawEntries.some((entry) => "toJid" in entry)).toBe(false);
   });
 });

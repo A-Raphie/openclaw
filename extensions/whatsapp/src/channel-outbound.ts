@@ -41,22 +41,19 @@ export const whatsappChannelOutbound = {
 };
 
 function toWhatsAppMessageSendResult(
-  result: Awaited<ReturnType<NonNullable<typeof whatsappChannelOutbound.sendText>>>,
+  result:
+    | Awaited<ReturnType<NonNullable<typeof whatsappChannelOutbound.sendText>>>
+    | Awaited<ReturnType<NonNullable<typeof whatsappChannelOutbound.sendMedia>>>,
   replyToId?: string | null,
 ): ChannelMessageSendResult {
-  const source = result as typeof result & { toJid?: string };
+  // Deliberately omit the transport's toJid: on LID-enabled accounts it is the
+  // recipient's LID alias, and carrying it in the result (or the receipt raw)
+  // makes source-reply target matching compare an alias against the requested
+  // phone-number identity (gh-182297).
   const receipt =
     result.receipt ??
     createMessageReceiptFromOutboundResults({
-      results: result.messageId
-        ? [
-            {
-              channel: "whatsapp",
-              messageId: result.messageId,
-              toJid: source.toJid,
-            },
-          ]
-        : [],
+      results: result.messageId ? [{ channel: "whatsapp", messageId: result.messageId }] : [],
       kind: "text",
       ...(replyToId ? { replyToId } : {}),
     });
@@ -78,6 +75,21 @@ export const whatsappMessageAdapter = defineChannelMessageAdapter({
   send: {
     text: async ({ onDeliveryResult, ...ctx }) => {
       const result = await whatsappChannelOutbound.sendText!({
+        ...ctx,
+        onDeliveryResult: onDeliveryResult
+          ? async (progress) => {
+              await onDeliveryResult(toWhatsAppMessageSendResult(progress, ctx.replyToId));
+            }
+          : undefined,
+      });
+      return toWhatsAppMessageSendResult(result, ctx.replyToId);
+    },
+    media: async ({ onDeliveryResult, ...ctx }) => {
+      // Route media through the same sanitized result shape as text. The legacy
+      // bridge forwards the transport's toJid (the recipient's LID alias on
+      // LID-enabled accounts), which then fails source-reply target matching and
+      // turns a delivered media send into a false "empty response" failure.
+      const result = await whatsappChannelOutbound.sendMedia!({
         ...ctx,
         onDeliveryResult: onDeliveryResult
           ? async (progress) => {
